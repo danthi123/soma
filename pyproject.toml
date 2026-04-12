@@ -35,6 +35,11 @@ viz = [
     "matplotlib>=3.7.0",
     "networkx>=3.1",
 ]
+ui = [
+    "dearpygui>=1.10.0",
+    "matplotlib>=3.7.0",
+    "networkx>=3.1",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]

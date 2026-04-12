@@ -16,7 +16,7 @@ Autonomous build-out of all 6 SOMA stages using a scheduled task that spawns Cla
 - **Lock file prevents overlap** — a `.soma-build.lock` file prevents concurrent sessions from causing git conflicts.
 - **Environment bootstraps itself** — first session installs dependencies if missing.
 
-## Work Unit Breakdown (31 units)
+## Work Unit Breakdown (30 units)
 
 ### Stage 1: Core Graph Engine (9 units)
 
@@ -30,7 +30,7 @@ Autonomous build-out of all 6 SOMA stages using a scheduled task that spawns Cla
 8. `growth/synaptogenesis.py` + `growth/pruning.py` — co-activation connection formation + weak edge/orphan removal + tests
 9. Integration test: synthetic task (XOR/parity/sequence), verify graph grows, prunes, and is stable over 10K steps
 
-### Stage 2: Memory Systems (5 units)
+### Stage 2: Memory Systems (4 units)
 
 10. `memory/working_memory.py` — WorkingMemory (attention read, gated write, decay) as nn.Module + tests
 11. `memory/episodic_memory.py` — EpisodicMemory (encode, retrieve, sample_for_replay) as nn.Module + tests

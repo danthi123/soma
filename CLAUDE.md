@@ -61,10 +61,15 @@ mypy src/soma/
 - Python 3.11+, PyTorch
 - Type hints everywhere (strict mypy)
 - Ruff for formatting and linting (100 char line length)
-- Dataclasses for config and data structures
+- Dataclasses for config/data; `nn.Module` for anything with learnable parameters
+- Node, Edge, WorkingMemory, EpisodicMemory are `nn.Module` subclasses (they hold learnable tensors)
+- SOMAConfig is a dataclass (no learnable params)
 - Tests mirror src/ structure: `tests/test_core/`, `tests/test_memory/`, etc.
 - All tensor operations must be GPU-compatible (use `device` parameter)
 - Config via SOMAConfig dataclass (configs/ for YAML overrides)
+- `global_step` is passed as a parameter (never a global variable)
+- Whitepaper constants (e.g., `BASE_LR`) map to SOMAConfig attributes (e.g., `config.base_lr`)
+- Utility functions (`generate_uuid`, `create_projection_if_needed`) live in `core/utils.py`
 
 ## VRAM Budget
 

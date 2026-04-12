@@ -74,13 +74,20 @@ The processing core is a directed graph G = (V, E) where nodes and edges are cre
 
 #### Node Data Structure
 
+NOTE: In implementation, Node should be an nn.Module (not a pure dataclass) since it holds
+learnable parameters (W1, b1, W2, b2). The dataclass notation below is for specification clarity.
+The `weights` and `bias` fields below should be implemented as separate W1, b1, W2, b2 nn.Parameter
+tensors matching the forward() method. All methods that reference `current_step` should receive it
+as an explicit parameter.
+
 ```python
-@dataclass
+@dataclass  # Implement as nn.Module
 class Node:
     id: str                          # Unique identifier (UUID)
     node_type: NodeType              # SENSOR | ASSOCIATOR | INTEGRATOR | OUTPUT
-    weights: torch.Tensor            # Learnable parameters (small MLP: input_dim -> hidden -> output_dim)
-    bias: torch.Tensor               # Bias terms
+    # W1: nn.Parameter (input_dim x hidden_dim), b1: nn.Parameter (hidden_dim,)
+    # W2: nn.Parameter (hidden_dim x output_dim), b2: nn.Parameter (output_dim,)
+    activation_history: RingBuffer   # Recent activation values (fixed-size circular buffer)
     activation_history: RingBuffer   # Recent activation values (fixed-size circular buffer)
     activation_ema: float            # Exponential moving average of activation magnitude
     creation_step: int               # When this node was created
@@ -247,9 +254,11 @@ This gives the system implicit recurrence without requiring explicit loop mechan
 SOMA uses standard backpropagation through the active subgraph, but augmented with Hebbian reinforcement:
 
 ```python
-def update_step(graph, loss, global_step):
+def update_step(graph, loss, global_step, activations, config):
     """
     Combined gradient-based and Hebbian update.
+    activations: Dict[str, torch.Tensor] — node_id -> activation from the forward pass.
+    config: SOMAConfig — provides BASE_LR, YOUTH_LR_MULTIPLIER, etc.
     """
     # 1. Standard backpropagation through the active subgraph
     loss.backward()
@@ -980,6 +989,7 @@ class SOMAConfig:
     neurogenesis_interval: int = 500
     consolidation_interval: int = 1000
     consolidation_replay_steps: int = 100
+    consolidation_error_threshold: float = 0.5  # Error threshold to trigger neurogenesis during consolidation
     pruning_interval: int = 1000
     checkpoint_interval: int = 5000
 

@@ -11,10 +11,9 @@ license = {text = "MIT"}
 
 dependencies = [
     "torch>=2.1.0",
-    "torchaudio>=2.1.0",
-    "torchvision>=0.16.0",
     "numpy>=1.24.0",
     "tokenizers>=0.15.0",
+    "PyYAML>=6.0",
 ]
 
 [project.optional-dependencies]
@@ -23,6 +22,10 @@ dev = [
     "pytest-cov>=4.0",
     "ruff>=0.4.0",
     "mypy>=1.8.0",
+]
+multimodal = [
+    "torchvision>=0.16.0",
+    "torchaudio>=2.1.0",
 ]
 viz = [
     "matplotlib>=3.7.0",
@@ -42,6 +45,9 @@ select = ["E", "F", "W", "I", "UP", "B", "SIM"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+markers = [
+    "slow: marks tests as slow (integration tests, deselect with '-m \"not slow\"')",
+]
 
 [tool.mypy]
 python_version = "3.11"

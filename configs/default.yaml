@@ -67,6 +67,9 @@ default_target_activation: 0.5
 gain_min: 0.1
 gain_max: 10.0
 
+# Consolidation
+consolidation_error_threshold: 0.5
+
 # Sequence Processing
 max_output_tokens: 128
 max_input_tokens: 256

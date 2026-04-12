@@ -38,3 +38,6 @@ runs/
 # Environment
 .env
 .env.local
+
+# Build lock
+.soma-build.lock

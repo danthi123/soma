@@ -210,7 +210,13 @@ class Node(nn.Module):
     # Sensor-specific helpers
     # ------------------------------------------------------------------
     def set_input(self, data: torch.Tensor) -> None:
-        """Store external input for a SENSOR node (consumed on next forward)."""
+        """Store external input for a SENSOR node (consumed on next forward).
+
+        We deliberately do NOT detach here: callers that pass the output of
+        an upstream ``nn.Module`` (e.g., ``TextEncoder``) need gradients to
+        flow back through the sensor into the encoder. Callers that want a
+        detached snapshot should detach before calling.
+        """
         if self.node_type is not NodeType.SENSOR:
             raise RuntimeError(
                 f"set_input only valid on SENSOR nodes; this node is {self.node_type.value}"
@@ -219,7 +225,7 @@ class Node(nn.Module):
             raise ValueError(
                 f"SENSOR expects last-dim={self.output_dim}, got shape {tuple(data.shape)}"
             )
-        self._sensor_input = data.detach()
+        self._sensor_input = data
 
     def get_input_activation(self) -> torch.Tensor:
         """Return the pending sensor input, or zeros if nothing is set."""

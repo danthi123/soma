@@ -1,17 +1,17 @@
 ---
-stage: 3
-unit: 17
+stage: 4
+unit: 18
 status: pending
-last_completed: 16
+last_completed: 17
 total_units: 30
-completed_units: 16
+completed_units: 17
 ---
 
 # SOMA Build Checkpoint
 
 ## Current Work
-- Stage: 3 — Text I/O
-- Unit: 17 — Integration test: text exposure, loss decrease, subgraph emergence
+- Stage: 4 — Meta-Cognitive Module
+- Unit: 18 — metacognition/curiosity.py + tests
 - Status: pending
 
 ## Completed Units
@@ -37,7 +37,7 @@ completed_units: 16
 - [x] 14. `io/text_encoder.py` + tests
 - [x] 15. `io/text_decoder.py` + tests
 - [x] 16. `io/dataset_feeders.py` + tests
-- [ ] 17. Integration test: text exposure, loss decrease, subgraph emergence
+- [x] 17. Integration test: text exposure, loss decrease, subgraph emergence
 
 ### Stage 4: Meta-Cognitive Module
 - [ ] 18. `metacognition/curiosity.py` + tests
@@ -77,6 +77,9 @@ completed_units: 16
 - Unit 14: 12 tests pass (test_text_encoder.py). Mypy clean. Ruff clean. (233 total)
 - Unit 15: 13 tests pass (test_text_decoder.py). Mypy clean. Ruff clean. (246 total)
 - Unit 16: 12 tests pass (test_dataset_feeders.py). Mypy clean. Ruff clean. (258 total)
+- Unit 17: 4 tests pass (test_stage3_text_loop.py). Mypy clean. Ruff clean. (262 total)
+- **Stage 3 COMPLETE**
+- Node.set_input updated: no longer detaches, so gradients flow to external encoders.
 
 ## Open Decisions
 (none yet)

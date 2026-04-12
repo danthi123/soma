@@ -88,7 +88,6 @@ class Node:
     # W1: nn.Parameter (input_dim x hidden_dim), b1: nn.Parameter (hidden_dim,)
     # W2: nn.Parameter (hidden_dim x output_dim), b2: nn.Parameter (output_dim,)
     activation_history: RingBuffer   # Recent activation values (fixed-size circular buffer)
-    activation_history: RingBuffer   # Recent activation values (fixed-size circular buffer)
     activation_ema: float            # Exponential moving average of activation magnitude
     creation_step: int               # When this node was created
     last_active_step: int            # Last step where activation exceeded threshold
@@ -159,14 +158,18 @@ Default dimensions at initialization:
 
 Edges carry weighted activation vectors between nodes.
 
+NOTE: In implementation, Edge should be an nn.Module. `weight` is learnable (needs gradients for
+Hebbian updates and backprop). `projection` is an optional nn.Linear (or nn.Parameter matrix) that
+also needs gradients. All methods referencing `current_step` should receive it as an explicit parameter.
+
 ```python
-@dataclass
+@dataclass  # Implement as nn.Module
 class Edge:
     id: str                          # Unique identifier
     source_id: str                   # Source node
     target_id: str                   # Target node
-    weight: float                    # Scalar weight (learnable, initialized ~0.1)
-    projection: torch.Tensor         # Linear projection matrix (source.output_dim -> target.input_dim)
+    weight: nn.Parameter             # Scalar weight (learnable, initialized ~0.1)
+    projection: Optional[nn.Linear]  # Projection (source.output_dim -> target.input_dim)
                                      # Only needed if source and target have different dims
     coactivation_count: int          # Number of times source and target were both active
     last_active_step: int            # Last step where this edge carried nonzero signal
@@ -359,8 +362,12 @@ class WorkingMemory:
 
 Episodic memory performs fast, one-shot encoding of experiences. Analogous to the hippocampus.
 
+NOTE: Implement as nn.Module. All methods referencing bare `current_step` should receive it
+as an explicit parameter. The `decay_old_entries()` method (called during consolidation) is not
+defined here — implement it to invalidate oldest entries that have been replayed sufficiently.
+
 ```python
-class EpisodicMemory:
+class EpisodicMemory(nn.Module):
     """
     Content-addressable memory with fast write, similarity-based read, and decay.
     Capacity: configurable (default 10,000 episodes).

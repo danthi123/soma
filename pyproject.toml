@@ -27,6 +27,9 @@ multimodal = [
     "torchvision>=0.16.0",
     "torchaudio>=2.1.0",
 ]
+data = [
+    "datasets>=2.14.0",
+]
 viz = [
     "matplotlib>=3.7.0",
     "networkx>=3.1",

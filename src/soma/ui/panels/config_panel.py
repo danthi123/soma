@@ -164,6 +164,11 @@ class ConfigPanel:
                     self._add_field_widget(f, state)
         return self._root
 
+    # Compact widget widths so the label (which DPG puts to the right) has
+    # room. The left column is 360px; these leave ~200px for the label text.
+    _NUMERIC_WIDTH = 120
+    _TEXT_WIDTH = 180
+
     def _add_field_widget(self, field: Any, state: UIState) -> None:
         tag = _tag_for(field.name)
         current_value = getattr(state.config, field.name)
@@ -175,6 +180,7 @@ class ConfigPanel:
                 callback=self._make_callback(field.name, int, state),
                 on_enter=True,
                 step=0,
+                width=self._NUMERIC_WIDTH,
             )
         elif field.type in (float, "float"):
             dpg.add_input_float(
@@ -185,6 +191,7 @@ class ConfigPanel:
                 on_enter=True,
                 format="%.6f",
                 step=0,
+                width=self._NUMERIC_WIDTH,
             )
         elif field.type in (bool, "bool"):
             dpg.add_checkbox(
@@ -203,6 +210,7 @@ class ConfigPanel:
                 tag=tag,
                 callback=self._make_callback(field.name, list[str], state),
                 on_enter=True,
+                width=self._TEXT_WIDTH,
             )
         elif field.type in (str, "str"):
             dpg.add_input_text(
@@ -211,6 +219,7 @@ class ConfigPanel:
                 tag=tag,
                 callback=self._make_callback(field.name, str, state),
                 on_enter=True,
+                width=self._TEXT_WIDTH,
             )
         else:
             # Unknown — fall back to read-only text display.

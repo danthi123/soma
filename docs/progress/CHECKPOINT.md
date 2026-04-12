@@ -1,17 +1,17 @@
 ---
 stage: 3
-unit: 16
+unit: 17
 status: pending
-last_completed: 15
+last_completed: 16
 total_units: 30
-completed_units: 15
+completed_units: 16
 ---
 
 # SOMA Build Checkpoint
 
 ## Current Work
 - Stage: 3 — Text I/O
-- Unit: 16 — io/dataset_feeders.py + tests
+- Unit: 17 — Integration test: text exposure, loss decrease, subgraph emergence
 - Status: pending
 
 ## Completed Units
@@ -36,7 +36,7 @@ completed_units: 15
 ### Stage 3: Text I/O
 - [x] 14. `io/text_encoder.py` + tests
 - [x] 15. `io/text_decoder.py` + tests
-- [ ] 16. `io/dataset_feeders.py` + tests
+- [x] 16. `io/dataset_feeders.py` + tests
 - [ ] 17. Integration test: text exposure, loss decrease, subgraph emergence
 
 ### Stage 4: Meta-Cognitive Module
@@ -76,6 +76,7 @@ completed_units: 15
 - **Stage 2 COMPLETE**
 - Unit 14: 12 tests pass (test_text_encoder.py). Mypy clean. Ruff clean. (233 total)
 - Unit 15: 13 tests pass (test_text_decoder.py). Mypy clean. Ruff clean. (246 total)
+- Unit 16: 12 tests pass (test_dataset_feeders.py). Mypy clean. Ruff clean. (258 total)
 
 ## Open Decisions
 (none yet)

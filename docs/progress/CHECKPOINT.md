@@ -1,17 +1,17 @@
 ---
 stage: 1
-unit: 8
+unit: 9
 status: pending
-last_completed: 7
+last_completed: 8
 total_units: 30
-completed_units: 7
+completed_units: 8
 ---
 
 # SOMA Build Checkpoint
 
 ## Current Work
 - Stage: 1 — Core Graph Engine
-- Unit: 8 — growth/synaptogenesis.py + growth/pruning.py + tests
+- Unit: 9 — Integration test: synthetic task, graph grows/prunes, stable over 10K steps
 - Status: pending
 
 ## Completed Units
@@ -24,7 +24,7 @@ completed_units: 7
 - [x] 5. `core/graph.py` — Graph container + serialization + tests
 - [x] 6. `core/execution.py` — topological_sort, cycle detection, execute_graph + tests
 - [x] 7. `core/learning.py` — update_step (backprop + Hebbian + homeostatic gain) + tests
-- [ ] 8. `growth/synaptogenesis.py` + `growth/pruning.py` + tests
+- [x] 8. `growth/synaptogenesis.py` + `growth/pruning.py` + tests
 - [ ] 9. Integration test: synthetic task, graph grows/prunes, stable over 10K steps
 
 ### Stage 2: Memory Systems
@@ -66,6 +66,7 @@ completed_units: 7
 - Unit 5: 24 tests pass (test_graph.py). Mypy clean. Ruff clean. (117 total)
 - Unit 6: 12 tests pass (test_execution.py). Mypy clean. Ruff clean. (129 total)
 - Unit 7: 13 tests pass (test_learning.py). Mypy clean. Ruff clean. (142 total)
+- Unit 8: 16 tests pass (test_synaptogenesis.py + test_pruning.py). Mypy clean. Ruff clean. (158 total)
 
 ## Open Decisions
 (none yet)

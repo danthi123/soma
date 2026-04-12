@@ -41,3 +41,6 @@ runs/
 
 # Build lock
 .soma-build.lock
+
+# Local Claude settings (contains tokens)
+.claude/settings.local.json

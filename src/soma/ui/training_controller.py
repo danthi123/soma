@@ -206,6 +206,17 @@ class TrainingController:
     def step_once(self) -> None:
         self._cmd_queue.put(TrainingCommand.STEP_ONCE)
 
+    def set_snapshot_every(self, n: int) -> None:
+        """Live-update how often the worker publishes graph snapshots.
+
+        Safe to call from the UI thread: ``SessionSpec.snapshot_every`` is a
+        plain int, the worker re-reads it on every step, and assignment is
+        atomic under the GIL. A no-op if no session has been configured yet.
+        """
+        if self._spec is None:
+            return
+        self._spec.snapshot_every = max(1, int(n))
+
     def shutdown(self, join_timeout: float = 2.0) -> None:
         """Signal the worker to exit and wait for it."""
         self._shutdown.set()

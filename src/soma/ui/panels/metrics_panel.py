@@ -84,7 +84,7 @@ class MetricsPanel:
         _plot("WM occupancy", "fraction", "metrics_wm")
 
         # Growth event strip plot — render as a scatter with colored markers.
-        with dpg.plot(label="Growth events", height=90, width=-1, parent=self._root):
+        with dpg.plot(label="Growth events", height=130, width=-1, parent=self._root):
             dpg.add_plot_axis(dpg.mvXAxis, label="global_step", tag="growth_x")
             with dpg.plot_axis(dpg.mvYAxis, label="type", no_tick_labels=True, tag="growth_y"):
                 dpg.add_scatter_series([], [], tag="growth_series_syn", label="syn")

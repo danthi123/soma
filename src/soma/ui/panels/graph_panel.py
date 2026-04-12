@@ -131,7 +131,13 @@ class GraphPanel:
         user_data.graph_view.enabled = bool(app_data)
 
     def _on_recompute_every(self, sender, app_data, user_data: UIState) -> None:  # type: ignore[no-untyped-def]
-        user_data.graph_view.recompute_every_steps = max(1, int(app_data))
+        value = max(1, int(app_data))
+        user_data.graph_view.recompute_every_steps = value
+        # Push to the worker too: the render cadence is bottlenecked by how
+        # often snapshots arrive, so wire this setting directly to the
+        # worker's publish interval. Without this, lowering "Recompute every"
+        # below SessionSpec.snapshot_every has no visible effect.
+        user_data.controller.set_snapshot_every(value)
 
     def _on_max_nodes(self, sender, app_data, user_data: UIState) -> None:  # type: ignore[no-untyped-def]
         user_data.graph_view.max_render_nodes = max(1, int(app_data))
@@ -152,9 +158,12 @@ class GraphPanel:
         if snapshot is None:
             return
         step = int(snapshot.get("global_step", 0))
-        interval = state.graph_view.recompute_every_steps
-        # Only recompute if enough steps have passed OR forced.
-        if not self._force_recompute and step - self._last_rendered_step < interval:
+        # Render each distinct snapshot the worker publishes. The publish
+        # cadence (``SessionSpec.snapshot_every``) is what the "Recompute
+        # every" control drives via ``_on_recompute_every``, so any extra
+        # filter here would be redundant. "Recompute now" still forces a
+        # re-render of the current snapshot.
+        if not self._force_recompute and step == self._last_rendered_step:
             return
         self._force_recompute = False
         # Truncate to the most-active nodes if over the cap.

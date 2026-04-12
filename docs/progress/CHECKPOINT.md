@@ -1,17 +1,17 @@
 ---
 stage: 3
-unit: 14
+unit: 15
 status: pending
-last_completed: 13
+last_completed: 14
 total_units: 30
-completed_units: 13
+completed_units: 14
 ---
 
 # SOMA Build Checkpoint
 
 ## Current Work
 - Stage: 3 — Text I/O
-- Unit: 14 — io/text_encoder.py + tests
+- Unit: 15 — io/text_decoder.py + tests
 - Status: pending
 
 ## Completed Units
@@ -34,7 +34,7 @@ completed_units: 13
 - [x] 13. Integration test: memorization task (WM recall, episodic recall, consolidated recall)
 
 ### Stage 3: Text I/O
-- [ ] 14. `io/text_encoder.py` + tests
+- [x] 14. `io/text_encoder.py` + tests
 - [ ] 15. `io/text_decoder.py` + tests
 - [ ] 16. `io/dataset_feeders.py` + tests
 - [ ] 17. Integration test: text exposure, loss decrease, subgraph emergence
@@ -74,6 +74,7 @@ completed_units: 13
 - Unit 12: 7 tests pass (test_cycle.py). Mypy clean. Ruff clean. (215 total)
 - Unit 13: 6 tests pass (test_stage2_memory.py). Mypy clean. Ruff clean. (221 total)
 - **Stage 2 COMPLETE**
+- Unit 14: 12 tests pass (test_text_encoder.py). Mypy clean. Ruff clean. (233 total)
 
 ## Open Decisions
 (none yet)

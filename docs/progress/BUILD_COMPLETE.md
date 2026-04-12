@@ -90,3 +90,4 @@ one slow 10K-step stability test.
 - Whitepaper: `docs/whitepaper.md`.
 - Build plan: `docs/plans/2026-04-12-autonomous-build-design.md`.
 - Progress log: `docs/progress/CHECKPOINT.md` (all 30 units checked).
+- Deferred items & known gaps: `docs/progress/DEFERRED.md` (7 items to track post-v1).

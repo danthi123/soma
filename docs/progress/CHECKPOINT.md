@@ -1,17 +1,17 @@
 ---
-stage: 5
-unit: 26
+stage: 6
+unit: 27
 status: pending
-last_completed: 25
+last_completed: 26
 total_units: 30
-completed_units: 25
+completed_units: 26
 ---
 
 # SOMA Build Checkpoint
 
 ## Current Work
-- Stage: 5 — Multimodal
-- Unit: 26 — Integration test: cross-modal association
+- Stage: 6 — Interactive Environment
+- Unit: 27 — soma/system.py (SOMA main class) + tests
 - Status: pending
 
 ## Completed Units
@@ -50,7 +50,7 @@ completed_units: 25
 ### Stage 5: Multimodal
 - [x] 24. `io/image_encoder.py` + tests
 - [x] 25. `io/multimodal_curriculum.py` + tests
-- [ ] 26. Integration test: cross-modal association
+- [x] 26. Integration test: cross-modal association
 
 ### Stage 6: Interactive Environment
 - [ ] 27. `soma/system.py` — SOMA main class + tests
@@ -90,6 +90,8 @@ completed_units: 25
 - Unit 24: 12 tests pass (test_image_encoder.py). Mypy clean. Ruff clean. (348 total)
 - Unit 25: 17 tests pass (test_multimodal_curriculum.py). Mypy clean. Ruff clean. (365 total)
 - Loosened Stage 1 fast integration's test_loss_trends_down bound (500-step run with conservative LR can drift flat under some inits; the slow 10K test remains strict).
+- Unit 26: 5 tests pass (test_stage5_multimodal.py). Mypy clean. Ruff clean. (370 total)
+- **Stage 5 COMPLETE**
 
 ## Open Decisions
 (none yet)

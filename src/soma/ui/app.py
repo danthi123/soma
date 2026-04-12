@@ -120,12 +120,12 @@ def _build_layout(state: UIState, built_panels: list[tuple[str, Panel]]) -> None
             # Center column: metrics on top, graph on bottom.
             with (
                 dpg.child_window(width=760, height=-1, border=True, tag="col_center"),
-                dpg.tab_bar(),
+                dpg.tab_bar(tag="center_tabs"),
             ):
-                with dpg.tab(label="Live metrics"):
-                    _build_panel(state, built_panels, "metrics", parent=dpg.last_item())
-                with dpg.tab(label="Graph view"):
-                    _build_panel(state, built_panels, "graph", parent=dpg.last_item())
+                with dpg.tab(label="Live metrics", tag="tab_metrics"):
+                    _build_panel(state, built_panels, "metrics", parent="tab_metrics")
+                with dpg.tab(label="Graph view", tag="tab_graph"):
+                    _build_panel(state, built_panels, "graph", parent="tab_graph")
 
             # Right column: chat.
             with dpg.child_window(width=-1, height=-1, border=True, tag="col_right"):
@@ -145,11 +145,12 @@ def _build_layout(state: UIState, built_panels: list[tuple[str, Panel]]) -> None
         if extras:
             with (
                 dpg.child_window(border=True, tag="row_extras", height=240),
-                dpg.tab_bar(),
+                dpg.tab_bar(tag="extras_tabs"),
             ):
-                for panel in extras:
-                    with dpg.tab(label=panel.display_label):
-                        panel.build(parent=dpg.last_item(), state=state)
+                for idx, panel in enumerate(extras):
+                    tab_tag = f"tab_extra_{idx}"
+                    with dpg.tab(label=panel.display_label, tag=tab_tag):
+                        panel.build(parent=tab_tag, state=state)
 
 
 def _build_panel(

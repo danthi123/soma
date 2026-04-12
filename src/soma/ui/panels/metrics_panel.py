@@ -69,12 +69,18 @@ class MetricsPanel:
         _plot("Loss (rolling)", "loss", "metrics_loss")
         _plot("Curiosity", "curiosity", "metrics_curiosity")
         _plot("LR multiplier", "lr_mul", "metrics_lrmul")
-        with dpg.plot(label="Graph size", height=160, width=-1, parent=self._root):
+        with dpg.plot(
+            label="Graph size",
+            height=160,
+            width=-1,
+            parent=self._root,
+            tag="metrics_size_plot",
+        ):
+            dpg.add_plot_legend()
             dpg.add_plot_axis(dpg.mvXAxis, label="global_step", tag="metrics_size_x")
             with dpg.plot_axis(dpg.mvYAxis, label="count", tag="metrics_size_y"):
                 dpg.add_line_series([], [], tag="metrics_size_nodes", label="nodes")
                 dpg.add_line_series([], [], tag="metrics_size_edges", label="edges")
-            dpg.add_plot_legend(parent=dpg.last_item())
         _plot("WM occupancy", "fraction", "metrics_wm")
 
         # Growth event strip plot — render as a scatter with colored markers.

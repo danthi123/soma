@@ -1,17 +1,17 @@
 ---
 stage: 4
-unit: 18
+unit: 19
 status: pending
-last_completed: 17
+last_completed: 18
 total_units: 30
-completed_units: 17
+completed_units: 18
 ---
 
 # SOMA Build Checkpoint
 
 ## Current Work
 - Stage: 4 — Meta-Cognitive Module
-- Unit: 18 — metacognition/curiosity.py + tests
+- Unit: 19 — metacognition/homeostasis.py + tests
 - Status: pending
 
 ## Completed Units
@@ -40,7 +40,7 @@ completed_units: 17
 - [x] 17. Integration test: text exposure, loss decrease, subgraph emergence
 
 ### Stage 4: Meta-Cognitive Module
-- [ ] 18. `metacognition/curiosity.py` + tests
+- [x] 18. `metacognition/curiosity.py` + tests
 - [ ] 19. `metacognition/homeostasis.py` + tests
 - [ ] 20. `metacognition/development.py` (DevelopmentSchedule + CriticalPeriod) + tests
 - [ ] 21. `growth/neurogenesis.py` + tests
@@ -80,6 +80,7 @@ completed_units: 17
 - Unit 17: 4 tests pass (test_stage3_text_loop.py). Mypy clean. Ruff clean. (262 total)
 - **Stage 3 COMPLETE**
 - Node.set_input updated: no longer detaches, so gradients flow to external encoders.
+- Unit 18: 15 tests pass (test_curiosity.py). Mypy clean. Ruff clean. (277 total)
 
 ## Open Decisions
 (none yet)

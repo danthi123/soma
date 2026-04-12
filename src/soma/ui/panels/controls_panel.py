@@ -6,6 +6,7 @@ config changes), load checkpoint.
 
 from __future__ import annotations
 
+import threading
 import time
 from pathlib import Path
 
@@ -19,7 +20,12 @@ except ImportError:  # pragma: no cover
 
 from soma.ui.registry import register_panel
 from soma.ui.state import UIState
-from soma.ui.training_controller import SessionSpec, TrainingState, load_corpus
+from soma.ui.training_controller import (
+    CHANNEL_LOG,
+    SessionSpec,
+    TrainingState,
+    load_corpus,
+)
 
 
 @register_panel("controls")
@@ -33,6 +39,11 @@ class ControlsPanel:
         self._state_tag = "controls_state_label"
         # last action message; only overwritten by _set_status
         self._status_tag = "controls_status_label"
+        # Worker-thread log messages to surface on the next update() tick.
+        # Held under a lock because bus callbacks run on the worker thread
+        # but dpg.set_value must only fire from the UI thread.
+        self._log_lock = threading.RLock()
+        self._pending_log: str | None = None
 
     # ------------------------------------------------------------------
     def build(self, parent: int | str, state: UIState) -> int | str:
@@ -140,6 +151,18 @@ class ControlsPanel:
         dpg.add_separator(parent=self._root)
         dpg.add_text("state=idle  step=0", tag=self._state_tag, parent=self._root)
         dpg.add_text("", tag=self._status_tag, parent=self._root)
+
+        # Surface log messages (including worker-thread errors like device
+        # mismatch) to the status line so the user doesn't have to read
+        # stderr to find out why training stopped. Bus subscribers run on
+        # the worker thread; buffer here and let update() write to DPG.
+        def _on_log(msg: object) -> None:
+            if isinstance(msg, str):
+                with self._log_lock:
+                    self._pending_log = msg
+
+        state.bus.subscribe(CHANNEL_LOG, _on_log)
+
         return self._root
 
     # ------------------------------------------------------------------
@@ -153,6 +176,13 @@ class ControlsPanel:
         # line preserves the last action message ("session ready", "save failed",
         # etc.) until another action overwrites it.
         dpg.set_value(self._state_tag, f"state={ctrl_state.value}  step={step}")
+        # Drain any worker-thread log message queued via the CHANNEL_LOG
+        # subscriber so errors like device-mismatch appear in the status line.
+        with self._log_lock:
+            pending = self._pending_log
+            self._pending_log = None
+        if pending is not None:
+            self._set_status(pending)
 
     # ------------------------------------------------------------------
     # Button callbacks

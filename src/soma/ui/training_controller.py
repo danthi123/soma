@@ -289,13 +289,21 @@ class TrainingController:
                 self._soma = spec.soma_factory(spec.config)
             else:
                 self._soma = SOMA(spec.config, device=torch.device(spec.device))
+            # Encoder + decoder MUST live on the same device as SOMA — the
+            # feeder produces tensors off the encoder's embedding weight,
+            # which go straight into SOMA.step. A CPU/CUDA mismatch here
+            # blows up on the first edge transmit.
+            device = torch.device(spec.device)
             tokenizer = train_bpe_tokenizer(spec.corpus_texts, vocab_size=spec.vocab_size)
             self._encoder = TextEncoder(
                 tokenizer,
                 embed_dim=spec.config.text_embed_dim,
                 max_seq_len=spec.config.max_input_tokens,
+                device=device,
             )
-            self._decoder = TextDecoder(tokenizer, embed_dim=spec.config.text_embed_dim)
+            self._decoder = TextDecoder(
+                tokenizer, embed_dim=spec.config.text_embed_dim, device=device
+            )
             # Tie so generated tokens map back through the learned embedding.
             self._decoder.tie_weights(self._encoder)
             self._feeder = TextDatasetFeeder(

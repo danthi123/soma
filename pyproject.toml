@@ -69,5 +69,10 @@ module = ["tokenizers", "tokenizers.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
-module = ["networkx", "networkx.*", "matplotlib", "matplotlib.*", "torchaudio", "torchaudio.*"]
+module = [
+    "networkx", "networkx.*",
+    "matplotlib", "matplotlib.*",
+    "torchaudio", "torchaudio.*",
+    "dearpygui", "dearpygui.*",
+]
 ignore_missing_imports = true

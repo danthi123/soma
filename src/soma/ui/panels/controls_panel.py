@@ -6,6 +6,7 @@ config changes), load checkpoint.
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
 
 try:
@@ -28,6 +29,9 @@ class ControlsPanel:
 
     def __init__(self) -> None:
         self._root: int | str | None = None
+        # live state/step; overwritten every frame
+        self._state_tag = "controls_state_label"
+        # last action message; only overwritten by _set_status
         self._status_tag = "controls_status_label"
 
     # ------------------------------------------------------------------
@@ -134,7 +138,8 @@ class ControlsPanel:
             )
 
         dpg.add_separator(parent=self._root)
-        dpg.add_text("state=idle", tag=self._status_tag, parent=self._root)
+        dpg.add_text("state=idle  step=0", tag=self._state_tag, parent=self._root)
+        dpg.add_text("", tag=self._status_tag, parent=self._root)
         return self._root
 
     # ------------------------------------------------------------------
@@ -144,7 +149,10 @@ class ControlsPanel:
         ctrl_state = state.controller.state
         soma = state.controller.soma
         step = soma.global_step if soma is not None else 0
-        dpg.set_value(self._status_tag, f"state={ctrl_state.value}  step={step}")
+        # Only the live state line is refreshed every frame; the _status_tag
+        # line preserves the last action message ("session ready", "save failed",
+        # etc.) until another action overwrites it.
+        dpg.set_value(self._state_tag, f"state={ctrl_state.value}  step={step}")
 
     # ------------------------------------------------------------------
     # Button callbacks
@@ -225,7 +233,8 @@ class ControlsPanel:
 
     def _set_status(self, msg: str) -> None:
         if DPG_AVAILABLE:
-            dpg.set_value(self._status_tag, msg)
+            timestamp = time.strftime("%H:%M:%S")
+            dpg.set_value(self._status_tag, f"[{timestamp}] {msg}")
 
 
 def _available_devices() -> list[str]:

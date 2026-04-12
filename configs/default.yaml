@@ -1,0 +1,72 @@
+# SOMA Default Configuration
+# See src/soma/config.py for SOMAConfig dataclass
+
+# Graph Dimensions
+sensor_output_dim: 64
+associator_input_dim: 64
+associator_hidden_dim: 128
+associator_output_dim: 64
+integrator_input_dim: 128
+integrator_hidden_dim: 256
+integrator_output_dim: 128
+position_dim: 16
+
+# Memory Systems
+wm_slots: 32
+wm_dim: 128
+wm_decay_rate: 0.95
+episodic_capacity: 10000
+key_dim: 128
+value_dim: 256
+
+# I/O
+input_modalities: ["text"]
+output_modalities: ["text"]
+vocab_size: 8192
+text_embed_dim: 64
+
+# Growth
+initial_associator_count: 32
+initial_integrator_count: 8
+max_nodes: 50000
+max_edges_per_node: 20.0
+
+# Learning
+base_lr: 0.001
+youth_lr_multiplier: 3.0
+hebbian_lr: 0.0001
+consolidation_lr_ratio: 0.1
+maturity_increment: 0.0001
+
+# Growth Thresholds
+activation_threshold: 0.1
+synaptogenesis_rate: 0.01
+neurogenesis_threshold: 1.2
+edge_strength_threshold: 0.001
+inactivity_threshold: 5000
+pruning_grace_period: 2000
+myelination_strength_threshold: 0.5
+myelination_age_threshold: 10000
+max_edge_weight: 5.0
+locality_scale: 2.0
+position_jitter: 0.1
+
+# Intervals
+synaptogenesis_interval: 100
+neurogenesis_interval: 500
+consolidation_interval: 1000
+consolidation_replay_steps: 100
+pruning_interval: 1000
+checkpoint_interval: 5000
+
+# Curiosity
+num_curiosity_domains: 8
+
+# Homeostasis
+default_target_activation: 0.5
+gain_min: 0.1
+gain_max: 10.0
+
+# Sequence Processing
+max_output_tokens: 128
+max_input_tokens: 256

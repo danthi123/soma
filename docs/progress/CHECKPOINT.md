@@ -1,17 +1,17 @@
 ---
 stage: 6
-unit: 28
+unit: 29
 status: pending
-last_completed: 27
+last_completed: 28
 total_units: 30
-completed_units: 27
+completed_units: 28
 ---
 
 # SOMA Build Checkpoint
 
 ## Current Work
 - Stage: 6 — Interactive Environment
-- Unit: 28 — scripts/train.py + scripts/visualize.py
+- Unit: 29 — scripts/interactive.py — CLI interface
 - Status: pending
 
 ## Completed Units
@@ -54,7 +54,7 @@ completed_units: 27
 
 ### Stage 6: Interactive Environment
 - [x] 27. `soma/system.py` — SOMA main class + tests
-- [ ] 28. `scripts/train.py` + `scripts/visualize.py`
+- [x] 28. `scripts/train.py` + `scripts/visualize.py`
 - [ ] 29. `scripts/interactive.py` — CLI interface
 - [ ] 30. Full system integration test + wiki final update
 
@@ -93,6 +93,7 @@ completed_units: 27
 - Unit 26: 5 tests pass (test_stage5_multimodal.py). Mypy clean. Ruff clean. (370 total)
 - **Stage 5 COMPLETE**
 - Unit 27: 26 tests pass (test_system/test_soma.py). Mypy clean. Ruff clean. (396 total)
+- Unit 28: 22 tests pass (test_scripts/test_train.py + test_visualize.py). Mypy clean. Ruff clean. (418 total)
 
 ## Open Decisions
 (none yet)

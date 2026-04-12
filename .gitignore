@@ -44,3 +44,5 @@ runs/
 
 # Local Claude settings (contains tokens)
 .claude/settings.local.json
+.claude/
+

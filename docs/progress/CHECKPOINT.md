@@ -1,17 +1,17 @@
 ---
 stage: 4
-unit: 21
+unit: 22
 status: pending
-last_completed: 20
+last_completed: 21
 total_units: 30
-completed_units: 20
+completed_units: 21
 ---
 
 # SOMA Build Checkpoint
 
 ## Current Work
 - Stage: 4 — Meta-Cognitive Module
-- Unit: 21 — growth/neurogenesis.py + tests
+- Unit: 22 — growth/myelination.py + tests
 - Status: pending
 
 ## Completed Units
@@ -43,7 +43,7 @@ completed_units: 20
 - [x] 18. `metacognition/curiosity.py` + tests
 - [x] 19. `metacognition/homeostasis.py` + tests
 - [x] 20. `metacognition/development.py` (DevelopmentSchedule + CriticalPeriod) + tests
-- [ ] 21. `growth/neurogenesis.py` + tests
+- [x] 21. `growth/neurogenesis.py` + tests
 - [ ] 22. `growth/myelination.py` + tests
 - [ ] 23. Enhance consolidation with structural maintenance + integration test
 
@@ -83,6 +83,7 @@ completed_units: 20
 - Unit 18: 15 tests pass (test_curiosity.py). Mypy clean. Ruff clean. (277 total)
 - Unit 19: 19 tests pass (test_homeostasis.py). Mypy clean. Ruff clean. (296 total)
 - Unit 20: 11 tests pass (test_development.py). Mypy clean. Ruff clean. (307 total)
+- Unit 21: 10 tests pass (test_neurogenesis.py). Mypy clean. Ruff clean. (317 total)
 
 ## Open Decisions
 (none yet)

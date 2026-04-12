@@ -1,0 +1,294 @@
+"""Tests for ``soma.core.execution``."""
+
+from __future__ import annotations
+
+import pytest
+import torch
+
+from soma.core.config import SOMAConfig
+from soma.core.edge import Edge
+from soma.core.execution import execute_graph, topological_sort
+from soma.core.graph import Graph
+from soma.core.node import Node, NodeType
+
+
+@pytest.fixture
+def config() -> SOMAConfig:
+    return SOMAConfig()
+
+
+def _matched_linear_graph(config: SOMAConfig) -> tuple[Graph, Node, Node, Node]:
+    """Build SENSOR(text) -> ASSOC -> OUTPUT(text), all 64-dim (no projections)."""
+    graph = Graph()
+    # Use matching dims so we don't need projections.
+    dim = config.sensor_output_dim
+    sensor = Node(
+        node_type=NodeType.SENSOR,
+        input_dim=dim,
+        hidden_dim=dim * 2,
+        output_dim=dim,
+        creation_step=0,
+        config=config,
+    )
+    assoc = Node(
+        node_type=NodeType.ASSOCIATOR,
+        input_dim=dim,
+        hidden_dim=dim * 2,
+        output_dim=dim,
+        creation_step=0,
+        config=config,
+    )
+    out = Node(
+        node_type=NodeType.OUTPUT,
+        input_dim=dim,
+        hidden_dim=dim * 2,
+        output_dim=dim,
+        creation_step=0,
+        config=config,
+    )
+    graph.add_node(sensor, modality="text")
+    graph.add_node(assoc)
+    graph.add_node(out, modality="text")
+    # edges
+    graph.add_edge(
+        Edge(
+            source_id=sensor.id,
+            target_id=assoc.id,
+            source_output_dim=dim,
+            target_input_dim=dim,
+            creation_step=0,
+            initial_weight=1.0,
+        )
+    )
+    graph.add_edge(
+        Edge(
+            source_id=assoc.id,
+            target_id=out.id,
+            source_output_dim=dim,
+            target_input_dim=dim,
+            creation_step=0,
+            initial_weight=1.0,
+        )
+    )
+    return graph, sensor, assoc, out
+
+
+class TestTopologicalSort:
+    def test_empty_graph(self) -> None:
+        order, back = topological_sort(Graph())
+        assert order == []
+        assert back == set()
+
+    def test_linear_order(self, config: SOMAConfig) -> None:
+        graph, sensor, assoc, out = _matched_linear_graph(config)
+        order, back = topological_sort(graph)
+        assert back == set()
+        pos = {nid: idx for idx, nid in enumerate(order)}
+        assert pos[sensor.id] < pos[assoc.id] < pos[out.id]
+
+    def test_detects_back_edge(self, config: SOMAConfig) -> None:
+        graph = Graph()
+        dim = 8
+        a = Node(NodeType.ASSOCIATOR, dim, dim * 2, dim, 0, config)
+        b = Node(NodeType.ASSOCIATOR, dim, dim * 2, dim, 0, config)
+        graph.add_node(a)
+        graph.add_node(b)
+        graph.add_edge(
+            Edge(
+                source_id=a.id,
+                target_id=b.id,
+                source_output_dim=dim,
+                target_input_dim=dim,
+                creation_step=0,
+            )
+        )
+        # b -> a creates a cycle; this should be flagged as a back-edge.
+        back_edge = Edge(
+            source_id=b.id,
+            target_id=a.id,
+            source_output_dim=dim,
+            target_input_dim=dim,
+            creation_step=0,
+        )
+        graph.add_edge(back_edge)
+        order, back = topological_sort(graph)
+        assert len(order) == 2
+        # Exactly one of the two edges is the back-edge.
+        assert len(back) == 1
+
+    def test_handles_disconnected_components(self, config: SOMAConfig) -> None:
+        graph = Graph()
+        dim = 4
+        a = Node(NodeType.ASSOCIATOR, dim, 8, dim, 0, config)
+        b = Node(NodeType.ASSOCIATOR, dim, 8, dim, 0, config)
+        c = Node(NodeType.ASSOCIATOR, dim, 8, dim, 0, config)
+        for n in (a, b, c):
+            graph.add_node(n)
+        # a -> b, c isolated.
+        graph.add_edge(
+            Edge(
+                source_id=a.id,
+                target_id=b.id,
+                source_output_dim=dim,
+                target_input_dim=dim,
+                creation_step=0,
+            )
+        )
+        order, back = topological_sort(graph)
+        assert set(order) == {a.id, b.id, c.id}
+        pos = {nid: idx for idx, nid in enumerate(order)}
+        assert pos[a.id] < pos[b.id]
+        assert back == set()
+
+
+class TestExecuteGraph:
+    def test_linear_forward_pass(self, config: SOMAConfig) -> None:
+        graph, sensor, assoc, out = _matched_linear_graph(config)
+        dim = sensor.output_dim
+        data = torch.randn(dim)
+        outputs, activations = execute_graph(graph, inputs={"text": data}, current_step=1)
+        assert "text" in outputs
+        assert outputs["text"].shape == (dim,)
+        assert sensor.id in activations
+        assert assoc.id in activations
+        assert out.id in activations
+        # Sensor activation should equal the injected data.
+        assert torch.equal(activations[sensor.id], data)
+
+    def test_unknown_modality_raises(self, config: SOMAConfig) -> None:
+        graph, _, _, _ = _matched_linear_graph(config)
+        with pytest.raises(KeyError, match="SENSOR"):
+            execute_graph(graph, inputs={"audio": torch.randn(64)}, current_step=0)
+
+    def test_dormant_node_skipped(self, config: SOMAConfig) -> None:
+        """A node with no active incoming edges should not produce an activation."""
+        graph = Graph()
+        dim = config.sensor_output_dim
+        sensor = Node(NodeType.SENSOR, dim, dim * 2, dim, 0, config)
+        dangling = Node(NodeType.ASSOCIATOR, dim, dim * 2, dim, 0, config)
+        out = Node(NodeType.OUTPUT, dim, dim * 2, dim, 0, config)
+        graph.add_node(sensor, modality="text")
+        graph.add_node(dangling)
+        graph.add_node(out, modality="text")
+        # Only connect sensor -> out; dangling receives no input.
+        graph.add_edge(
+            Edge(
+                source_id=sensor.id,
+                target_id=out.id,
+                source_output_dim=dim,
+                target_input_dim=dim,
+                creation_step=0,
+                initial_weight=1.0,
+            )
+        )
+        _, activations = execute_graph(graph, inputs={"text": torch.randn(dim)}, current_step=0)
+        assert sensor.id in activations
+        assert out.id in activations
+        assert dangling.id not in activations
+
+    def test_edge_marked_active(self, config: SOMAConfig) -> None:
+        graph, sensor, assoc, _ = _matched_linear_graph(config)
+        sensor_to_assoc = graph.get_edge(sensor.id, assoc.id)
+        assert sensor_to_assoc.last_active_step == 0
+        execute_graph(graph, inputs={"text": torch.randn(sensor.output_dim)}, current_step=7)
+        assert sensor_to_assoc.last_active_step == 7
+
+    def test_record_edge_activity_off(self, config: SOMAConfig) -> None:
+        graph, sensor, assoc, _ = _matched_linear_graph(config)
+        sensor_to_assoc = graph.get_edge(sensor.id, assoc.id)
+        execute_graph(
+            graph,
+            inputs={"text": torch.randn(sensor.output_dim)},
+            current_step=7,
+            record_edge_activity=False,
+        )
+        assert sensor_to_assoc.last_active_step == 0  # unchanged
+
+    def test_output_omitted_when_dormant(self, config: SOMAConfig) -> None:
+        graph = Graph()
+        dim = config.sensor_output_dim
+        sensor = Node(NodeType.SENSOR, dim, dim * 2, dim, 0, config)
+        out = Node(NodeType.OUTPUT, dim, dim * 2, dim, 0, config)
+        graph.add_node(sensor, modality="text")
+        graph.add_node(out, modality="text")
+        # No edge connecting sensor -> out, so output is dormant.
+        outputs, activations = execute_graph(
+            graph, inputs={"text": torch.randn(dim)}, current_step=0
+        )
+        assert outputs == {}
+        assert sensor.id in activations
+        assert out.id not in activations
+
+    def test_cycle_uses_previous_activations(self, config: SOMAConfig) -> None:
+        """A back-edge should pick up signal from previous_activations, not current."""
+        graph = Graph()
+        dim = config.sensor_output_dim
+        sensor = Node(NodeType.SENSOR, dim, dim * 2, dim, 0, config)
+        a = Node(NodeType.ASSOCIATOR, dim, dim * 2, dim, 0, config)
+        b = Node(NodeType.ASSOCIATOR, dim, dim * 2, dim, 0, config)
+        out = Node(NodeType.OUTPUT, dim, dim * 2, dim, 0, config)
+        graph.add_node(sensor, modality="text")
+        graph.add_node(a)
+        graph.add_node(b)
+        graph.add_node(out, modality="text")
+        # Forward: sensor -> a -> b -> out; cycle: b -> a (back-edge).
+        for src, tgt in [(sensor, a), (a, b), (b, out), (b, a)]:
+            graph.add_edge(
+                Edge(
+                    source_id=src.id,
+                    target_id=tgt.id,
+                    source_output_dim=dim,
+                    target_input_dim=dim,
+                    creation_step=0,
+                    initial_weight=1.0,
+                )
+            )
+        # Step 1: no previous activations yet — cycle edge contributes nothing.
+        _, acts1 = execute_graph(graph, inputs={"text": torch.ones(dim)}, current_step=1)
+        # Step 2: pass activations from step 1 as previous_activations.
+        outputs2, acts2 = execute_graph(
+            graph,
+            inputs={"text": torch.ones(dim)},
+            current_step=2,
+            previous_activations=acts1,
+        )
+        # With the back-edge now feeding b's previous activation into a, a's
+        # step-2 activation should differ from a's step-1 activation.
+        assert not torch.allclose(acts2[a.id], acts1[a.id])
+        assert "text" in outputs2
+
+    def test_multiple_modalities(self, config: SOMAConfig) -> None:
+        graph = Graph()
+        dim = config.sensor_output_dim
+        s_text = Node(NodeType.SENSOR, dim, dim * 2, dim, 0, config)
+        s_img = Node(NodeType.SENSOR, dim, dim * 2, dim, 0, config)
+        assoc = Node(NodeType.ASSOCIATOR, dim, dim * 2, dim, 0, config)
+        o_text = Node(NodeType.OUTPUT, dim, dim * 2, dim, 0, config)
+        o_img = Node(NodeType.OUTPUT, dim, dim * 2, dim, 0, config)
+        graph.add_node(s_text, modality="text")
+        graph.add_node(s_img, modality="image")
+        graph.add_node(assoc)
+        graph.add_node(o_text, modality="text")
+        graph.add_node(o_img, modality="image")
+        for src, tgt in [
+            (s_text, assoc),
+            (s_img, assoc),
+            (assoc, o_text),
+            (assoc, o_img),
+        ]:
+            graph.add_edge(
+                Edge(
+                    source_id=src.id,
+                    target_id=tgt.id,
+                    source_output_dim=dim,
+                    target_input_dim=dim,
+                    creation_step=0,
+                    initial_weight=1.0,
+                )
+            )
+        outputs, _ = execute_graph(
+            graph,
+            inputs={"text": torch.randn(dim), "image": torch.randn(dim)},
+            current_step=0,
+        )
+        assert set(outputs.keys()) == {"text", "image"}

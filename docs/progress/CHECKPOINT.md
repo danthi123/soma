@@ -1,17 +1,17 @@
 ---
 stage: 1
-unit: 6
+unit: 7
 status: pending
-last_completed: 5
+last_completed: 6
 total_units: 30
-completed_units: 5
+completed_units: 6
 ---
 
 # SOMA Build Checkpoint
 
 ## Current Work
 - Stage: 1 — Core Graph Engine
-- Unit: 6 — core/execution.py (topological_sort, cycle detection, execute_graph + tests)
+- Unit: 7 — core/learning.py (update_step: backprop + Hebbian + homeostatic gain + tests)
 - Status: pending
 
 ## Completed Units
@@ -22,7 +22,7 @@ completed_units: 5
 - [x] 3. `core/node.py` — Node nn.Module, NodeType enum, forward pass + tests
 - [x] 4. `core/edge.py` — Edge nn.Module, transmit, projection + tests
 - [x] 5. `core/graph.py` — Graph container + serialization + tests
-- [ ] 6. `core/execution.py` — topological_sort, cycle detection, execute_graph + tests
+- [x] 6. `core/execution.py` — topological_sort, cycle detection, execute_graph + tests
 - [ ] 7. `core/learning.py` — update_step (backprop + Hebbian + homeostatic gain) + tests
 - [ ] 8. `growth/synaptogenesis.py` + `growth/pruning.py` + tests
 - [ ] 9. Integration test: synthetic task, graph grows/prunes, stable over 10K steps
@@ -64,6 +64,7 @@ completed_units: 5
 - Unit 3: 30 tests pass (test_utils.py + test_node.py). Mypy clean. Ruff clean. (75 total)
 - Unit 4: 18 tests pass (test_edge.py). Mypy clean. Ruff clean. (93 total)
 - Unit 5: 24 tests pass (test_graph.py). Mypy clean. Ruff clean. (117 total)
+- Unit 6: 12 tests pass (test_execution.py). Mypy clean. Ruff clean. (129 total)
 
 ## Open Decisions
 (none yet)

@@ -2,6 +2,7 @@
 
 from soma.core.config import SOMAConfig
 from soma.core.edge import Edge
+from soma.core.execution import execute_graph, topological_sort
 from soma.core.graph import Graph
 from soma.core.node import Node, NodeType
 from soma.core.ring_buffer import RingBuffer
@@ -15,5 +16,7 @@ __all__ = [
     "RingBuffer",
     "SOMAConfig",
     "create_projection_if_needed",
+    "execute_graph",
     "generate_uuid",
+    "topological_sort",
 ]

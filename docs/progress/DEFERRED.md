@@ -1,7 +1,9 @@
 # SOMA — Deferred Items & Known Gaps
 
 **Date:** 2026-04-12
-**Status:** Tracked for post-v1 work
+**Status:** 6 of 7 resolved (see per-item status below); item 4 replaced
+with a preliminary baseline run in
+`docs/progress/FIRST_REAL_CORPUS_RUN.md`.
 
 These are gaps and deviations identified at the end of the autonomous
 build. The main suite (446 tests, mypy clean, ruff clean) passes in

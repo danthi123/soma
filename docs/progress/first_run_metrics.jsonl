@@ -1,0 +1,10 @@
+{"step": 50, "window_mean_loss": 0.018519493099302054, "curiosity": 0.0, "num_nodes": 34, "num_edges": 64, "lr_multiplier": 0.6285815091742153}
+{"step": 100, "window_mean_loss": 0.019580860212445258, "curiosity": 0.0, "num_nodes": 34, "num_edges": 64, "lr_multiplier": 1.0}
+{"step": 150, "window_mean_loss": 0.018897045850753785, "curiosity": 0.0044075923476664, "num_nodes": 34, "num_edges": 67, "lr_multiplier": 1.0}
+{"step": 200, "window_mean_loss": 0.019502710234373808, "curiosity": 0.0, "num_nodes": 34, "num_edges": 67, "lr_multiplier": 1.0}
+{"step": 250, "window_mean_loss": 0.018601534496992825, "curiosity": 0.003522370679204265, "num_nodes": 34, "num_edges": 69, "lr_multiplier": 1.0}
+{"step": 300, "window_mean_loss": 0.019102055355906488, "curiosity": 0.0, "num_nodes": 34, "num_edges": 69, "lr_multiplier": 1.0}
+{"step": 350, "window_mean_loss": 0.017960380595177412, "curiosity": 0.0052238817490370985, "num_nodes": 34, "num_edges": 70, "lr_multiplier": 1.0}
+{"step": 400, "window_mean_loss": 0.01844987613148987, "curiosity": 0.0, "num_nodes": 34, "num_edges": 70, "lr_multiplier": 1.0}
+{"step": 450, "window_mean_loss": 0.017500403504818678, "curiosity": 0.0027265730042723034, "num_nodes": 34, "num_edges": 73, "lr_multiplier": 1.0}
+{"step": 500, "window_mean_loss": 0.018172946460545063, "curiosity": 0.0029444010487967866, "num_nodes": 34, "num_edges": 73, "lr_multiplier": 1.0}

@@ -1,17 +1,17 @@
 ---
 stage: 6
-unit: 27
+unit: 28
 status: pending
-last_completed: 26
+last_completed: 27
 total_units: 30
-completed_units: 26
+completed_units: 27
 ---
 
 # SOMA Build Checkpoint
 
 ## Current Work
 - Stage: 6 — Interactive Environment
-- Unit: 27 — soma/system.py (SOMA main class) + tests
+- Unit: 28 — scripts/train.py + scripts/visualize.py
 - Status: pending
 
 ## Completed Units
@@ -53,7 +53,7 @@ completed_units: 26
 - [x] 26. Integration test: cross-modal association
 
 ### Stage 6: Interactive Environment
-- [ ] 27. `soma/system.py` — SOMA main class + tests
+- [x] 27. `soma/system.py` — SOMA main class + tests
 - [ ] 28. `scripts/train.py` + `scripts/visualize.py`
 - [ ] 29. `scripts/interactive.py` — CLI interface
 - [ ] 30. Full system integration test + wiki final update
@@ -92,6 +92,7 @@ completed_units: 26
 - Loosened Stage 1 fast integration's test_loss_trends_down bound (500-step run with conservative LR can drift flat under some inits; the slow 10K test remains strict).
 - Unit 26: 5 tests pass (test_stage5_multimodal.py). Mypy clean. Ruff clean. (370 total)
 - **Stage 5 COMPLETE**
+- Unit 27: 26 tests pass (test_system/test_soma.py). Mypy clean. Ruff clean. (396 total)
 
 ## Open Decisions
 (none yet)

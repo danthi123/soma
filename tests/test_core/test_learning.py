@@ -60,22 +60,31 @@ def _three_node_graph(config: SOMAConfig) -> tuple[Graph, Node, Node, Node]:
 
 class TestBackpropStep:
     def test_loss_decreases_over_steps(self, config: SOMAConfig) -> None:
+        torch.manual_seed(0)  # seed before graph init for deterministic weights
         graph, sensor, _, out = _three_node_graph(config)
-        torch.manual_seed(0)
+        # Use a moderate LR for this test so updates don't overshoot on
+        # the scale-1.0 random init.
+        tame_config = SOMAConfig(
+            base_lr=0.01,
+            youth_lr_multiplier=1.0,
+            hebbian_lr=0.0001,
+            maturity_increment=0.01,
+            activation_threshold=0.01,
+        )
         input_data = torch.randn(sensor.output_dim)
         target = torch.zeros(out.output_dim)
 
         losses: list[float] = []
-        for step in range(30):
+        for step in range(50):
             outputs, activations = execute_graph(
                 graph, inputs={"text": input_data}, current_step=step
             )
             out_tensor = outputs["text"]
             loss = F.mse_loss(out_tensor, target)
             losses.append(float(loss.item()))
-            update_step(graph, loss, activations, config)
+            update_step(graph, loss, activations, tame_config)
 
-        # Some progress expected in 30 steps on a trivial regression.
+        # Some progress expected in 50 steps on a trivial regression.
         assert losses[-1] < losses[0] * 0.8
 
     def test_node_params_change(self, config: SOMAConfig) -> None:

@@ -60,8 +60,7 @@ def synaptogenesis(
 
     # Pre-compute positions as CPU float32 tensors for distance math.
     positions: dict[str, torch.Tensor] = {
-        nid: _to_cpu_float(cast(torch.Tensor, graph.nodes[nid].position))
-        for nid in active_ids
+        nid: _to_cpu_float(cast(torch.Tensor, graph.nodes[nid].position)) for nid in active_ids
     }
 
     new_edges: list[Edge] = []

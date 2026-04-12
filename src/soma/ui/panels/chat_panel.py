@@ -84,7 +84,7 @@ class ChatPanel:
         with dpg.group(parent=self._root, horizontal=True):
             dpg.add_input_text(
                 tag=self._input_tag,
-                hint="type a message…",
+                hint="type a message...",
                 width=-120,
                 on_enter=True,
                 callback=self._on_send,
@@ -120,7 +120,7 @@ class ChatPanel:
             return
         dpg.set_value(self._input_tag, "")
         self._append_history(f"You: {text}")
-        dpg.set_value(self._status_tag, "thinking…")
+        dpg.set_value(self._status_tag, "thinking...")
 
         pause = bool(dpg.get_value(self._pause_tag))
         max_tokens = int(dpg.get_value(self._max_tokens_tag))
@@ -147,7 +147,7 @@ class ChatPanel:
         decoder = state.controller.decoder
 
         if soma is None or encoder is None or decoder is None:
-            reply = "[no session — press Start first]"
+            reply = "[no session - press Start first]"
         else:
             reply = _run_interactive(soma, encoder, decoder, text, max_tokens)
 

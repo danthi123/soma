@@ -220,7 +220,7 @@ class TrainingController:
     def save_checkpoint(self, path: str | Path) -> None:
         """Save the current SOMA state (safe to call while paused or idle)."""
         if self._soma is None:
-            raise RuntimeError("No SOMA to save — configure and start first")
+            raise RuntimeError("No SOMA to save - configure and start first")
         if self.state is TrainingState.RUNNING:
             raise RuntimeError("Pause before saving a checkpoint")
         self._soma.save_state(path)
@@ -228,7 +228,7 @@ class TrainingController:
     def load_checkpoint(self, path: str | Path) -> None:
         """Load SOMA state. Must be stopped or paused first."""
         if self._soma is None:
-            raise RuntimeError("No SOMA to load into — configure first")
+            raise RuntimeError("No SOMA to load into - configure first")
         if self.state is TrainingState.RUNNING:
             raise RuntimeError("Pause before loading a checkpoint")
         self._soma.load_state(path)
@@ -315,7 +315,7 @@ class TrainingController:
         self._feeder = None
         self._sample_iter = None
         self._total_steps = 0
-        self._publish_log("reset complete — ready for start")
+        self._publish_log("reset complete - ready for start")
 
     def _one_step(self) -> None:
         """Run a single SOMA.step and publish metrics / growth events."""

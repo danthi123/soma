@@ -60,7 +60,7 @@ class MetricsPanel:
 
         self._root = dpg.add_group(parent=parent, tag="panel_metrics_root")
 
-        def _plot(title: str, y_label: str, tag_prefix: str, height: int = 160) -> None:
+        def _plot(title: str, y_label: str, tag_prefix: str, height: int = 130) -> None:
             with dpg.plot(label=title, height=height, width=-1, parent=self._root):
                 dpg.add_plot_axis(dpg.mvXAxis, label="global_step", tag=f"{tag_prefix}_x")
                 with dpg.plot_axis(dpg.mvYAxis, label=y_label, tag=f"{tag_prefix}_y"):
@@ -71,7 +71,7 @@ class MetricsPanel:
         _plot("LR multiplier", "lr_mul", "metrics_lrmul")
         with dpg.plot(
             label="Graph size",
-            height=160,
+            height=130,
             width=-1,
             parent=self._root,
             tag="metrics_size_plot",
@@ -84,7 +84,7 @@ class MetricsPanel:
         _plot("WM occupancy", "fraction", "metrics_wm")
 
         # Growth event strip plot — render as a scatter with colored markers.
-        with dpg.plot(label="Growth events", height=110, width=-1, parent=self._root):
+        with dpg.plot(label="Growth events", height=90, width=-1, parent=self._root):
             dpg.add_plot_axis(dpg.mvXAxis, label="global_step", tag="growth_x")
             with dpg.plot_axis(dpg.mvYAxis, label="type", no_tick_labels=True, tag="growth_y"):
                 dpg.add_scatter_series([], [], tag="growth_series_syn", label="syn")

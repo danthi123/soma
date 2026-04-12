@@ -228,7 +228,7 @@ class ControlsPanel:
         state.controller.configure(spec)
         state.last_corpus_path = str(corpus_path)
         self._set_status(
-            f"session ready — corpus={len(corpus)} lines, vocab={vocab_size}, device={device}"
+            f"session ready - corpus={len(corpus)} lines, vocab={vocab_size}, device={device}"
         )
 
     def _set_status(self, msg: str) -> None:

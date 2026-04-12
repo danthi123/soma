@@ -111,13 +111,23 @@ def _build_layout(state: UIState, built_panels: list[tuple[str, Panel]]) -> None
                 callback=lambda s, a, u: state.controller.reset(),
             )
 
-        # Three-column layout using horizontal groups + child windows.
-        with dpg.group(horizontal=True):
+        # Controls live at the TOP of the window in a fixed-height strip so
+        # they're always reachable without scrolling past the (often tall)
+        # metrics plots below.
+        with dpg.child_window(
+            height=260,
+            border=True,
+            tag="row_top",
+        ):
+            _build_panel(state, built_panels, "controls", parent="row_top")
+
+        # Three-column layout fills the remaining vertical space.
+        with dpg.group(horizontal=True, tag="main_columns"):
             # Left column: config.
             with dpg.child_window(width=360, height=-1, border=True, tag="col_left"):
                 _build_panel(state, built_panels, "config", parent="col_left")
 
-            # Center column: metrics on top, graph on bottom.
+            # Center column: metrics / graph tabs.
             with (
                 dpg.child_window(width=760, height=-1, border=True, tag="col_center"),
                 dpg.tab_bar(tag="center_tabs"),
@@ -130,14 +140,6 @@ def _build_layout(state: UIState, built_panels: list[tuple[str, Panel]]) -> None
             # Right column: chat.
             with dpg.child_window(width=-1, height=-1, border=True, tag="col_right"):
                 _build_panel(state, built_panels, "chat", parent="col_right")
-
-        # Bottom bar: controls.
-        with dpg.child_window(
-            height=260,
-            border=True,
-            tag="row_bottom",
-        ):
-            _build_panel(state, built_panels, "controls", parent="row_bottom")
 
         # Any custom panels that weren't placed explicitly go into a floating tab bar.
         builtins = {"config", "metrics", "graph", "chat", "controls"}

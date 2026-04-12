@@ -1,17 +1,17 @@
 ---
 stage: 5
-unit: 24
+unit: 25
 status: pending
-last_completed: 23
+last_completed: 24
 total_units: 30
-completed_units: 23
+completed_units: 24
 ---
 
 # SOMA Build Checkpoint
 
 ## Current Work
 - Stage: 5 — Multimodal
-- Unit: 24 — io/image_encoder.py + tests
+- Unit: 25 — io/multimodal_curriculum.py + tests
 - Status: pending
 
 ## Completed Units
@@ -48,7 +48,7 @@ completed_units: 23
 - [x] 23. Enhance consolidation with structural maintenance + integration test
 
 ### Stage 5: Multimodal
-- [ ] 24. `io/image_encoder.py` + tests
+- [x] 24. `io/image_encoder.py` + tests
 - [ ] 25. `io/multimodal_curriculum.py` + tests
 - [ ] 26. Integration test: cross-modal association
 
@@ -87,6 +87,7 @@ completed_units: 23
 - Unit 22: 11 tests pass (test_myelination.py). Mypy clean. Ruff clean. (328 total)
 - Unit 23: 4 structural-maintenance + 4 stage4 integration tests pass. Mypy clean. Ruff clean. (336 total)
 - **Stage 4 COMPLETE**
+- Unit 24: 12 tests pass (test_image_encoder.py). Mypy clean. Ruff clean. (348 total)
 
 ## Open Decisions
 (none yet)

@@ -1,24 +1,24 @@
 ---
 stage: 1
-unit: 2
+unit: 3
 status: pending
-last_completed: 1
+last_completed: 2
 total_units: 30
-completed_units: 1
+completed_units: 2
 ---
 
 # SOMA Build Checkpoint
 
 ## Current Work
 - Stage: 1 — Core Graph Engine
-- Unit: 2 — core/ring_buffer.py (RingBuffer for activation history + tests)
+- Unit: 3 — core/node.py (Node dataclass, NodeType enum, forward pass + tests)
 - Status: pending
 
 ## Completed Units
 
 ### Stage 1: Core Graph Engine
 - [x] 1. `core/config.py` — SOMAConfig dataclass + YAML loader + tests
-- [ ] 2. `core/ring_buffer.py` — RingBuffer for activation history + tests
+- [x] 2. `core/ring_buffer.py` — RingBuffer for activation history + tests
 - [ ] 3. `core/node.py` — Node dataclass, NodeType enum, forward pass + tests
 - [ ] 4. `core/edge.py` — Edge dataclass, transmit, projection + tests
 - [ ] 5. `core/graph.py` — Graph container + serialization + tests
@@ -60,6 +60,7 @@ completed_units: 1
 
 ## Test Results
 - Unit 1: 21 tests pass (test_config.py). Mypy clean. Ruff clean.
+- Unit 2: 24 tests pass (test_ring_buffer.py). Mypy clean. Ruff clean. (45 total)
 
 ## Open Decisions
 (none yet)

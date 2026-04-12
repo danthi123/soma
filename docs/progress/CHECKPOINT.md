@@ -1,10 +1,10 @@
 ---
 stage: 6
 unit: 30
-status: pending
-last_completed: 29
+status: complete
+last_completed: 30
 total_units: 30
-completed_units: 29
+completed_units: 30
 ---
 
 # SOMA Build Checkpoint
@@ -12,7 +12,7 @@ completed_units: 29
 ## Current Work
 - Stage: 6 — Interactive Environment
 - Unit: 30 — Full system integration test + wiki final update
-- Status: pending
+- Status: complete (all 30 units shipped)
 
 ## Completed Units
 
@@ -56,7 +56,7 @@ completed_units: 29
 - [x] 27. `soma/system.py` — SOMA main class + tests
 - [x] 28. `scripts/train.py` + `scripts/visualize.py`
 - [x] 29. `scripts/interactive.py` — CLI interface
-- [ ] 30. Full system integration test + wiki final update
+- [x] 30. Full system integration test + wiki final update
 
 ## Test Results
 - Unit 1: 21 tests pass (test_config.py). Mypy clean. Ruff clean.
@@ -95,6 +95,8 @@ completed_units: 29
 - Unit 27: 26 tests pass (test_system/test_soma.py). Mypy clean. Ruff clean. (396 total)
 - Unit 28: 22 tests pass (test_scripts/test_train.py + test_visualize.py). Mypy clean. Ruff clean. (418 total)
 - Unit 29: 23 tests pass (test_scripts/test_interactive.py). Mypy clean. Ruff clean. (441 total)
+- Unit 30: 4 tests pass (test_integration/test_stage6_full_system.py). Mypy clean. Ruff clean. (445 total + 1 slow). Wiki: entities/soma.md updated, sources/conv-soma-build-complete-2026-04-12.md created.
+- **Stage 6 COMPLETE** — all 30 units shipped. SOMA build complete.
 
 ## Open Decisions
 (none yet)

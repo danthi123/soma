@@ -66,6 +66,12 @@ class SOMA:
 
         self.graph = Graph()
         self._initialize_seed_graph(config)
+        # Move the entire graph (nodes + edges, including projections) onto
+        # the requested device. Subsequent synaptogenesis / neurogenesis
+        # calls need to respect the same device — see _try_add_edge and
+        # the growth functions (they now call .to(device) on new modules).
+        if device is not None:
+            self.graph.to(device)
 
         self.working_memory = WorkingMemory.from_config(config, device=device)
         self.episodic_memory = EpisodicMemory.from_config(config, device=device)

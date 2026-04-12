@@ -88,6 +88,52 @@ class TestSampling:
             dec.sample_token(torch.randn(16), top_k=0)
 
 
+class TestTieWeights:
+    def test_tie_weights_shares_tensor(self, tiny_tokenizer: object) -> None:
+        enc = TextEncoder(tiny_tokenizer, embed_dim=16)
+        dec = TextDecoder(tiny_tokenizer, embed_dim=16)
+        dec.tie_weights(enc)
+        assert dec.output_proj.weight is enc.embedding.weight
+
+    def test_tie_weights_gradient_flows_both_ways(self, tiny_tokenizer: object) -> None:
+        """Updating decoder weight should be visible on encoder embedding."""
+        enc = TextEncoder(tiny_tokenizer, embed_dim=16)
+        dec = TextDecoder(tiny_tokenizer, embed_dim=16)
+        dec.tie_weights(enc)
+        with torch.no_grad():
+            dec.output_proj.weight[0].fill_(7.0)
+        assert torch.all(enc.embedding.weight[0] == 7.0)
+
+    def test_tie_weights_reproduces_token_from_embedding(self, tiny_tokenizer: object) -> None:
+        """A token whose embedding we point at, then decode, should come back."""
+        enc = TextEncoder(tiny_tokenizer, embed_dim=16)
+        dec = TextDecoder(tiny_tokenizer, embed_dim=16)
+        dec.tie_weights(enc)
+        token_id = 7
+        # Pull out that token's embedding as the activation.
+        activation = enc.embedding.weight[token_id].detach().clone()
+        # With a tied decoder + zero bias, the token whose embedding matches
+        # should be the argmax candidate.
+        with torch.no_grad():
+            dec.output_proj.bias.zero_()
+        assert dec.decode_token(activation) == token_id
+
+    def test_tie_weights_rejects_missing_embedding(self, tiny_tokenizer: object) -> None:
+        dec = TextDecoder(tiny_tokenizer, embed_dim=16)
+
+        class NoEmbedding:
+            pass
+
+        with pytest.raises(ValueError, match="embedding"):
+            dec.tie_weights(NoEmbedding())  # type: ignore[arg-type]
+
+    def test_tie_weights_rejects_shape_mismatch(self, tiny_tokenizer: object) -> None:
+        enc = TextEncoder(tiny_tokenizer, embed_dim=32)
+        dec = TextDecoder(tiny_tokenizer, embed_dim=16)
+        with pytest.raises(ValueError, match="shape mismatch"):
+            dec.tie_weights(enc)
+
+
 class TestCoRoundTrip:
     def test_encoder_decoder_share_vocab(self, tiny_tokenizer: object) -> None:
         enc = TextEncoder(tiny_tokenizer, embed_dim=16)

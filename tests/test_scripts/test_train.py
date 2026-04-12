@@ -18,7 +18,7 @@ if str(_SCRIPTS_DIR) not in sys.path:
 import train  # noqa: E402
 
 from soma.core.config import SOMAConfig  # noqa: E402
-from soma.io.dataset_feeders import TextDatasetFeeder  # noqa: E402
+from soma.io.dataset_feeders import Sample, TextDatasetFeeder  # noqa: E402
 from soma.system import SOMA  # noqa: E402
 
 
@@ -118,6 +118,96 @@ class TestBuildEncoders:
 # ----------------------------------------------------------------------
 # Training loop
 # ----------------------------------------------------------------------
+class TestIterTokenPairs:
+    def test_yields_one_pair_per_target_token(
+        self, small_config: SOMAConfig, corpus_file: Path
+    ) -> None:
+        corpus = train.read_corpus(corpus_file)
+        encoder, _ = train.build_encoders(small_config, corpus, vocab_size=64)
+        feeder = TextDatasetFeeder(encoder, corpus, chunk_size=4)
+        sample = next(iter(feeder))
+        pairs = list(train._iter_token_pairs(sample, "text"))
+        assert len(pairs) == sample.target.shape[0]
+
+    def test_input_shorter_than_target_cycles_last_token(self, small_config: SOMAConfig) -> None:
+        # Build a Sample by hand with short inputs + long target.
+        dim = small_config.sensor_output_dim
+        sample = Sample(
+            inputs={"text": torch.randn(2, dim)},  # only 2 input tokens
+            target=torch.randn(5, dim),  # but 5 target tokens
+        )
+        pairs = list(train._iter_token_pairs(sample, "text"))
+        assert len(pairs) == 5
+        # Last three pairs should all have the same input (index 1 — the last).
+        last_three_inputs = [p[0]["text"] for p in pairs[2:]]
+        for inp in last_three_inputs:
+            assert torch.equal(inp, sample.inputs["text"][1])
+
+    def test_empty_target_yields_nothing(self) -> None:
+        sample = Sample(inputs={"text": torch.zeros(0, 8)}, target=torch.zeros(0, 8))
+        assert list(train._iter_token_pairs(sample, "text")) == []
+
+
+class TestFullSequenceTraining:
+    def test_full_sequence_steps_more_than_samples(
+        self, small_config: SOMAConfig, corpus_file: Path, tmp_path: Path
+    ) -> None:
+        """Full-sequence mode should advance global_step per *token*, not per sample."""
+        corpus = train.read_corpus(corpus_file)
+        encoder, _ = train.build_encoders(small_config, corpus, vocab_size=64)
+        feeder = TextDatasetFeeder(encoder, corpus, chunk_size=4)
+        soma = SOMA(small_config)
+        # 8 total training steps; feeder produces 4-token targets per sample
+        # so we should cover at least 2 samples and global_step == 8.
+        train.train(
+            soma,
+            feeder,
+            num_steps=8,
+            log_every=4,
+            checkpoint_dir=tmp_path / "ckpts",
+            full_sequence=True,
+        )
+        assert soma.global_step == 8
+
+    def test_no_full_sequence_steps_once_per_sample(
+        self, small_config: SOMAConfig, corpus_file: Path, tmp_path: Path
+    ) -> None:
+        corpus = train.read_corpus(corpus_file)
+        encoder, _ = train.build_encoders(small_config, corpus, vocab_size=64)
+        feeder = TextDatasetFeeder(encoder, corpus, chunk_size=4)
+        soma = SOMA(small_config)
+        train.train(
+            soma,
+            feeder,
+            num_steps=5,
+            log_every=5,
+            checkpoint_dir=tmp_path / "ckpts",
+            full_sequence=False,
+        )
+        assert soma.global_step == 5
+
+    def test_wm_reset_between_samples_when_requested(
+        self, small_config: SOMAConfig, corpus_file: Path, tmp_path: Path
+    ) -> None:
+        corpus = train.read_corpus(corpus_file)
+        encoder, _ = train.build_encoders(small_config, corpus, vocab_size=64)
+        feeder = TextDatasetFeeder(encoder, corpus, chunk_size=2)
+        soma = SOMA(small_config)
+        train.train(
+            soma,
+            feeder,
+            num_steps=6,
+            log_every=6,
+            checkpoint_dir=tmp_path / "ckpts",
+            full_sequence=True,
+            reset_wm_between_samples=True,
+        )
+        # Not a precise test — we just verify training completes and WM is
+        # in a valid state.
+        assert soma.global_step == 6
+        assert float(soma.working_memory._usage().max().item()) >= 0.0
+
+
 class TestTrainLoop:
     def test_short_run_writes_checkpoints(
         self,

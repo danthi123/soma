@@ -58,6 +58,33 @@ class Graph(nn.Module):
         self._sensor_by_modality: dict[str, str] = {}  # modality -> node_id
         self._output_by_modality: dict[str, str] = {}  # modality -> node_id
 
+        # Device tracking. ``Graph.to(device)`` updates this so later
+        # ``add_node`` / ``add_edge`` calls can move their arguments onto the
+        # same device. ``None`` means "don't force anything; use the module's
+        # own device," which is the CPU default.
+        self._device: torch.device | None = None
+
+    def _apply(self, fn, recurse: bool = True):  # type: ignore[no-untyped-def]
+        """Override ``nn.Module._apply`` so ``.to(device)`` / ``.cpu()`` /
+        ``.cuda()`` also update our tracked device. ``to(device)`` eventually
+        calls ``_apply`` with a closure that carries the target device.
+        """
+        result = super()._apply(fn, recurse=recurse)  # type: ignore[no-untyped-call]
+        # Peek at any surviving parameter/buffer to discover our effective device.
+        for param in self.parameters():
+            self._device = param.device
+            break
+        else:
+            for buf in self.buffers():
+                self._device = buf.device
+                break
+        return result
+
+    @property
+    def device(self) -> torch.device | None:
+        """The device the graph currently lives on, or ``None`` if empty."""
+        return self._device
+
     # ==================================================================
     # Node operations
     # ==================================================================
@@ -71,6 +98,8 @@ class Graph(nn.Module):
         """
         if node.id in self._nodes:
             raise ValueError(f"Node {node.id[:8]} is already in the graph")
+        if self._device is not None:
+            node.to(self._device)
         self._nodes[node.id] = node
         self._incoming[node.id] = set()
         self._outgoing[node.id] = set()
@@ -172,6 +201,8 @@ class Graph(nn.Module):
                 f"target node input dim {tgt_node.input_dim}"
             )
 
+        if self._device is not None:
+            edge.to(self._device)
         self._edges[edge.id] = edge
         self._outgoing[edge.source_id].add(edge.id)
         self._incoming[edge.target_id].add(edge.id)

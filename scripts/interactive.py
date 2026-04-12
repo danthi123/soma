@@ -35,6 +35,17 @@ LOGGER = logging.getLogger("soma.interactive")
 
 PROMPT = "soma> "
 
+# Checkpoints with fewer than this many steps are considered "untrained" and
+# trigger a warning banner in the REPL. 100 steps is enough to show the
+# machinery runs; it's far below "the model has learned anything useful".
+UNTRAINED_STEP_THRESHOLD = 100
+
+UNTRAINED_WARNING = (
+    "WARNING: checkpoint has global_step={step} (< {threshold}). "
+    "Output will look like random tokens until the model has been trained "
+    "on a corpus. Use scripts/train.py or the UI to train, then reload."
+)
+
 
 # ----------------------------------------------------------------------
 # Argument parsing
@@ -183,6 +194,18 @@ def _iter_default_input(stream: IO[str]) -> Iterable[str]:
         yield line.rstrip("\n")
 
 
+def untrained_warning(soma: SOMA, threshold: int = UNTRAINED_STEP_THRESHOLD) -> str | None:
+    """Return a warning string if ``soma`` looks untrained, else None.
+
+    A freshly-constructed SOMA has ``global_step == 0`` and will emit
+    near-random tokens. Callers (REPL, UI) can surface this to users so
+    they know the model needs training before output is meaningful.
+    """
+    if soma.global_step < threshold:
+        return UNTRAINED_WARNING.format(step=soma.global_step, threshold=threshold)
+    return None
+
+
 def run_session(
     soma: SOMA,
     encoder: TextEncoder,
@@ -201,6 +224,10 @@ def run_session(
 
     if banner:
         print(banner, file=out)
+
+    warning = untrained_warning(soma)
+    if warning is not None:
+        print(warning, file=out)
 
     def text_encoder_fn(text: str) -> torch.Tensor:
         vec = encoder.encode_batch(text)

@@ -212,6 +212,66 @@ class TestHandleCommand:
 # ----------------------------------------------------------------------
 # REPL
 # ----------------------------------------------------------------------
+class TestUntrainedWarning:
+    def test_zero_step_soma_yields_warning(self, small_config: SOMAConfig) -> None:
+        soma = SOMA(small_config)
+        msg = interactive.untrained_warning(soma)
+        assert msg is not None
+        assert "global_step=0" in msg
+
+    def test_threshold_is_configurable(self, small_config: SOMAConfig) -> None:
+        soma = SOMA(small_config)
+        for _ in range(3):
+            soma.step(
+                inputs={"text": torch.randn(small_config.sensor_output_dim)},
+                targets={"text": torch.randn(small_config.sensor_output_dim)},
+            )
+        # At threshold=2 and 3 real steps, we're past it.
+        assert interactive.untrained_warning(soma, threshold=2) is None
+        # But at threshold=10 we're still under.
+        assert interactive.untrained_warning(soma, threshold=10) is not None
+
+    def test_run_session_emits_warning_for_fresh_soma(
+        self, small_config: SOMAConfig, tokenizer_file: Path
+    ) -> None:
+        soma = SOMA(small_config)
+        encoder, decoder = interactive.prepare_encoders(
+            small_config, tokenizer_path=tokenizer_file, corpus_path=None
+        )
+        out = io.StringIO()
+        interactive.run_session(
+            soma,
+            encoder,
+            decoder,
+            input_lines=[":quit"],
+            output_stream=out,
+            banner=None,
+        )
+        assert "WARNING" in out.getvalue()
+
+    def test_run_session_skips_warning_for_trained_soma(
+        self, small_config: SOMAConfig, tokenizer_file: Path
+    ) -> None:
+        soma = SOMA(small_config)
+        # Push past the default threshold.
+        dim = small_config.sensor_output_dim
+        for _ in range(interactive.UNTRAINED_STEP_THRESHOLD + 5):
+            soma.step(inputs={"text": torch.randn(dim)}, targets={"text": torch.randn(dim)})
+        encoder, decoder = interactive.prepare_encoders(
+            small_config, tokenizer_path=tokenizer_file, corpus_path=None
+        )
+        out = io.StringIO()
+        interactive.run_session(
+            soma,
+            encoder,
+            decoder,
+            input_lines=[":quit"],
+            output_stream=out,
+            banner=None,
+        )
+        assert "WARNING" not in out.getvalue()
+
+
 class TestRunSession:
     def _make_encoder_decoder(self, small_config: SOMAConfig, tokenizer_file: Path) -> tuple:
         return interactive.prepare_encoders(

@@ -10,14 +10,16 @@ The script loads a SOMA checkpoint and emits:
 - edge count + average strength / weight
 - the top-K most-active nodes
 - (optional) a graphviz ``.dot`` file for off-line rendering
+- (optional) a networkx JSON node-link export for downstream tools
 
-No heavy dependencies — we generate the ``.dot`` by hand to keep the
-install footprint small.
+The graphviz + JSON exporters are hand-written; the networkx exporter
+imports networkx lazily so the base install stays lean.
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import sys
 from collections import Counter
@@ -58,6 +60,18 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="Optional path for a graphviz DOT file.",
     )
     parser.add_argument(
+        "--json",
+        type=Path,
+        default=None,
+        help="Optional path for a networkx-style JSON node-link file.",
+    )
+    parser.add_argument(
+        "--png",
+        type=Path,
+        default=None,
+        help=("Optional path for a matplotlib-rendered PNG (requires networkx + matplotlib)."),
+    )
+    parser.add_argument(
         "--top-k",
         type=int,
         default=10,
@@ -68,6 +82,12 @@ def build_arg_parser() -> argparse.ArgumentParser:
         type=int,
         default=500,
         help="Truncate the DOT file to the most-active K nodes (graphviz scales poorly).",
+    )
+    parser.add_argument(
+        "--max-render-nodes",
+        type=int,
+        default=500,
+        help="Truncate JSON/PNG exports to this many most-active nodes.",
     )
     return parser
 
@@ -180,14 +200,7 @@ _NODE_COLORS: dict[NodeType, str] = {
 def to_dot(soma: SOMA, *, max_nodes: int) -> str:
     """Produce a graphviz DOT description, truncating to ``max_nodes`` most-active."""
     graph = soma.graph
-    keep_ids: set[str]
-    if graph.num_nodes <= max_nodes:
-        keep_ids = {n.id for n in graph.all_nodes()}
-    else:
-        # Always include boundary nodes regardless of activation.
-        boundary_ids = {n.id for n in graph.all_nodes() if n.node_type.is_boundary}
-        active = most_active_nodes(graph, max_nodes)
-        keep_ids = boundary_ids | {n.id for n in active}
+    keep_ids = _keep_ids(graph, max_nodes)
 
     lines: list[str] = ["digraph SOMA {", '  rankdir="LR";', '  node [style="filled"];']
     for node in graph.all_nodes():
@@ -214,6 +227,129 @@ def to_dot(soma: SOMA, *, max_nodes: int) -> str:
 
 
 # ----------------------------------------------------------------------
+# Shared truncation helper
+# ----------------------------------------------------------------------
+def _keep_ids(graph: Graph, max_nodes: int) -> set[str]:
+    """Boundary nodes + top-k most-active non-boundary nodes (if over cap)."""
+    if graph.num_nodes <= max_nodes:
+        return {n.id for n in graph.all_nodes()}
+    boundary_ids = {n.id for n in graph.all_nodes() if n.node_type.is_boundary}
+    active = most_active_nodes(graph, max_nodes)
+    return boundary_ids | {n.id for n in active}
+
+
+# ----------------------------------------------------------------------
+# JSON (networkx node-link) export
+# ----------------------------------------------------------------------
+def to_node_link_json(soma: SOMA, *, max_nodes: int) -> dict[str, Any]:
+    """Produce a networkx-compatible node-link JSON structure.
+
+    Shape matches ``networkx.readwrite.json_graph.node_link_data`` so
+    downstream consumers can reconstitute a ``nx.DiGraph`` via
+    ``node_link_graph``. We build the dict by hand to avoid requiring
+    networkx at import time.
+    """
+    graph = soma.graph
+    keep_ids = _keep_ids(graph, max_nodes)
+    nodes: list[dict[str, Any]] = []
+    for node in graph.all_nodes():
+        if node.id not in keep_ids:
+            continue
+        modality = _modality_for_node(graph, node)
+        nodes.append(
+            {
+                "id": node.id,
+                "type": node.node_type.value,
+                "activation_ema": float(node.activation_ema),
+                "maturity": float(node.maturity),
+                "modality": modality,
+            }
+        )
+    links: list[dict[str, Any]] = []
+    for edge in graph.all_edges():
+        if edge.source_id not in keep_ids or edge.target_id not in keep_ids:
+            continue
+        links.append(
+            {
+                "source": edge.source_id,
+                "target": edge.target_id,
+                "weight": float(edge.weight.item()),
+                "strength": float(edge.strength),
+            }
+        )
+    return {
+        "directed": True,
+        "multigraph": False,
+        "graph": {
+            "global_step": soma.global_step,
+            "num_nodes_total": graph.num_nodes,
+            "num_edges_total": graph.num_edges,
+            "truncated": graph.num_nodes > max_nodes,
+        },
+        "nodes": nodes,
+        "links": links,
+    }
+
+
+def to_networkx(soma: SOMA, *, max_nodes: int) -> Any:
+    """Build a ``networkx.DiGraph`` from the SOMA graph.
+
+    Imports networkx lazily — callers must ``pip install networkx`` (pulled
+    in via the ``viz`` optional extra).
+    """
+    try:
+        import networkx as nx
+    except ImportError as exc:  # pragma: no cover - optional dep
+        raise ImportError(
+            "networkx is required for networkx export; install with 'pip install -e \".[viz]\"'"
+        ) from exc
+    data = to_node_link_json(soma, max_nodes=max_nodes)
+    graph = nx.DiGraph()
+    graph.graph.update(data["graph"])
+    for node in data["nodes"]:
+        graph.add_node(node["id"], **{k: v for k, v in node.items() if k != "id"})
+    for link in data["links"]:
+        graph.add_edge(
+            link["source"],
+            link["target"],
+            weight=link["weight"],
+            strength=link["strength"],
+        )
+    return graph
+
+
+def render_png(soma: SOMA, path: Path, *, max_nodes: int) -> None:
+    """Render a matplotlib PNG of the graph via networkx spring layout.
+
+    Imports matplotlib + networkx lazily so the base install stays lean.
+    """
+    try:
+        import matplotlib
+
+        matplotlib.use("Agg")  # non-interactive backend for headless rendering
+        import matplotlib.pyplot as plt
+        import networkx as nx
+    except ImportError as exc:  # pragma: no cover - optional dep
+        raise ImportError(
+            "matplotlib + networkx are required for PNG export; install with "
+            "'pip install -e \".[viz]\"'"
+        ) from exc
+    nx_graph = to_networkx(soma, max_nodes=max_nodes)
+    if nx_graph.number_of_nodes() == 0:
+        raise ValueError("Cannot render an empty graph")
+    pos = nx.spring_layout(nx_graph, seed=0)
+    colors = [_NODE_COLORS.get(NodeType(nx_graph.nodes[n]["type"]), "white") for n in nx_graph]
+    fig, ax = plt.subplots(figsize=(10, 10))
+    nx.draw_networkx_edges(nx_graph, pos, ax=ax, alpha=0.4, arrows=True, arrowsize=8)
+    nx.draw_networkx_nodes(nx_graph, pos, ax=ax, node_color=colors, node_size=60)
+    ax.set_title(f"SOMA graph @ step {soma.global_step} ({nx_graph.number_of_nodes()} nodes)")
+    ax.set_axis_off()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(str(path), dpi=120, bbox_inches="tight")
+    plt.close(fig)
+
+
+# ----------------------------------------------------------------------
 # Main
 # ----------------------------------------------------------------------
 def run(args: argparse.Namespace) -> dict[str, Any]:
@@ -236,10 +372,26 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         written_dot = args.dot
         LOGGER.info("DOT graph written to %s", args.dot)
 
+    written_json: Path | None = None
+    if args.json is not None:
+        data = to_node_link_json(soma, max_nodes=args.max_render_nodes)
+        args.json.parent.mkdir(parents=True, exist_ok=True)
+        args.json.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        written_json = args.json
+        LOGGER.info("JSON graph written to %s", args.json)
+
+    written_png: Path | None = None
+    if args.png is not None:
+        render_png(soma, args.png, max_nodes=args.max_render_nodes)
+        written_png = args.png
+        LOGGER.info("PNG graph rendered to %s", args.png)
+
     return {
         "summary": summary,
         "output_path": str(args.output) if args.output is not None else None,
         "dot_path": str(written_dot) if written_dot is not None else None,
+        "json_path": str(written_json) if written_json is not None else None,
+        "png_path": str(written_png) if written_png is not None else None,
         "num_nodes": soma.graph.num_nodes,
         "num_edges": soma.graph.num_edges,
     }

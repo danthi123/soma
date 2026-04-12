@@ -118,6 +118,35 @@ class TextDecoder(nn.Module):
         return int(choice.item())
 
     # ------------------------------------------------------------------
+    # Weight tying
+    # ------------------------------------------------------------------
+    def tie_weights(self, encoder: nn.Module) -> None:
+        """Share ``output_proj.weight`` with ``encoder.embedding.weight``.
+
+        Standard weight-tying pattern: ``logits = activation @ W^T`` reuses
+        the same matrix the encoder trains for token embeddings, so a token
+        that's learned an embedding direction is decoded back to the same
+        token id via argmax. Requires both sides to agree on ``vocab_size``
+        and ``embed_dim``; a shape mismatch raises ``ValueError``.
+
+        The bias is left independent — only the weight matrix is tied.
+        """
+        if not hasattr(encoder, "embedding"):
+            raise ValueError("tie_weights expects the encoder to expose an 'embedding' attribute")
+        emb = encoder.embedding
+        if not isinstance(emb, nn.Embedding):
+            raise ValueError(f"encoder.embedding must be nn.Embedding, got {type(emb).__name__}")
+        if emb.weight.shape != self.output_proj.weight.shape:
+            raise ValueError(
+                f"tie_weights shape mismatch: encoder embedding "
+                f"{tuple(emb.weight.shape)} vs decoder output_proj "
+                f"{tuple(self.output_proj.weight.shape)}"
+            )
+        # Share the parameter so backprop through either side updates the
+        # same tensor. Bias stays separate.
+        self.output_proj.weight = emb.weight
+
+    # ------------------------------------------------------------------
     # Save / Load helpers
     # ------------------------------------------------------------------
     def save_tokenizer(self, path: str | Path) -> None:

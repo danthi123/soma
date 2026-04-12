@@ -141,6 +141,69 @@ class TestDotExport:
 
 
 # ----------------------------------------------------------------------
+# networkx + JSON + PNG exports
+# ----------------------------------------------------------------------
+class TestNodeLinkJSON:
+    def test_roundtrip_shape(self, small_config: SOMAConfig) -> None:
+        soma = SOMA(small_config)
+        data = visualize.to_node_link_json(soma, max_nodes=100)
+        assert data["directed"] is True
+        assert data["multigraph"] is False
+        assert data["graph"]["num_nodes_total"] == soma.graph.num_nodes
+        assert data["graph"]["num_edges_total"] == soma.graph.num_edges
+        # All node entries carry our expected metadata keys.
+        for node in data["nodes"]:
+            assert {"id", "type", "activation_ema", "maturity", "modality"}.issubset(node)
+        for link in data["links"]:
+            assert {"source", "target", "weight", "strength"}.issubset(link)
+
+    def test_truncation_flag_set_when_over_cap(self, small_config: SOMAConfig) -> None:
+        soma = SOMA(small_config)
+        data = visualize.to_node_link_json(soma, max_nodes=1)
+        assert data["graph"]["truncated"] is True
+
+    def test_truncation_keeps_boundary_nodes(self, small_config: SOMAConfig) -> None:
+        soma = SOMA(small_config)
+        data = visualize.to_node_link_json(soma, max_nodes=1)
+        kept_ids = {n["id"] for n in data["nodes"]}
+        for sensor in soma.graph.sensor_nodes.values():
+            assert sensor.id in kept_ids
+        for out in soma.graph.output_nodes.values():
+            assert out.id in kept_ids
+
+
+class TestNetworkx:
+    def test_returns_digraph(self, small_config: SOMAConfig) -> None:
+        pytest.importorskip("networkx")
+        soma = SOMA(small_config)
+        nx_graph = visualize.to_networkx(soma, max_nodes=100)
+        assert nx_graph.is_directed()
+        assert nx_graph.number_of_nodes() == soma.graph.num_nodes
+        assert nx_graph.number_of_edges() == soma.graph.num_edges
+
+    def test_node_attributes_preserved(self, small_config: SOMAConfig) -> None:
+        pytest.importorskip("networkx")
+        soma = SOMA(small_config)
+        nx_graph = visualize.to_networkx(soma, max_nodes=100)
+        # Pick any node and verify it has our metadata.
+        node_id, attrs = next(iter(nx_graph.nodes(data=True)))
+        assert "type" in attrs
+        assert "activation_ema" in attrs
+
+
+class TestRenderPNG:
+    def test_writes_png_file(self, small_config: SOMAConfig, tmp_path: Path) -> None:
+        pytest.importorskip("networkx")
+        pytest.importorskip("matplotlib")
+        soma = SOMA(small_config)
+        out = tmp_path / "graph.png"
+        visualize.render_png(soma, out, max_nodes=100)
+        assert out.exists()
+        # Spot-check the PNG magic header.
+        assert out.read_bytes()[:8] == b"\x89PNG\r\n\x1a\n"
+
+
+# ----------------------------------------------------------------------
 # CLI entry
 # ----------------------------------------------------------------------
 class TestRunCLI:

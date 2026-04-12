@@ -1,17 +1,17 @@
 ---
 stage: 2
-unit: 11
+unit: 12
 status: pending
-last_completed: 10
+last_completed: 11
 total_units: 30
-completed_units: 10
+completed_units: 11
 ---
 
 # SOMA Build Checkpoint
 
 ## Current Work
 - Stage: 2 — Memory Systems
-- Unit: 11 — memory/episodic_memory.py + tests
+- Unit: 12 — consolidation/cycle.py (replay only, no structural maintenance) + tests
 - Status: pending
 
 ## Completed Units
@@ -29,7 +29,7 @@ completed_units: 10
 
 ### Stage 2: Memory Systems
 - [x] 10. `memory/working_memory.py` + tests
-- [ ] 11. `memory/episodic_memory.py` + tests
+- [x] 11. `memory/episodic_memory.py` + tests
 - [ ] 12. `consolidation/cycle.py` (replay only, no structural maintenance) + tests
 - [ ] 13. Integration test: memorization task (WM recall, episodic recall, consolidated recall)
 
@@ -70,6 +70,7 @@ completed_units: 10
 - Unit 9: 5 fast + 1 slow integration tests pass (test_stage1_core_loop.py). 10K-step run stable in ~29s. Mypy clean. Ruff clean. (163 total, 164 with slow)
 - **Stage 1 COMPLETE**
 - Unit 10: 20 tests pass (test_working_memory.py). Mypy clean. Ruff clean. (183 total)
+- Unit 11: 25 tests pass (test_episodic_memory.py). Mypy clean. Ruff clean. (208 total)
 
 ## Open Decisions
 (none yet)

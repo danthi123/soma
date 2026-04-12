@@ -1,17 +1,17 @@
 ---
-stage: 4
-unit: 23
+stage: 5
+unit: 24
 status: pending
-last_completed: 22
+last_completed: 23
 total_units: 30
-completed_units: 22
+completed_units: 23
 ---
 
 # SOMA Build Checkpoint
 
 ## Current Work
-- Stage: 4 — Meta-Cognitive Module
-- Unit: 23 — Enhance consolidation with structural maintenance + integration test
+- Stage: 5 — Multimodal
+- Unit: 24 — io/image_encoder.py + tests
 - Status: pending
 
 ## Completed Units
@@ -45,7 +45,7 @@ completed_units: 22
 - [x] 20. `metacognition/development.py` (DevelopmentSchedule + CriticalPeriod) + tests
 - [x] 21. `growth/neurogenesis.py` + tests
 - [x] 22. `growth/myelination.py` + tests
-- [ ] 23. Enhance consolidation with structural maintenance + integration test
+- [x] 23. Enhance consolidation with structural maintenance + integration test
 
 ### Stage 5: Multimodal
 - [ ] 24. `io/image_encoder.py` + tests
@@ -85,6 +85,8 @@ completed_units: 22
 - Unit 20: 11 tests pass (test_development.py). Mypy clean. Ruff clean. (307 total)
 - Unit 21: 10 tests pass (test_neurogenesis.py). Mypy clean. Ruff clean. (317 total)
 - Unit 22: 11 tests pass (test_myelination.py). Mypy clean. Ruff clean. (328 total)
+- Unit 23: 4 structural-maintenance + 4 stage4 integration tests pass. Mypy clean. Ruff clean. (336 total)
+- **Stage 4 COMPLETE**
 
 ## Open Decisions
 (none yet)

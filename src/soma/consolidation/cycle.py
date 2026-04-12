@@ -1,11 +1,10 @@
-"""Consolidation cycle — offline replay of episodic experiences.
+"""Consolidation cycle — offline replay + structural maintenance.
 
 Whitepaper Section 6. Artificial sleep: every
 ``config.consolidation_interval`` steps, SOMA samples experiences from
 episodic memory and replays them through the graph with a reduced
-learning rate. The whitepaper also lists structural maintenance
-(pruning, myelination, optional neurogenesis) during this phase — those
-are added in Stage 4 (Unit 23). Unit 12 implements replay only.
+learning rate. Unit 23 also runs structural maintenance after replay —
+pruning, myelination, and opt-in neurogenesis on persistent error.
 
 ``consolidation_cycle`` is intentionally decoupled from the SOMA class:
 callers provide an ``ExperienceUnpacker`` that converts a stored
@@ -17,7 +16,7 @@ output" but any modality split works.
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import torch
 from torch.nn import functional as F  # noqa: N812
@@ -25,6 +24,9 @@ from torch.nn import functional as F  # noqa: N812
 from soma.core.config import SOMAConfig
 from soma.core.execution import execute_graph
 from soma.core.graph import Graph
+from soma.growth.myelination import myelination
+from soma.growth.neurogenesis import neurogenesis
+from soma.growth.pruning import pruning
 from soma.memory.episodic_memory import EpisodicMemory
 
 # (experience_vector) -> (inputs_by_modality, targets_by_modality)
@@ -40,6 +42,10 @@ class ConsolidationResult:
 
     num_replayed: int
     replay_losses: list[float]
+    edges_pruned: int = 0
+    nodes_pruned: int = 0
+    chains_compressed: int = 0
+    neurogenesis_nodes: list[str] = field(default_factory=list)
 
     @property
     def mean_loss(self) -> float:
@@ -57,6 +63,8 @@ def consolidation_cycle(
     *,
     num_replay_steps: int | None = None,
     rng: torch.Generator | None = None,
+    run_structural_maintenance: bool = True,
+    allow_neurogenesis: bool = True,
 ) -> ConsolidationResult:
     """Run one consolidation cycle of replay-only learning.
 
@@ -137,7 +145,46 @@ def consolidation_cycle(
 
         replay_losses.append(float(loss.item()))
 
-    return ConsolidationResult(num_replayed=len(replay_losses), replay_losses=replay_losses)
+    # Structural maintenance: pruning, myelination, and opt-in neurogenesis.
+    edges_pruned = 0
+    nodes_pruned = 0
+    chains_compressed = 0
+    neurogenesis_ids: list[str] = []
+    if run_structural_maintenance:
+        prune_result = pruning(graph, step=current_step, config=config)
+        edges_pruned = prune_result.removed_edges
+        nodes_pruned = prune_result.removed_nodes
+
+        myelin_result = myelination(graph, step=current_step, config=config)
+        chains_compressed = myelin_result.chains_compressed
+
+        # Only fire neurogenesis when replay was noisy — matches the
+        # whitepaper's "if mean replay error > CONSOLIDATION_ERROR_THRESHOLD".
+        if allow_neurogenesis and replay_losses:
+            mean_err = sum(replay_losses) / len(replay_losses)
+            if mean_err > config.consolidation_error_threshold:
+                new_node = neurogenesis(
+                    graph,
+                    replay_losses,
+                    step=current_step,
+                    config=config,
+                    rng=rng,
+                )
+                if new_node is not None:
+                    neurogenesis_ids.append(new_node.id)
+
+        # Finally, let episodic memory drop entries that are old enough
+        # and replayed enough.
+        episodic_memory.decay_old_entries(current_step=current_step)
+
+    return ConsolidationResult(
+        num_replayed=len(replay_losses),
+        replay_losses=replay_losses,
+        edges_pruned=edges_pruned,
+        nodes_pruned=nodes_pruned,
+        chains_compressed=chains_compressed,
+        neurogenesis_nodes=neurogenesis_ids,
+    )
 
 
 # ----------------------------------------------------------------------

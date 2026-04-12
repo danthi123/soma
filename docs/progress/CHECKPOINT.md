@@ -1,17 +1,17 @@
 ---
 stage: 4
-unit: 19
+unit: 20
 status: pending
-last_completed: 18
+last_completed: 19
 total_units: 30
-completed_units: 18
+completed_units: 19
 ---
 
 # SOMA Build Checkpoint
 
 ## Current Work
 - Stage: 4 — Meta-Cognitive Module
-- Unit: 19 — metacognition/homeostasis.py + tests
+- Unit: 20 — metacognition/development.py (DevelopmentSchedule + CriticalPeriod) + tests
 - Status: pending
 
 ## Completed Units
@@ -41,7 +41,7 @@ completed_units: 18
 
 ### Stage 4: Meta-Cognitive Module
 - [x] 18. `metacognition/curiosity.py` + tests
-- [ ] 19. `metacognition/homeostasis.py` + tests
+- [x] 19. `metacognition/homeostasis.py` + tests
 - [ ] 20. `metacognition/development.py` (DevelopmentSchedule + CriticalPeriod) + tests
 - [ ] 21. `growth/neurogenesis.py` + tests
 - [ ] 22. `growth/myelination.py` + tests
@@ -81,6 +81,7 @@ completed_units: 18
 - **Stage 3 COMPLETE**
 - Node.set_input updated: no longer detaches, so gradients flow to external encoders.
 - Unit 18: 15 tests pass (test_curiosity.py). Mypy clean. Ruff clean. (277 total)
+- Unit 19: 19 tests pass (test_homeostasis.py). Mypy clean. Ruff clean. (296 total)
 
 ## Open Decisions
 (none yet)

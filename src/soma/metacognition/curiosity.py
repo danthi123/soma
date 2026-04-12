@@ -116,9 +116,7 @@ class CuriosityModule(nn.Module):
         recent_mean = sum(recent_slice) / len(recent_slice)
         older_mean = sum(older_slice) / len(older_slice)
 
-        learning_progress = (
-            (older_mean - recent_mean) / older_mean if older_mean > 0.0 else 0.0
-        )
+        learning_progress = (older_mean - recent_mean) / older_mean if older_mean > 0.0 else 0.0
 
         learning_progress = max(0.0, learning_progress)
         magnitude_factor = recent_mean / (recent_mean + 0.1)

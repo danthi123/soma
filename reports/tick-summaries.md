@@ -299,3 +299,60 @@ Approval queue empty. No git state was disturbed beyond the
 auto-generated finalize/revert commits already in `git log`.
 
 ---
+
+## 2026-04-13 ~08:55 EDT — training stability fixes shipped, loop resumed
+
+Diagnostic on `current.corrupt_1776082129.pt.bak` revealed the root
+cause: by step 10000, **99.8% of edge weights were already pinned at
++5.0** (the clamp), 39/40 node gains pinned at the lower clamp (0.1),
+and 12-17/40 node activation EMAs already non-finite (max
+1.47e+17 by step 10K, 1.21e+15 by step 53K).
+
+The Hebbian rule in `core/learning.py` is monotonically positive
+(only ever ADDS to weights when both endpoints fire) with no LTD
+counterpart. Backprop signal couldn't keep up. Saturation was
+inevitable — the loop ran for 50K+ steps against essentially dead
+weights.
+
+Plan: `docs/plans/2026-04-13-training-stability-fixes.md`.
+Five commits implementing the operator-approved fix triple:
+
+| sha | scope |
+|------|-------|
+| `ccde6ac` | feat(config): edge_weight_decay, grad_clip_max_norm, max_consecutive_skipped_steps |
+| `2fd2166` | fix(core): edge weight decay (Hebbian counterbalance) |
+| `f0726a6` | fix(core): gradient clipping in update_step |
+| `3f0820b` | refactor(homeostasis): return None on non-finite loss instead of raising |
+| `625e8e9` | feat(system): SOMA.step skips on non-finite loss + escalates after N skips |
+| `a22f0e2` | chore(format): ruff format on the above |
+| `48f4927` | chore(diagnose): fresh-train sanity check for stability fixes |
+
+Verification:
+
+- Full pytest: 696/696 pass (35 system + 18 learning + 25 config + ...)
+- ruff check / format: clean
+- mypy: clean
+- Diagnostic re-run: 200 fresh-init steps produce 0/66 edges at clamp,
+  0 non-finite activations, max activation_ema=0.97, loss_ema=0.019,
+  0 skipped steps. Compared to the corrupt checkpoint's 99.8%/17/1e15.
+
+Hygiene:
+
+- All saturated checkpoints (step_00001803.pt … step_00050000.pt)
+  archived to `checkpoints/pre-fix-archive-2026-04-13/`.
+- Original corrupt step_53740 preserved as
+  `checkpoints/current.corrupt_1776082129.pt.bak` for evidence.
+- Stale lock files (.tick.lock, .git.lock — pids 136272/134844 dead),
+  permanent_failure.json, train_crash.json, gate_failure.json,
+  push_failure.json, current_tick_id.tmp all cleared.
+- STOP file removed; scheduler will fire next tick on its 30-min
+  cadence.
+
+train_service restarted from fresh init on CUDA. Verified: step 0 →
+259 in ~1.5s, status=running, no `step crashed` lines, encoder built
+fresh from corpus.
+
+Push: same no-tty issue as before (operator credentials needed).
+Commits land locally; operator will see them on wake.
+
+---

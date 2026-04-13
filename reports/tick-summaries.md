@@ -671,3 +671,5 @@ Both synaptogenesis and the Hebbian edge update used `tensor.norm()` as the "mag
 **Caveat:** synaptogenesis/neurogenesis fired zero times across 85K steps. With RMS making typical activations ~1.0, the threshold=0.1 gate may or may not be calibrated to fire growth when task complexity demands it. If heldout loss stagnates over next 50K steps we may need to re-examine. For now, stable fixed-graph convergence is strictly better than any prior run.
 
 ---
+
+| 1776113229 | 2026-04-13 20:48 UTC | no_change | — | System stable at step 85K; loss_ema=0.0188, KL frozen at 23.03, zero graph growth. Actionable concerns in carveout paths. |

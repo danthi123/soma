@@ -12,10 +12,12 @@ from scripts.train_service import (
     HEARTBEAT_STATUS_SHUTDOWN,
     HEARTBEAT_STATUS_WARMING_UP,
     Heartbeat,
+    LoadResult,
     PidFile,
     SignalPoller,
     atomic_write_json,
     check_pid_collision,
+    load_checkpoint_chain,
 )
 
 
@@ -102,3 +104,72 @@ def test_signal_poller_ignores_unknown(tmp_path: Path) -> None:
 def test_signal_poller_missing_dir(tmp_path: Path) -> None:
     poller = SignalPoller(tmp_path / "does-not-exist")
     assert poller.read_and_consume() == []
+
+
+def test_load_chain_fresh_when_nothing_exists(tmp_path: Path) -> None:
+    result = load_checkpoint_chain(
+        current=tmp_path / "current.pt",
+        last_good=tmp_path / "last_good.pt",
+        fresh_flag=tmp_path / "fresh_init.flag",
+    )
+    assert isinstance(result, LoadResult)
+    assert result.source == "fresh"
+    assert result.payload is None
+    assert (tmp_path / "fresh_init.flag").exists()
+
+
+def test_load_chain_picks_current_when_present(tmp_path: Path) -> None:
+    (tmp_path / "current.pt").write_bytes(b"dummy")
+    sentinel = object()
+
+    def fake_loader(p: Path) -> object:
+        return sentinel
+
+    result = load_checkpoint_chain(
+        current=tmp_path / "current.pt",
+        last_good=tmp_path / "last_good.pt",
+        fresh_flag=tmp_path / "fresh_init.flag",
+        loader=fake_loader,
+    )
+    assert result.source == "current"
+    assert result.payload is sentinel
+    assert not (tmp_path / "fresh_init.flag").exists()
+
+
+def test_load_chain_falls_back_to_last_good(tmp_path: Path) -> None:
+    (tmp_path / "current.pt").write_bytes(b"corrupt")
+    (tmp_path / "last_good.pt").write_bytes(b"also-dummy")
+    attempts: list[Path] = []
+
+    def fake_loader(p: Path) -> object:
+        attempts.append(p)
+        if p.name == "current.pt":
+            raise RuntimeError("simulated corruption")
+        return object()
+
+    result = load_checkpoint_chain(
+        current=tmp_path / "current.pt",
+        last_good=tmp_path / "last_good.pt",
+        fresh_flag=tmp_path / "fresh_init.flag",
+        loader=fake_loader,
+    )
+    assert result.source == "last_good"
+    assert attempts == [tmp_path / "current.pt", tmp_path / "last_good.pt"]
+    assert not (tmp_path / "fresh_init.flag").exists()
+
+
+def test_load_chain_all_corrupt_falls_through_to_fresh(tmp_path: Path) -> None:
+    (tmp_path / "current.pt").write_bytes(b"bad")
+    (tmp_path / "last_good.pt").write_bytes(b"also-bad")
+
+    def bad_loader(p: Path) -> object:
+        raise RuntimeError("corrupt")
+
+    result = load_checkpoint_chain(
+        current=tmp_path / "current.pt",
+        last_good=tmp_path / "last_good.pt",
+        fresh_flag=tmp_path / "fresh_init.flag",
+        loader=bad_loader,
+    )
+    assert result.source == "fresh"
+    assert (tmp_path / "fresh_init.flag").exists()

@@ -22,6 +22,8 @@ import os
 import sys
 import tempfile
 import time
+from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
@@ -129,6 +131,52 @@ class SignalPoller:
                 with contextlib.suppress(OSError):
                     path.unlink()
         return seen
+
+
+# ---- Checkpoint fallback chain ---------------------------------------------
+
+
+@dataclass
+class LoadResult:
+    source: Literal["current", "last_good", "fresh"]
+    payload: object | None
+
+
+def _default_torch_loader(path: Path) -> object:
+    import torch
+
+    return torch.load(path, map_location="cpu")
+
+
+def load_checkpoint_chain(
+    *,
+    current: Path,
+    last_good: Path,
+    fresh_flag: Path,
+    loader: Callable[[Path], object] | None = None,
+) -> LoadResult:
+    """Try ``current`` → ``last_good`` → fresh init.
+
+    ``loader`` exists for testing; in production it calls into ``torch.load``.
+    Writes ``fresh_flag`` when falling through to fresh init.
+    """
+    load_fn = loader if loader is not None else _default_torch_loader
+
+    for path, source in [(current, "current"), (last_good, "last_good")]:
+        if path.exists():
+            try:
+                payload = load_fn(path)
+                return LoadResult(source=source, payload=payload)  # type: ignore[arg-type]
+            except Exception as exc:  # noqa: BLE001 — intentionally broad: any load failure triggers fallback
+                print(
+                    f"train_service: {source} load failed ({exc}); trying fallback",
+                    file=sys.stderr,
+                )
+                continue
+
+    fresh_flag.parent.mkdir(parents=True, exist_ok=True)
+    fresh_flag.touch()
+    return LoadResult(source="fresh", payload=None)
 
 
 def main(argv: list[str] | None = None) -> int:

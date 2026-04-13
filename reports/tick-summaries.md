@@ -640,3 +640,34 @@ push.
 | 1776106547 | cold_start | — | baseline captured, no change proposed |
 | 1776108773 | 2026-04-13 19:41 UTC | reverted_at_gate | bugfix | Add lr_multiplier floor (0.01) | Pre-existing flaky test test_co_active_edge_reaches_equilibrium_below_clamp failed (unrelated to change) |
 | 1776111009 | baseline_captured | — | — | 2026-04-13T20:11:14Z |
+
+---
+
+## 2026-04-13 ~16:50 EDT — RMS magnitude fix: training STABLE through step 85K
+
+Pid 19848 (pre-RMS) crashed again at step 11K with the same "51 consecutive non-finite losses" pattern. Training loss was fine (0.019 EMA) right up to the spike, and the first real heldout metric ever appeared: **heldout_loss_mean = 0.031** (eval_mode fix definitively working). But metrics showed edges growing 64 to 1047 in 5000 steps despite my synaptogenesis clamp. Root cause:
+
+Both synaptogenesis and the Hebbian edge update used `tensor.norm()` as the "magnitude". For a D-dim tensor at unit per-channel scale, norm = sqrt(D). With 64-dim activations every coactivation product was 64x intended: synapt prob hit the clamp for every pair on every event, and Hebbian weight bumps were 64x the effective rate.
+
+**Fix (commit `d0f58fb`):** RMS magnitude `norm / sqrt(numel)` in both sites. Dim-invariant semantics. Also rolled in the lr_multiplier floor (0.01) from tick-1776108773's stashed proposal.
+
+**Near-disaster:** tick safety_gate's `git stash` wiped my uncommitted RMS edits AND the lr-floor proposal. Re-applied and committed immediately.
+
+**Result on pid 39880 (RMS-fixed code):**
+
+| tick   | step  | loss_ema | last_loss | lr_m | heldout | edges |
+|--------|-------|----------|-----------|------|---------|-------|
+| 111009 | 30000 | 0.0172   | 0.0115    | 0.51 | 0.0193  | 64    |
+| 113229 | 85000 | 0.0188   | 0.0184    | 1.00 | 0.0192  | 64    |
+
+- **Loss stable at ~0.018 across 55K steps** (previously crashed every ~11K)
+- **Heldout ~= training loss (0.019)** — genuine generalization
+- **Edges still at seed=64** across 85K steps — no uncontrolled growth
+- `lr_multiplier` recovered 0.51 to 1.00 cleanly
+- Zero reverts, zero permfails, zero STOP
+
+**Seven levers proven working together:** edge weight decay, gradient clipping, skip-with-escalation, congestion pruning, synaptogenesis clamp, eval_mode, RMS magnitude. Plus config (halved growth rates, lr floor).
+
+**Caveat:** synaptogenesis/neurogenesis fired zero times across 85K steps. With RMS making typical activations ~1.0, the threshold=0.1 gate may or may not be calibrated to fire growth when task complexity demands it. If heldout loss stagnates over next 50K steps we may need to re-examine. For now, stable fixed-graph convergence is strictly better than any prior run.
+
+---

@@ -224,3 +224,4 @@ the change isn't tracked in git.
 ---
 | 1776077690 | 2026-04-13T10:57:41Z | 30000 | 0.02377 | null | class=null | no change — heldout NaN + kl=0.0 are carveout bugs |
 | 1776079940 | 2026-04-13T11:32Z | 40000 | 0.02026 | null | class=architecture | queued: fix heldout eval abort (skip NaN pairs instead of return) |
+| 1776082129 | 2026-04-13T12:11:59Z | applied-approved | auto: Fix heldout eval abort — skip NaN token pairs | 121be10b | architecture |

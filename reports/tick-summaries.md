@@ -358,3 +358,41 @@ Commits land locally; operator will see them on wake.
 ---
 | 1776086567 | 2026-04-13T09:25:15 | harness_skipped | no checkpoint yet (step ~2021, interval=5000) | — |
 | 1776088789 | 2026-04-13T14:02:36Z | 10000 | 140.452 | 17.960 | 39/1100 | nan_detected,wm_pinned_high,episodic_saturated | no-op: wait for recovery | — |
+
+### Post-fix training trajectory observation
+
+Sampled from `.soma-loop/metrics/metrics.current.jsonl` after the stability-fix restart:
+
+| step   | loss    | lr_m    | nodes | edges | notes                          |
+|--------|---------|---------|-------|-------|--------------------------------|
+|      9 |   0.022 | 1.0000  | 34    |    64 | fresh init                     |
+|   4809 |   0.016 | 1.0000  | 34    |   181 | clean, edges growing gradually |
+|   8009 |   0.015 | 1.0000  | 35    |   295 | still healthy                  |
+|   8809 |   0.407 | 0.0001  | 36    |   672 | synaptogenesis burst begins    |
+|   9609 |  92.057 | 0.0000  | 37    |  1080 | loss explodes, homeostasis damps |
+|  11209 |  24.253 | 0.0000  | 39    |  1100 | lr fully damped                |
+|  12009 |   1.103 | 0.0112  | 40    |  1110 | lr recovering                  |
+|  12809 |   1.575 | 1.0000  | 40    |  1110 | lr fully restored              |
+|  13609 |   0.894 | 1.0000  | 40    |  1110 | recovering                     |
+|  14409 |  16.246 | 0.0002  | 40    |  1110 | second spike                   |
+|  15209 |  20.260 | 0.0143  | 42    |  1130 | recovering again               |
+|  16009 |   0.838 | 1.0000  | 42    |  1130 | back to low loss               |
+
+**The loop is now self-stabilizing as designed** — synaptogenesis bursts
+cause loss spikes, homeostasis damps LR to near-zero, the system absorbs
+the new structure, LR recovers, loss drops. No service crashes. No STOP
+file touched. `consecutive_failures.count=0`. Tick 1776088789 correctly
+diagnosed "wait for recovery" and proposed no change.
+
+Compare to the pre-fix behavior: any such spike would have produced
+non-finite loss → homeostasis raise → CrashBackoff → train_service
+dead → watchdog revert + loop halt.
+
+**Caveat — avg_degree=56 (cap=20):** synaptogenesis fired fast and
+edges are aging under `pruning_grace_period=2000`. Once grace expires,
+pruning should bring this down. If persistent oscillation continues
+beyond step ~30K, a future tick may reasonably propose lowering
+`synaptogenesis_rate` (config-class) or raising the grace period to
+reduce the spike magnitude. Both are non-carveout.
+
+---

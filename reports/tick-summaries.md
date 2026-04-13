@@ -567,4 +567,73 @@ will tell.
 
 ---
 
+## 2026-04-13 ~14:48 EDT — THIRD carveout fix: synaptogenesis clamp + eval_mode
+
+The post-HALT fresh restart crashed AGAIN at step 11158 with the same
+pattern. Investigation revealed TWO deeper bugs the earlier fixes
+didn't touch:
+
+**Bug 1: synaptogenesis probability was unbounded.**
+`src/soma/growth/synaptogenesis.py` computed:
+
+```python
+prob = coact * locality_bonus * rate  # coact = source_mag * target_mag
+```
+
+When activations diverge during a spike (magnitudes >> 1), `coact *
+rate` can exceed 1. Every random draw in `[0, 1)` is then below `prob`,
+so synaptogenesis creates edges between EVERY co-active pair in a
+single event. Observed in metrics.current.jsonl around step 10909:
+`311 → 509 edges` in one 100-step window, then `509 → 1239 edges` in
+the next, then inf loss. Classic positive feedback loop.
+
+Fix (commit `7a18c09`): clamp `prob = min(1.0, coact * locality_bonus
+* rate)`. Two new tests verify bounded-output invariant.
+
+**Bug 2: test_harness.py mutated the graph during eval.**
+`scripts/test_harness.py` called `soma.step(inputs, targets)` which
+internally invokes `_maybe_grow()` (synaptogenesis + neurogenesis +
+pruning) and `update_step()` (backprop + Hebbian). So every heldout
+evaluation was RUNNING ANOTHER round of training-mode mutations on a
+checkpoint. That's why the post-HALT tick reported edges=750 at step
+10K while the actual metrics file showed edges=240 at that step — the
+harness had pumped 510 extra edges into the graph before evaluating.
+
+Fix (commit `41b9fc8`): added `eval_mode=True` kwarg to `SOMA.step`.
+When set, skips `update_step`, `_maybe_grow`, `_maybe_consolidate`,
+and does NOT touch `_consecutive_skipped_steps` on non-finite loss
+(eval is read-only for training-mode state). test_harness.py now
+calls `soma.step(..., eval_mode=True)`. Three new TestEvalMode tests
+verify graph/weight invariants and skip-counter immunity.
+
+Also rolled in the queued `cbd39c8b` bugfix (heldout_loss < 700
+overflow guard for math.exp) that tick-Claude proposed at 14:22;
+applied inline. Queue entry marked applied.
+
+**Now six stability levers in place:**
+
+1. Edge weight decay (`edge_weight_decay=0.9999`) — Hebbian counterbalance
+2. Gradient clipping (`grad_clip_max_norm=1.0`) — backprop bound
+3. Skip-with-escalation in SOMA.step — service survives transient NaN
+4. Congestion pruning (carveout) — removes excess edges at density cap
+5. **Synaptogenesis probability clamp (carveout)** — caps edges-per-event
+6. **Eval-mode (carveout)** — harness doesn't mutate graph
+7. Halved growth rates (config): synaptogenesis_rate 0.005, neurogenesis_interval 1000
+
+**Full verification:** 703/703 pytest pass, 1 skipped; ruff + mypy clean.
+
+**State hygiene:**
+
+- Post-recovery buggy-synapt checkpoints archived to
+  `checkpoints/buggy-synapt-post-recovery-2026-04-13/`
+- Cleared halt markers, heartbeat, locks, baseline, push_failure
+- `fresh_init.flag` set
+
+**Fresh restart:** train_service pid 19848 on CUDA, fresh init, step
+0 → 270 in ~10s, status=running. Four commits added this session
+(1927406, 0ef28de, 7a18c09, 41b9fc8) — 19 commits total local pending
+push.
+
+---
+
 - **tick 1776104322** (2026-04-13T18:22:23Z): baseline_set — first tick post-recovery, loss=2.1e17, kl=20.71, step=10000. Fixed test_harness.py overflow guard (queued for approval).

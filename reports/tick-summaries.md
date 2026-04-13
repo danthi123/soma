@@ -673,3 +673,4 @@ Both synaptogenesis and the Hebbian edge update used `tensor.norm()` as the "mag
 ---
 
 | 1776113229 | 2026-04-13 20:48 UTC | no_change | — | System stable at step 85K; loss_ema=0.0188, KL frozen at 23.03, zero graph growth. Actionable concerns in carveout paths. |
+| 1776115445 | 135000 | 0.01900 | 23.026 | 34/64 | no_change | growth stagnation, all targets carveout-protected |

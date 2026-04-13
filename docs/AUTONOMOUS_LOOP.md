@@ -100,6 +100,14 @@ touch .soma-loop/signals/pause    # service drops to idle, keeps heartbeat
 rm  .soma-loop/signals/pause && touch .soma-loop/signals/resume
 ```
 
+**Free the GPU for gaming** (pauses training + disables scheduler tick):
+```powershell
+pwsh -File scripts/pause_for_game.ps1
+# ... play ...
+pwsh -File scripts/resume_from_game.ps1    # respawns train_service if dead
+```
+The watchdog keeps running either way — it's CPU-only. SOMA's `current_loss must be finite` check is numerically fragile under GPU context contention (shared-GPU workloads caused reproducible NaN crashes every ~2000 steps during Phase 1 validation), so dedicating the GPU during training is strongly recommended until that fragility is addressed.
+
 **Approve an arch-carveout change:**
 ```bash
 python scripts/approve.py --list          # review pending proposals

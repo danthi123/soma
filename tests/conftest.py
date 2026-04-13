@@ -2,8 +2,17 @@
 
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
 import pytest
 import torch
+
+# Expose repo root so tests can `from scripts.X import ...` — scripts/ has its
+# own __init__.py but pyproject.toml only puts src/ on pythonpath.
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
 
 
 @pytest.fixture

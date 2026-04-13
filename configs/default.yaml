@@ -37,6 +37,9 @@ youth_lr_multiplier: 3.0
 hebbian_lr: 0.0001
 consolidation_lr_ratio: 0.1
 maturity_increment: 0.0001
+edge_weight_decay: 0.9999
+grad_clip_max_norm: 1.0
+max_consecutive_skipped_steps: 50
 
 # Growth Thresholds
 activation_threshold: 0.1

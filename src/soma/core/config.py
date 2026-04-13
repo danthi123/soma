@@ -65,6 +65,9 @@ class SOMAConfig:
     hebbian_lr: float = 0.0001
     consolidation_lr_ratio: float = 0.1
     maturity_increment: float = 0.0001
+    edge_weight_decay: float = 0.9999
+    grad_clip_max_norm: float = 1.0
+    max_consecutive_skipped_steps: int = 50
 
     # --- Growth Thresholds ------------------------------------------------
     activation_threshold: float = 0.1
@@ -185,6 +188,22 @@ class SOMAConfig:
             raise ValueError("SOMAConfig.input_modalities must not be empty")
         if not self.output_modalities:
             raise ValueError("SOMAConfig.output_modalities must not be empty")
+
+        if not 0.0 < self.edge_weight_decay <= 1.0:
+            raise ValueError(
+                f"SOMAConfig.edge_weight_decay must be in (0, 1], "
+                f"got {self.edge_weight_decay!r}"
+            )
+        if self.grad_clip_max_norm <= 0.0:
+            raise ValueError(
+                f"SOMAConfig.grad_clip_max_norm must be positive, "
+                f"got {self.grad_clip_max_norm!r}"
+            )
+        if not isinstance(self.max_consecutive_skipped_steps, int) or self.max_consecutive_skipped_steps < 1:
+            raise ValueError(
+                f"SOMAConfig.max_consecutive_skipped_steps must be >= 1, "
+                f"got {self.max_consecutive_skipped_steps!r}"
+            )
 
     # ------------------------------------------------------------------
     # YAML (de)serialization

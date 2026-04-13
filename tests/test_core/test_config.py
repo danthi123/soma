@@ -140,6 +140,31 @@ class TestValidation:
             SOMAConfig(output_modalities=[])
 
 
+class TestStabilityFields:
+    def test_new_stability_fields_have_sane_defaults(self) -> None:
+        cfg = SOMAConfig()
+        assert 0.0 < cfg.edge_weight_decay <= 1.0
+        assert cfg.edge_weight_decay > 0.99
+        assert cfg.grad_clip_max_norm > 0.0
+        assert cfg.max_consecutive_skipped_steps >= 1
+
+    def test_edge_weight_decay_validated(self) -> None:
+        with pytest.raises(ValueError, match="edge_weight_decay"):
+            SOMAConfig(edge_weight_decay=0.0)
+        with pytest.raises(ValueError, match="edge_weight_decay"):
+            SOMAConfig(edge_weight_decay=1.5)
+
+    def test_grad_clip_max_norm_validated(self) -> None:
+        with pytest.raises(ValueError, match="grad_clip_max_norm"):
+            SOMAConfig(grad_clip_max_norm=0.0)
+        with pytest.raises(ValueError, match="grad_clip_max_norm"):
+            SOMAConfig(grad_clip_max_norm=-1.0)
+
+    def test_max_consecutive_skipped_steps_validated(self) -> None:
+        with pytest.raises(ValueError, match="max_consecutive_skipped_steps"):
+            SOMAConfig(max_consecutive_skipped_steps=0)
+
+
 class TestYamlConsistency:
     def test_default_yaml_matches_dataclass_defaults(self) -> None:
         """The shipped ``configs/default.yaml`` should match the dataclass.

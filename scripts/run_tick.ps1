@@ -26,10 +26,10 @@ if (-not (Test-Path $promptFile)) {
 
 $prompt = Get-Content -Raw $promptFile
 
-claude --print --dangerously-skip-permissions `
+$prompt | claude --print --dangerously-skip-permissions `
     --allowedTools $allowed `
     --disallowedTools $disallowed `
-    $prompt *> $log
+    *> $log
 
 # Detect Claude CLI failure patterns (G71).
 if (Select-String -Path $log -Pattern "rate limit|authentication|expired|quota exceeded" -Quiet) {

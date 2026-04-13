@@ -25,10 +25,9 @@ if [ ! -f "$PROMPT_FILE" ]; then
   exit 2
 fi
 
-claude --print --dangerously-skip-permissions \
+cat "$PROMPT_FILE" | claude --print --dangerously-skip-permissions \
   --allowedTools "$ALLOWED" \
   --disallowedTools "$DISALLOWED" \
-  "$(cat "$PROMPT_FILE")" \
   > "$LOG" 2>&1 || true
 
 # Detect Claude CLI failure patterns (G71).

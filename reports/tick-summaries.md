@@ -436,3 +436,4 @@ ONE tick observes past step 40K. Projected timing at ~3 steps/s: the
 12:20 tick (estimated step ~41K) is the gating observation.
 
 ---
+| 1776095447 | 2026-04-13T15:51:54Z | cold_start | Baseline seeded (loss_ema=268.1, step=35000, heldout=NaN) | — |

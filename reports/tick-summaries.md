@@ -357,3 +357,4 @@ Commits land locally; operator will see them on wake.
 
 ---
 | 1776086567 | 2026-04-13T09:25:15 | harness_skipped | no checkpoint yet (step ~2021, interval=5000) | — |
+| 1776088789 | 2026-04-13T14:02:36Z | 10000 | 140.452 | 17.960 | 39/1100 | nan_detected,wm_pinned_high,episodic_saturated | no-op: wait for recovery | — |

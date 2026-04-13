@@ -468,3 +468,51 @@ ONE tick observes past step 40K. Projected timing at ~3 steps/s: the
 - Base commit: `dd42225`
 
 ---
+
+### Monitoring notes at ~13:25 EDT — HALT verified, awaiting operator
+
+**Service status:** DEAD. `train_permanent_failure.json` at step 45051 (3 crashes in 5 min, CrashBackoff triggered). Heartbeat shows stale pid 64612 but `tasklist` confirms no such process. `train_service.log` shows the failure path: **the stability fixes worked as designed**:
+
+```
+train_service: step crashed: 51 consecutive non-finite losses; training is stuck (last loss=inf)
+train_service: step crashed: 52 consecutive non-finite losses; training is stuck (last loss=inf)
+train_service: step crashed: 53 consecutive non-finite losses; training is stuck (last loss=inf)
+```
+
+That's `max_consecutive_skipped_steps=50` escalating correctly: 50 skips tolerated, 51st raised ValueError, CrashBackoff counted 3 such raises, wrote permanent_failure, exited. The diagnose tick read the state and called halt. **This is exactly the escalation path the fix triad was designed to enable** — the system no longer silently corrupts itself; it fails loud and stops.
+
+**Fix triad performance vs pre-fix:**
+| Metric | Pre-fix | Post-fix |
+|--------|---------|----------|
+| First crash step | ~6000 | 45000 (7.5x later) |
+| Weight saturation | 99.8% of edges at +5.0 clamp by step 10K | 0% through step 40K |
+| Loss at failure | 0.025 (dead, pinned) | Inf (honest divergence) |
+| Recovery on restart | Impossible (saturated) | Fresh init clean through step 40K |
+
+The fixes extended stable training 7.5x and turned silent saturation into explicit NaN. Real progress, but **uncontrolled growth still overwhelms the stabilizers** past step 40K without operator-chosen growth damping.
+
+**Tick Claude chose `halt` class correctly.** Halt is the right escalation for NaN-poisoned checkpoint — no config change within auto scope can recover NaN weights. My queued config proposal (`e1c9fc2d`, synaptogenesis_rate reduction) is still `pending` in the queue; if applied, it would have slowed the edge-growth cascade but wouldn't have recovered the dead weights.
+
+**No actions taken autonomously.** STOP remains touched; G40 gate holds. train_service is not being restarted.
+
+**Decision tree for operator:**
+
+1. **Fresh init with config fix (recommended).**
+   - Approve queue entry `e1c9fc2d` (synaptogenesis_rate 0.01 → 0.005).
+   - Consider also lowering `neurogenesis_interval` less aggressively (500 → 1000) to halve node addition rate — I did NOT queue this second change, holding for operator call.
+   - `rm .soma-loop/STOP .soma-loop/state/halt_reason.json .soma-loop/state/train_permanent_failure.json`
+   - Move `checkpoints/current.*` to `checkpoints/nan-poisoned-45k-2026-04-13/`.
+   - `touch .soma-loop/state/fresh_init.flag`
+   - Restart train_service.
+
+2. **Rollback to step 20K or 40K.**
+   - Complicated because `current.encoder.pt` is paired with the NaN-poisoned graph. Either delete it for fresh encoder (model re-learns embeddings) or accept drift.
+   - Still need the config fix applied before resuming, else same dynamics recur.
+
+3. **Deeper carveout work first.**
+   - Add edge/node pruning logic tuning so pruning activates before graph density destabilizes training.
+   - Enable `pruning_interval=1000` (already there in config) but investigate why `prune=0` was observed in every growth_last_1k_steps reading — possibly the grace period gate never relaxed because edges kept aging faster than threshold.
+
+I lean toward option 1 (fresh init + config fix), but this is your G40 gate call.
+
+---

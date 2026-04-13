@@ -60,6 +60,7 @@ def load_snapshot_from_disk(reports_dir: Path) -> dict[str, Any] | None:
         return None
     return data
 
+
 _NODE_COLORS: dict[str, tuple[int, int, int, int]] = {
     "sensor": (80, 140, 230, 255),
     "associator": (235, 215, 130, 255),

@@ -54,9 +54,7 @@ def test_mark_approved_sets_fields() -> None:
 
 def test_mark_stale_sets_reason() -> None:
     entry = _sample_entry()
-    updated = mark_stale(
-        entry, reason="base_commit_sha drifted", ts="2026-04-12T11:00:00+00:00"
-    )
+    updated = mark_stale(entry, reason="base_commit_sha drifted", ts="2026-04-12T11:00:00+00:00")
     assert updated["queue_status"] == "stale"
     assert updated["rejected_reason"] == "base_commit_sha drifted"
     assert updated["rejected_at"] == "2026-04-12T11:00:00+00:00"
@@ -64,9 +62,7 @@ def test_mark_stale_sets_reason() -> None:
 
 def test_mark_rejected_sets_reason() -> None:
     entry = _sample_entry()
-    updated = mark_rejected(
-        entry, reason="user doesn't want this", ts="2026-04-12T11:00:00+00:00"
-    )
+    updated = mark_rejected(entry, reason="user doesn't want this", ts="2026-04-12T11:00:00+00:00")
     assert updated["queue_status"] == "rejected"
     assert updated["rejected_reason"] == "user doesn't want this"
     assert updated["rejected_at"] == "2026-04-12T11:00:00+00:00"
@@ -133,9 +129,7 @@ def _repo_path() -> Path:
     return Path(__file__).resolve().parents[2]
 
 
-def _run_approve(
-    args: list[str], queue_path: Path
-) -> subprocess.CompletedProcess[str]:
+def _run_approve(args: list[str], queue_path: Path) -> subprocess.CompletedProcess[str]:
     """Invoke approve.py from the repo root against ``queue_path``."""
     return subprocess.run(
         [

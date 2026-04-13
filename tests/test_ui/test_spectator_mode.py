@@ -128,9 +128,7 @@ def test_load_snapshot_from_disk_bad_json_returns_none(tmp_path: Path) -> None:
 # ---- app builder autonomous_mode propagation -----------------------------
 
 
-def test_build_app_for_tests_detects_autonomous_flag(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_build_app_for_tests_detects_autonomous_flag(tmp_path: Path, monkeypatch) -> None:
     flag_dir = tmp_path / ".soma-loop/state"
     flag_dir.mkdir(parents=True)
     (flag_dir / "autonomous_mode.flag").touch()

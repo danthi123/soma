@@ -125,9 +125,7 @@ def _make_records(
 def test_check_confirmation_insufficient_buckets() -> None:
     pre = {"loss": 1.0, "curiosity": 0.5, "num_nodes": 50}
     recent = _make_records(0, 0, num_minutes=1, per_bucket=3)
-    verdict, _reason, _crits = check_confirmation(
-        pre, recent, window_min=15, min_step_advance=500
-    )
+    verdict, _reason, _crits = check_confirmation(pre, recent, window_min=15, min_step_advance=500)
     assert verdict == "pending"
 
 
@@ -147,9 +145,7 @@ def test_check_confirmation_all_pass() -> None:
     recent = _make_records(
         0, 0, num_minutes=15, per_bucket=3, loss=1.05, curiosity=0.52, num_nodes=52
     )
-    verdict, _reason, crits = check_confirmation(
-        pre, recent, window_min=15, min_step_advance=500
-    )
+    verdict, _reason, crits = check_confirmation(pre, recent, window_min=15, min_step_advance=500)
     assert verdict == "confirmed"
     assert all(crits.values())
 
@@ -158,12 +154,8 @@ def test_check_confirmation_revert_on_loss_spike() -> None:
     pre = {"loss": 1.0, "curiosity": 0.5, "num_nodes": 50}
     # Make the LAST three buckets spike — those should trigger revert.
     recent = _make_records(0, 0, num_minutes=12, per_bucket=3, loss=1.0)
-    recent += _make_records(
-        12 * 60, 12 * 3 * 50, num_minutes=3, per_bucket=3, loss=5.0
-    )
-    verdict, _reason, _crits = check_confirmation(
-        pre, recent, window_min=15, min_step_advance=500
-    )
+    recent += _make_records(12 * 60, 12 * 3 * 50, num_minutes=3, per_bucket=3, loss=5.0)
+    verdict, _reason, _crits = check_confirmation(pre, recent, window_min=15, min_step_advance=500)
     assert verdict == "revert"
 
 
@@ -171,12 +163,8 @@ def test_check_confirmation_revert_on_nan_loss() -> None:
     pre = {"loss": 1.0, "curiosity": 0.5, "num_nodes": 50}
     recent = _make_records(0, 0, num_minutes=10, per_bucket=3)
     # Append 3 buckets full of NaN loss
-    recent += _make_records(
-        10 * 60, 10 * 3 * 50, num_minutes=3, per_bucket=3, loss=float("nan")
-    )
-    verdict, _reason, _crits = check_confirmation(
-        pre, recent, window_min=15, min_step_advance=500
-    )
+    recent += _make_records(10 * 60, 10 * 3 * 50, num_minutes=3, per_bucket=3, loss=float("nan"))
+    verdict, _reason, _crits = check_confirmation(pre, recent, window_min=15, min_step_advance=500)
     assert verdict == "revert"
 
 
@@ -184,12 +172,8 @@ def test_check_confirmation_revert_on_graph_collapse() -> None:
     pre = {"loss": 1.0, "curiosity": 0.5, "num_nodes": 100}
     recent = _make_records(0, 0, num_minutes=10, per_bucket=3, num_nodes=100)
     # Drop nodes below 50% of pre-change for 3 consecutive buckets
-    recent += _make_records(
-        10 * 60, 10 * 3 * 50, num_minutes=3, per_bucket=3, num_nodes=20
-    )
-    verdict, _reason, _crits = check_confirmation(
-        pre, recent, window_min=15, min_step_advance=500
-    )
+    recent += _make_records(10 * 60, 10 * 3 * 50, num_minutes=3, per_bucket=3, num_nodes=20)
+    verdict, _reason, _crits = check_confirmation(pre, recent, window_min=15, min_step_advance=500)
     assert verdict == "revert"
 
 
@@ -203,13 +187,9 @@ def test_check_confirmation_transient_bad_doesnt_revert() -> None:
     pre = {"loss": 1.0, "curiosity": 0.5, "num_nodes": 50}
     good = _make_records(0, 0, num_minutes=7, per_bucket=3)
     bad = _make_records(7 * 60, 7 * 3 * 50, num_minutes=1, per_bucket=3, loss=5.0)
-    more_good = _make_records(
-        8 * 60, 8 * 3 * 50, num_minutes=7, per_bucket=3, loss=1.0
-    )
+    more_good = _make_records(8 * 60, 8 * 3 * 50, num_minutes=7, per_bucket=3, loss=1.0)
     recent = good + bad + more_good
-    verdict, _reason, _crits = check_confirmation(
-        pre, recent, window_min=15, min_step_advance=500
-    )
+    verdict, _reason, _crits = check_confirmation(pre, recent, window_min=15, min_step_advance=500)
     # 1 bad < 3 consecutive → no revert. But good streak was reset, so we're pending.
     assert verdict == "pending"
 
@@ -227,9 +207,7 @@ def test_append_and_update_change_log_entry(tmp_path: Path) -> None:
         log,
         {"change_log_id": "def456", "status": "in_progress", "commit_sha": None},
     )
-    update_change_log_entry(
-        log, change_log_id="abc123", updates={"status": "confirmed", "foo": 1}
-    )
+    update_change_log_entry(log, change_log_id="abc123", updates={"status": "confirmed", "foo": 1})
     lines = [json.loads(ln) for ln in log.read_text().splitlines() if ln.strip()]
     assert lines[0]["status"] == "confirmed"
     assert lines[0]["foo"] == 1

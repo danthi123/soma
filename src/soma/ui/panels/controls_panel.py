@@ -165,11 +165,21 @@ class ControlsPanel:
             # operator can't accidentally start the in-process controller
             # while the autonomous loop owns training.
             for tag in (
-                "btn_start", "btn_pause", "btn_resume", "btn_stop", "btn_step",
-                "btn_reset", "btn_rebuild", "btn_save_ckpt", "btn_load_ckpt",
-                "controls_corpus_path", "controls_vocab_size",
-                "controls_step_budget", "controls_snapshot_every",
-                "controls_device", "controls_ckpt_path",
+                "btn_start",
+                "btn_pause",
+                "btn_resume",
+                "btn_stop",
+                "btn_step",
+                "btn_reset",
+                "btn_rebuild",
+                "btn_save_ckpt",
+                "btn_load_ckpt",
+                "controls_corpus_path",
+                "controls_vocab_size",
+                "controls_step_budget",
+                "controls_snapshot_every",
+                "controls_device",
+                "controls_ckpt_path",
             ):
                 if dpg.does_item_exist(tag):
                     dpg.disable_item(tag)

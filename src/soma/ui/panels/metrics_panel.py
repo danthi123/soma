@@ -55,6 +55,7 @@ def read_metrics_tail(path: Path, *, max_records: int) -> list[dict[str, Any]]:
             continue
     return records[-max_records:]
 
+
 _GROWTH_COLORS = {
     "synaptogenesis": (80, 200, 255, 200),
     "neurogenesis": (100, 255, 100, 200),

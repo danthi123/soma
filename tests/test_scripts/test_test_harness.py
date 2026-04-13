@@ -99,9 +99,7 @@ def test_health_flags_nan_detected() -> None:
 
 
 def test_health_flags_graph_collapsed() -> None:
-    flags = compute_health_flags(
-        {"heldout_loss_mean": 1.0, "graph": {"nodes": 2, "edges": 1}}
-    )
+    flags = compute_health_flags({"heldout_loss_mean": 1.0, "graph": {"nodes": 2, "edges": 1}})
     assert "graph_collapsed" in flags
 
 

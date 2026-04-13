@@ -82,12 +82,7 @@ def test_parse_commit_log_entries_extracts_auto_only() -> None:
 
 
 def test_parse_commit_log_entries_missing_trailer() -> None:
-    raw = (
-        "commit deadbeef\n"
-        "Author: ai@soma\n"
-        "\n"
-        "    auto: tune lr\n"
-    )
+    raw = "commit deadbeef\nAuthor: ai@soma\n\n    auto: tune lr\n"
     entries = parse_commit_log_entries(raw)
     assert entries[0]["change_log_id"] is None
 
@@ -245,7 +240,5 @@ def test_check_gate_passed_on_pristine_overridden_by_confirmed_entry(tmp_path: P
     path = tmp_path / "gate_failure.json"
     path.write_text(json.dumps({"stage": "check", "ts": time.time() - 7200}))
     change_log = [{"status": "confirmed", "confirmed_at": time.time() - 100}]
-    ok, _reason = check_gate_passed_on_pristine(
-        gate_failure=path, change_log_entries=change_log
-    )
+    ok, _reason = check_gate_passed_on_pristine(gate_failure=path, change_log_entries=change_log)
     assert ok is True

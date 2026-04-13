@@ -455,7 +455,8 @@ class TestNonFiniteLossSkip:
     def _step_with_inf(self, soma: SOMA, monkeypatch: pytest.MonkeyPatch) -> dict:
         dim = soma.config.sensor_output_dim
         monkeypatch.setattr(
-            SOMA, "_compute_loss",
+            SOMA,
+            "_compute_loss",
             lambda self, outputs, targets: (torch.tensor(float("inf")), float("inf")),
         )
         return soma.step(

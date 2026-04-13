@@ -191,15 +191,16 @@ class SOMAConfig:
 
         if not 0.0 < self.edge_weight_decay <= 1.0:
             raise ValueError(
-                f"SOMAConfig.edge_weight_decay must be in (0, 1], "
-                f"got {self.edge_weight_decay!r}"
+                f"SOMAConfig.edge_weight_decay must be in (0, 1], got {self.edge_weight_decay!r}"
             )
         if self.grad_clip_max_norm <= 0.0:
             raise ValueError(
-                f"SOMAConfig.grad_clip_max_norm must be positive, "
-                f"got {self.grad_clip_max_norm!r}"
+                f"SOMAConfig.grad_clip_max_norm must be positive, got {self.grad_clip_max_norm!r}"
             )
-        if not isinstance(self.max_consecutive_skipped_steps, int) or self.max_consecutive_skipped_steps < 1:
+        if (
+            not isinstance(self.max_consecutive_skipped_steps, int)
+            or self.max_consecutive_skipped_steps < 1
+        ):
             raise ValueError(
                 f"SOMAConfig.max_consecutive_skipped_steps must be >= 1, "
                 f"got {self.max_consecutive_skipped_steps!r}"

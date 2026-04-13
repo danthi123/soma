@@ -68,12 +68,8 @@ def update_step(
     # node + edge gradients so a single explosive batch can't drive
     # weights to the clamp in one step. Params with grad=None are
     # filtered automatically by clip_grad_norm_.
-    all_params = [
-        param for node in graph.all_nodes() for param in node.parameters()
-    ]
-    all_params.extend(
-        param for edge in graph.all_edges() for param in edge.parameters()
-    )
+    all_params = [param for node in graph.all_nodes() for param in node.parameters()]
+    all_params.extend(param for edge in graph.all_edges() for param in edge.parameters())
     if all_params:
         torch.nn.utils.clip_grad_norm_(all_params, max_norm=config.grad_clip_max_norm)
 

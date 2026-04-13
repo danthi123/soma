@@ -361,9 +361,7 @@ class TestGradientClipping:
             param.grad = torch.full_like(param, 100.0)
         loss = torch.zeros((), requires_grad=True)
         before = {id(p): p.detach().clone() for p in assoc.parameters()}
-        update_step(
-            graph, loss, activations={assoc.id: torch.ones(8)}, config=cfg
-        )
+        update_step(graph, loss, activations={assoc.id: torch.ones(8)}, config=cfg)
         for p in assoc.parameters():
             delta = float((p.detach() - before[id(p)]).abs().max().item())
             assert delta < 1.0, f"clipped update should be small, got {delta}"

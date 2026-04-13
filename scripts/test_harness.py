@@ -337,7 +337,18 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--heldout-max-lines", type=int, default=200)
     parser.add_argument("--heldout-max-tokens-per-line", type=int, default=16)
     parser.add_argument("--tick-id", type=int, default=0)
-    parser.add_argument("--device", type=str, default="auto")
+    parser.add_argument(
+        "--device",
+        type=str,
+        default="cpu",
+        help=(
+            "Eval device. Defaults to cpu: harness inference is cheap "
+            "and running on cpu avoids (a) contention with the training "
+            "service on GPU and (b) CUDA device-side asserts on NaN/Inf "
+            "losses that would otherwise kill the harness process "
+            "asynchronously at the next sync point."
+        ),
+    )
     args = parser.parse_args(argv)
 
     if not args.checkpoint.exists():

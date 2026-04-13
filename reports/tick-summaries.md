@@ -202,6 +202,7 @@ not patched silently.
 | 1776068823 | 2026-04-13T08:31:23Z | no_change | — | loss_ema=3.86e12 (exploded) but heldout=0.022 (healthy); homeostasis active lr=7e-12; waiting for next tick |
 | 1776071023 | 2026-04-13 09:07 UTC | no_change | — | Training healthy (loss=0.0163, heldout=0.0274); loss_ema_500=408 is restart artifact; fix touches carveout |
 | 1776073244 | 2026-04-13T09:41Z | no_change | — | loss_ema=0.020 (-58.7% vs baseline, best yet); heldout=NaN (persistent); no growth; all fixes need carveout paths |
+| 1776075476 | 2026-04-13T10:21Z | no_change | — | loss_ema=0.025 (-48% vs baseline); heldout=NaN (persistent eval error); training stable; no non-carveout fix available |
 
 ---
 

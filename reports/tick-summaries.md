@@ -700,3 +700,4 @@ Loss_ema drift across 105K steps: 0.0172 → 0.0190 (+0.0018). Heldout drift: 0.
 
 ---
 | 1776117652 | 190000 | 0.01877 | 0.01930 | 23.03 | 34/64 | no_change | Output collapsed to 'GUE'; degenerate equilibrium, needs operator |
+| 1776119871 | 240000 | 0.01695 | 23.026 | 34/64 | no_change | — | 2026-04-13T22:40:27Z |

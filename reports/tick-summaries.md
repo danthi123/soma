@@ -143,3 +143,4 @@ designed. Task 26 (48-hour continuous validation window) remains and is
 operator-scoped wall-clock: scheduler is enabled, train_service running,
 watchdog active. Monitor `git log --grep="^auto:"` and `change_log.jsonl`.
 
+| 1776062150 | 2026-04-13T06:40:41Z | no_change | — | heldout_loss=10.72 (evaluation path issue suspected, carveout-protected) |

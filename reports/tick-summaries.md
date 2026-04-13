@@ -456,3 +456,15 @@ ONE tick observes past step 40K. Projected timing at ~3 steps/s: the
 - Proposed by: monitoring-session (operator-instructed per prior message)
 
 ---
+
+### Tick 1776099889 — 2026-04-13T17:04 UTC
+- **Outcome:** HALT — training diverged to NaN at step 45K
+- Phase: diagnose → halt (no change applied)
+- Metrics: loss_ema_500=Infinity, last_loss=NaN, nodes=73, edges=1440
+- Loss trajectory: 140→1.4→81→268→13.7→Inf (violent oscillation over 6 ticks)
+- Cause: neurogenesis adding ~8 nodes/tick with zero pruning destabilizes weights
+- Step-45K checkpoint is NaN-poisoned; restart reproduces failure
+- Action required: roll back to step 20K or 40K checkpoint, approve pending synaptogenesis_rate reduction, consider enabling edge pruning, then clear STOP
+- Base commit: `dd42225`
+
+---

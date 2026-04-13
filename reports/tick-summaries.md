@@ -701,3 +701,34 @@ Loss_ema drift across 105K steps: 0.0172 → 0.0190 (+0.0018). Heldout drift: 0.
 ---
 | 1776117652 | 190000 | 0.01877 | 0.01930 | 23.03 | 34/64 | no_change | Output collapsed to 'GUE'; degenerate equilibrium, needs operator |
 | 1776119871 | 240000 | 0.01695 | 23.026 | 34/64 | no_change | — | 2026-04-13T22:40:27Z |
+
+---
+
+## 2026-04-13 ~18:56 EDT — 270K stable, but decoder is degenerate
+
+Heartbeat at 2026-04-13T22:56Z shows step **270,121**, status=running, no STOP, no permfail. Training numerics look great:
+
+| tick   | step   | loss_ema | heldout | lr_m | curiosity | edges |
+|--------|--------|----------|---------|------|-----------|-------|
+| 117652 | 190000 | 0.0188   | 0.0193  | 1.00 | 0.0043    | 64    |
+| 119871 | 240000 | 0.0169   | 0.0193  | 0.69 | 0.0071    | 64    |
+
+Loss_ema is still *descending* (0.019 → 0.017 across 50K steps). Homeostasis dampened lr_multiplier 1.00 → 0.69 mid-run on a small curiosity bump — first mid-run damping observed since the RMS fix, and it stayed well above the 0.01 floor. This is the regulator working correctly.
+
+**Critical finding, surfaced by the tick harness (not proposing a fix):**
+
+Both tick chat logs (1776117652, 1776119871) show the decoder emitting `"GUEGUEGUEGUE..."` as its response to *every* prompt — "To be, or not to be," "hello," "what is your name," even empty and single-char inputs. The 0.019 heldout loss is the model having found a degenerate equilibrium: whatever mean token vector minimizes MSE against the held-out targets gets decoded as the "GUE" trigram regardless of input.
+
+This means the "stability win" is a mirage for the task. The seven-lever numerical stability stack is real — no crashes, bounded gradients, regulator self-correcting — but the underlying graph (34 nodes / 64 edges, zero growth across 240K steps) has too little capacity (or too little stress) to learn input→output mapping. It settles on emitting the marginal output distribution.
+
+**Possible root causes (for operator triage, not autonomous action):**
+
+1. Seed topology is insufficient for sequence mapping; growth must fire to add capacity. Current threshold=0.1 with RMS ~1.0 activations ought to permit it, but nothing is pushing coactivation × locality × rate above the probability draw.
+2. Decoder architecture may be outputting a fixed vector regardless of encoder signal (unit test of "different inputs produce different OUTPUT node activations" would disambiguate).
+3. The MSE-against-target-tokens loss may not be a strong enough signal to break out of the trivial equilibrium for this graph size. Would benefit from a curriculum or richer target distribution.
+
+Leaving all of these for the operator. Continuing stable-cadence monitoring for now — the system isn't in a failure state, it's in a learned-wrong state, and the 22 pending commits don't cover this class of issue.
+
+**Next check:** 3600s out (runtime cap).
+
+---

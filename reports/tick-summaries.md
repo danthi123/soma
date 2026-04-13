@@ -144,3 +144,57 @@ operator-scoped wall-clock: scheduler is enabled, train_service running,
 watchdog active. Monitor `git log --grep="^auto:"` and `change_log.jsonl`.
 
 | 1776062150 | 2026-04-13T06:40:41Z | no_change | — | heldout_loss=10.72 (evaluation path issue suspected, carveout-protected) |
+
+---
+
+## BLOCKED 2026-04-13 04:18 EDT — GPU contention, loop paused
+
+`train_service` cannot sustain training while another GPU workload is
+active on the same RTX 3090. NaN/Inf loss reproducibly trips the
+`current_loss must be finite` check around step 6000-7000 (sometimes
+on first step from a checkpoint). Pattern reproduced across:
+
+- Resume from `step_00010000.pt` -> NaN on step 1
+- Resume from `step_00005000.pt` -> NaN around step 6000
+- Fresh init (`load_source=fresh`) -> NaN around step 6603
+- All three crashed with `step crashed: current_loss must be finite,
+  got nan|inf` x3 -> `train_permanent_failure.json` -> exit 2
+
+`nvidia-smi` shows three `LM Studio.exe` processes holding GPU memory
+in addition to normal desktop compositor / browser overlays. Earlier
+runs that were stable (step 5000 -> 8554+ cleanly) all happened
+during a brief window when both league and LM Studio were not active.
+
+Already shipped (committed `09b09f3`): encoder/decoder weight
+persistence as sidecar files. Verified working — the most recent
+fresh-init service wrote `current.encoder.pt` matched to a fresh
+graph. So the eval-path issue Claude flagged in tick 1776062150 is
+fixed for the next clean run.
+
+**Action for operator on wake:**
+
+1. Close LM Studio (Task Manager -> end the three `LM Studio.exe`
+   processes, or quit from the app tray)
+2. `pwsh -File scripts/resume_from_game.ps1` -- this clears the
+   pause signal, re-enables the SOMA Loop Tick task, and respawns
+   `train_service` if dead
+3. Watch `cat .soma-loop/state/train_heartbeat.json` -- step should
+   advance smoothly past 7000 without `train_crash.json` appearing
+4. The next tick (37 min after re-enable) will be the first with a
+   real `heldout_loss` (encoder sidecar will load) and Claude can
+   start proposing meaningful changes
+
+Loop state is intact: scheduler tasks created (one disabled by my
+pause helper, one enabled), `consecutive_failures.count=2`,
+`baseline.json` present, queue empty, train_service paused via
+signal (so `current.pt` is preserved). No git state was disturbed.
+
+Note for future: the persistent NaN under GPU contention is a real
+SOMA training fragility that should be addressed in Phase 2. Likely
+fixes: gradient clipping in `SOMA.step()` before the finite-loss
+check, OR loss-skip-with-state-rollback rather than raising. Both
+are SOMA-internal carveout changes -- left for operator to design,
+not patched silently.
+
+---
+

@@ -51,6 +51,14 @@ class ControlsPanel:
             raise RuntimeError("DearPyGUI not installed; install soma[ui]")
 
         self._root = dpg.add_group(parent=parent, tag="panel_controls_root")
+        if state.autonomous_mode:
+            dpg.add_text(
+                "AUTONOMOUS MODE - read only (autonomous_mode.flag present)",
+                parent=self._root,
+                color=(230, 120, 120, 255),
+                tag="controls_autonomous_banner",
+            )
+            dpg.add_separator(parent=self._root)
         with dpg.group(parent=self._root, horizontal=True):
             dpg.add_button(label="Start", tag="btn_start", callback=self._on_start, user_data=state)
             dpg.add_button(label="Pause", tag="btn_pause", callback=self._on_pause, user_data=state)
@@ -151,6 +159,20 @@ class ControlsPanel:
         dpg.add_separator(parent=self._root)
         dpg.add_text("state=idle  step=0", tag=self._state_tag, parent=self._root)
         dpg.add_text("", tag=self._status_tag, parent=self._root)
+
+        if state.autonomous_mode:
+            # Every interactive widget in this panel gets disabled so the
+            # operator can't accidentally start the in-process controller
+            # while the autonomous loop owns training.
+            for tag in (
+                "btn_start", "btn_pause", "btn_resume", "btn_stop", "btn_step",
+                "btn_reset", "btn_rebuild", "btn_save_ckpt", "btn_load_ckpt",
+                "controls_corpus_path", "controls_vocab_size",
+                "controls_step_budget", "controls_snapshot_every",
+                "controls_device", "controls_ckpt_path",
+            ):
+                if dpg.does_item_exist(tag):
+                    dpg.disable_item(tag)
 
         # Surface log messages (including worker-thread errors like device
         # mismatch) to the status line so the user doesn't have to read

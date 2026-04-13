@@ -14,6 +14,7 @@ training — though in practice we *pause* training first (the panel's
 from __future__ import annotations
 
 import threading
+from pathlib import Path
 
 try:
     import dearpygui.dearpygui as dpg
@@ -25,8 +26,9 @@ except ImportError:  # pragma: no cover
 
 import torch
 
+from soma.core.config import SOMAConfig
 from soma.io.text_decoder import TextDecoder
-from soma.io.text_encoder import TextEncoder
+from soma.io.text_encoder import TextEncoder, train_bpe_tokenizer
 from soma.system import SOMA
 from soma.ui.registry import register_panel
 from soma.ui.state import UIState
@@ -49,6 +51,12 @@ class ChatPanel:
         self._max_tokens_tag = "chat_max_tokens"
         self._lock = threading.RLock()
         self._pending_reply: str | None = None
+        # Autonomous-mode spectator-chat: a CPU-only SOMA copy loaded lazily
+        # from checkpoints/current.pt so chat doesn't contend with the
+        # training service on GPU.
+        self._autonomous_soma: SOMA | None = None
+        self._autonomous_encoder: TextEncoder | None = None
+        self._autonomous_decoder: TextDecoder | None = None
 
     # ------------------------------------------------------------------
     def build(self, parent: int | str, state: UIState) -> int | str:
@@ -137,7 +145,20 @@ class ChatPanel:
         max_tokens: int,
         pause: bool,
     ) -> None:
-        """Runs on a dedicated thread. Talks to SOMA via the controller."""
+        """Runs on a dedicated thread. Talks to SOMA via the controller, or
+        via a lazily-loaded CPU copy when spectating the autonomous loop.
+        """
+        if state.autonomous_mode:
+            soma, encoder, decoder = self._ensure_autonomous_soma(state)
+            if soma is None or encoder is None or decoder is None:
+                with self._lock:
+                    self._pending_reply = "[autonomous-chat: no checkpoint yet]"
+                return
+            reply = _run_interactive(soma, encoder, decoder, text, max_tokens)
+            with self._lock:
+                self._pending_reply = reply
+            return
+
         was_running = state.controller.state is TrainingState.RUNNING
         if pause and was_running:
             state.controller.pause()
@@ -155,6 +176,57 @@ class ChatPanel:
             state.controller.resume()
         with self._lock:
             self._pending_reply = reply
+
+    def _ensure_autonomous_soma(
+        self, state: UIState
+    ) -> tuple[SOMA | None, TextEncoder | None, TextDecoder | None]:
+        """Load checkpoints/current.pt into a CPU-only SOMA on first use.
+
+        Subsequent calls reuse the cached instance. If the checkpoint is
+        missing, returns (None, None, None) and the caller surfaces that to
+        the chat history.
+        """
+        with self._lock:
+            if self._autonomous_soma is not None:
+                return (
+                    self._autonomous_soma,
+                    self._autonomous_encoder,
+                    self._autonomous_decoder,
+                )
+        ckpt = Path("checkpoints/current.pt")
+        if not ckpt.exists():
+            return None, None, None
+        try:
+            payload = torch.load(ckpt, map_location="cpu", weights_only=False)
+            ckpt_config = SOMAConfig.from_dict(payload["config"])
+            soma = SOMA(ckpt_config, device=torch.device("cpu"))
+            soma.load_state(ckpt)
+            corpus_path = Path("data/tinyshakespeare.txt")
+            if not corpus_path.exists():
+                corpus_path = Path("data/heldout.txt")
+            corpus = [
+                ln.strip()
+                for ln in corpus_path.read_text(encoding="utf-8").splitlines()
+                if ln.strip()
+            ]
+            tokenizer = train_bpe_tokenizer(corpus, vocab_size=ckpt_config.vocab_size)
+            encoder = TextEncoder(
+                tokenizer,
+                embed_dim=ckpt_config.text_embed_dim,
+                max_seq_len=ckpt_config.max_input_tokens,
+                device=torch.device("cpu"),
+            )
+            decoder = TextDecoder(
+                tokenizer, embed_dim=ckpt_config.text_embed_dim, device=torch.device("cpu")
+            )
+            decoder.tie_weights(encoder)
+        except Exception:  # noqa: BLE001 - any load failure -> no chat
+            return None, None, None
+        with self._lock:
+            self._autonomous_soma = soma
+            self._autonomous_encoder = encoder
+            self._autonomous_decoder = decoder
+        return soma, encoder, decoder
 
     # ------------------------------------------------------------------
     def _append_history(self, line: str) -> None:

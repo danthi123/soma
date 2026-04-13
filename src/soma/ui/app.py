@@ -25,7 +25,8 @@ panel is just "create a module + register".
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from pathlib import Path
 
 try:
     import dearpygui.dearpygui as dpg
@@ -40,7 +41,7 @@ from soma.core.config import SOMAConfig
 from soma.ui import panels  # noqa: F401  (side-effect import for registration)
 from soma.ui.bus import DataBus
 from soma.ui.registry import Panel, default_registry
-from soma.ui.state import UIState
+from soma.ui.state import DEFAULT_SOMA_LOOP_DIR, UIState, detect_autonomous_mode
 from soma.ui.training_controller import TrainingController
 
 LOGGER = logging.getLogger("soma.ui.app")
@@ -52,6 +53,7 @@ class AppOptions:
     window_title: str = "SOMA Control Center"
     window_width: int = 1600
     window_height: int = 960
+    soma_loop_dir: Path = field(default_factory=lambda: DEFAULT_SOMA_LOOP_DIR)
 
 
 # Named tags so tests / panels can find them.
@@ -63,7 +65,13 @@ def build_state(options: AppOptions) -> UIState:
     config = SOMAConfig.from_yaml(options.config_path) if options.config_path else SOMAConfig()
     bus = DataBus()
     controller = TrainingController(bus)
-    return UIState(config=config, bus=bus, controller=controller)
+    return UIState(
+        config=config,
+        bus=bus,
+        controller=controller,
+        autonomous_mode=detect_autonomous_mode(options.soma_loop_dir),
+        soma_loop_dir=options.soma_loop_dir,
+    )
 
 
 def _build_panels(state: UIState) -> list[tuple[str, Panel]]:

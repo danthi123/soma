@@ -18,7 +18,9 @@ discipline. Node colors map from NodeType; size scales from
 
 from __future__ import annotations
 
+import json
 import threading
+from pathlib import Path
 from typing import Any
 
 try:
@@ -33,6 +35,30 @@ from soma.ui.graph_view.layout_engine import ForceDirectedLayout
 from soma.ui.registry import register_panel
 from soma.ui.state import UIState
 from soma.ui.training_controller import CHANNEL_GRAPH_SNAPSHOT
+
+
+def load_snapshot_from_disk(reports_dir: Path) -> dict[str, Any] | None:
+    """Return the most recent graph snapshot JSON from ``reports_dir``.
+
+    Autonomous-loop mode: the training service is expected to periodically
+    write ``reports/graph_snapshot.json``; if it doesn't exist yet (or is
+    malformed) we return None so the panel can show a placeholder instead
+    of stale data. Only files literally named ``graph_snapshot.json`` are
+    considered — other JSON artefacts in ``reports/`` (tick reports,
+    chat logs) are ignored.
+    """
+    if not reports_dir.exists():
+        return None
+    snap_path = reports_dir / "graph_snapshot.json"
+    if not snap_path.exists():
+        return None
+    try:
+        data = json.loads(snap_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    return data
 
 _NODE_COLORS: dict[str, tuple[int, int, int, int]] = {
     "sensor": (80, 140, 230, 255),

@@ -148,6 +148,12 @@ class ConfigPanel:
             raise RuntimeError("DearPyGUI not installed; install soma[ui]")
 
         self._root = dpg.add_group(parent=parent, tag="panel_config_root")
+        if state.autonomous_mode:
+            dpg.add_text(
+                "Config read-only (autonomous mode)",
+                parent=self._root,
+                color=(230, 120, 120, 255),
+            )
         dpg.add_text("SOMAConfig (edits take effect on next Rebuild)", parent=self._root)
         dpg.add_separator(parent=self._root)
 
@@ -162,6 +168,14 @@ class ConfigPanel:
             with dpg.collapsing_header(label=group_name, parent=self._root, default_open=False):
                 for f in fields_in_group:
                     self._add_field_widget(f, state)
+
+        if state.autonomous_mode:
+            # Disable every widget we just created so fields are visible
+            # but not editable.
+            for f in dataclass_fields(SOMAConfig):
+                tag = _tag_for(f.name)
+                if dpg.does_item_exist(tag):
+                    dpg.disable_item(tag)
         return self._root
 
     # Compact widget widths so the label (which DPG puts to the right) has

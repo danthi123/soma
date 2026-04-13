@@ -9,8 +9,10 @@ subscriber captures the last N records and ``update`` drains them.
 
 from __future__ import annotations
 
+import json
 import threading
 from collections import deque
+from pathlib import Path
 from typing import Any
 
 try:
@@ -27,6 +29,31 @@ from soma.ui.training_controller import CHANNEL_GROWTH_EVENT, CHANNEL_METRICS
 
 # How many recent points each plot retains.
 _WINDOW = 500
+
+
+def read_metrics_tail(path: Path, *, max_records: int) -> list[dict[str, Any]]:
+    """Return the last ``max_records`` valid JSON records from a JSONL file.
+
+    Used by spectator mode (autonomous loop) when the metrics panel reads
+    from disk instead of subscribing to the in-process bus. Missing files
+    return an empty list. Malformed lines are silently skipped.
+    """
+    if not path.exists():
+        return []
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return []
+    records: list[dict[str, Any]] = []
+    for raw in lines[-max_records * 2 :]:
+        line = raw.strip()
+        if not line:
+            continue
+        try:
+            records.append(json.loads(line))
+        except json.JSONDecodeError:
+            continue
+    return records[-max_records:]
 
 _GROWTH_COLORS = {
     "synaptogenesis": (80, 200, 255, 200),
@@ -52,6 +79,8 @@ class MetricsPanel:
         self._num_nodes: list[float] = []
         self._num_edges: list[float] = []
         self._wm_occ: list[float] = []
+        self._autonomous_metrics_file: Path | None = None
+        self._last_disk_step: int = -1
 
     # ------------------------------------------------------------------
     def build(self, parent: int | str, state: UIState) -> int | str:
@@ -92,9 +121,16 @@ class MetricsPanel:
                 dpg.add_scatter_series([], [], tag="growth_series_prune", label="prune")
             dpg.set_axis_limits("growth_y", -0.5, 2.5)
 
-        # Subscribe after plot widgets exist.
-        state.bus.subscribe(CHANNEL_METRICS, self._on_metrics)
-        state.bus.subscribe(CHANNEL_GROWTH_EVENT, self._on_growth)
+        if state.autonomous_mode:
+            # In spectator mode the training service owns SOMA and writes
+            # metrics.current.jsonl; update() tails that file instead of
+            # listening for bus messages.
+            self._autonomous_metrics_file = (
+                state.soma_loop_dir / "metrics" / "metrics.current.jsonl"
+            )
+        else:
+            state.bus.subscribe(CHANNEL_METRICS, self._on_metrics)
+            state.bus.subscribe(CHANNEL_GROWTH_EVENT, self._on_growth)
         return self._root
 
     # ------------------------------------------------------------------
@@ -108,12 +144,38 @@ class MetricsPanel:
         with self._lock:
             self._growth_queue.append(record)
 
+    def _pull_from_disk(self) -> None:
+        """Tail the autonomous-loop metrics file and enqueue new records."""
+        assert self._autonomous_metrics_file is not None
+        records = read_metrics_tail(self._autonomous_metrics_file, max_records=_WINDOW)
+        # The disk file stores ``step`` while the in-process bus uses
+        # ``global_step``. Map and dedupe against what we've already consumed.
+        with self._lock:
+            for rec in records:
+                step = int(rec.get("step", rec.get("global_step", 0)))
+                if step <= self._last_disk_step:
+                    continue
+                self._last_disk_step = step
+                self._metrics_queue.append(
+                    {
+                        "global_step": step,
+                        "loss": rec.get("loss"),
+                        "curiosity": rec.get("curiosity", 0.0),
+                        "lr_multiplier": rec.get("lr_multiplier", 1.0),
+                        "num_nodes": rec.get("num_nodes", 0),
+                        "num_edges": rec.get("num_edges", 0),
+                        "wm_occupancy": rec.get("wm_occupancy", 0.0),
+                    }
+                )
+
     # ------------------------------------------------------------------
     # Per-frame update (DPG main thread)
     # ------------------------------------------------------------------
     def update(self, state: UIState) -> None:
         if not DPG_AVAILABLE:  # pragma: no cover
             return
+        if self._autonomous_metrics_file is not None:
+            self._pull_from_disk()
         with self._lock:
             metrics = list(self._metrics_queue)
             growth = list(self._growth_queue)

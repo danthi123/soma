@@ -13,10 +13,22 @@ with explicit fields instead of a free-form dict.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from soma.core.config import SOMAConfig
 from soma.ui.bus import DataBus
 from soma.ui.training_controller import TrainingController
+
+DEFAULT_SOMA_LOOP_DIR = Path(".soma-loop")
+
+
+def detect_autonomous_mode(soma_loop_dir: Path) -> bool:
+    """Return True iff ``<soma_loop_dir>/state/autonomous_mode.flag`` exists.
+
+    The autonomous-loop operator touches this flag when starting the
+    scheduled-task loop so the desktop UI knows to go read-only.
+    """
+    return (soma_loop_dir / "state" / "autonomous_mode.flag").exists()
 
 
 @dataclass
@@ -47,6 +59,12 @@ class UIState:
     # Session metadata — used by the file-menu panel.
     last_checkpoint_path: str | None = None
     last_corpus_path: str | None = None
+
+    # Spectator mode: when True, controls/config are read-only and metrics/
+    # graph/chat pull from .soma-loop state written by the autonomous loop
+    # rather than the in-process training controller.
+    autonomous_mode: bool = False
+    soma_loop_dir: Path = field(default_factory=lambda: DEFAULT_SOMA_LOOP_DIR)
 
     def reset_session(self) -> None:
         """Forget per-session paths (still keeps config + bus + controller)."""

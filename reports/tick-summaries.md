@@ -774,3 +774,4 @@ New diagnostic scripts landed with the fix:
 
 Dead-graph checkpoints archived to `checkpoints/dead-edges-collapse-2026-04-13/`.
 Fresh service pid 38468 running, 23 commits pending operator push.
+| 1776124320 | 2026-04-13T23:55:32Z | 45000 | no_change | loss_ema=0.01498 heldout=0.02283 kl=20.71 nodes=34 edges=64 wm=0.0 | stable fresh run, all fixes in carveout |

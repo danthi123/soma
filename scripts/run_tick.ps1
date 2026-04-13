@@ -7,6 +7,21 @@ Set-Location (Join-Path $PSScriptRoot "..")
 $env:PYTHONIOENCODING = "utf-8"
 $env:PYTHONUTF8 = "1"
 
+# Windows Task Scheduler runs powershell with a stripped PATH that is
+# missing git, so git rev-parse subprocesses inside the test suite and
+# scripts fail with FileNotFoundError. Prepend the standard Git for
+# Windows locations before doing anything else.
+$gitCandidates = @(
+    "C:\Program Files\Git\cmd",
+    "C:\Program Files\Git\bin",
+    "C:\Program Files\Git\mingw64\bin"
+)
+foreach ($g in $gitCandidates) {
+    if ((Test-Path $g) -and ($env:PATH -notlike "*$g*")) {
+        $env:PATH = "$g;$env:PATH"
+    }
+}
+
 $logDir = ".soma-loop/logs"
 New-Item -ItemType Directory -Force -Path $logDir | Out-Null
 $timestamp = [int][double]::Parse((Get-Date -UFormat %s))

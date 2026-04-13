@@ -136,12 +136,24 @@ def _apply_hebbian_edge_updates(
     *,
     config: SOMAConfig,
 ) -> None:
-    """Fire-together-wire-together edge reinforcement, clamp, and strength EMA."""
+    """Fire-together-wire-together edge reinforcement, clamp, and strength EMA.
+
+    Also applies passive multiplicative weight decay to every edge each
+    step (active or not). The decay counterbalances the monotonically
+    positive Hebbian add term so edge weights don't drift to the clamp
+    boundary over time. With ``edge_weight_decay`` slightly under 1 and
+    typical activations, the equilibrium is well below ``max_edge_weight``.
+    """
     threshold = config.activation_threshold
     max_w = config.max_edge_weight
     hebbian_lr = config.hebbian_lr
+    decay = config.edge_weight_decay
 
     with torch.no_grad():
+        if decay < 1.0:
+            for edge in graph.all_edges():
+                edge.weight.data.mul_(decay)
+
         for edge in graph.all_edges():
             source_act = activations.get(edge.source_id)
             target_act = activations.get(edge.target_id)

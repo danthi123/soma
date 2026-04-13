@@ -271,3 +271,75 @@ class TestLrMultiplier:
         update_step(graph, loss, activations, config, lr_multiplier=0.0)
         # With LR=0, the SGD step should leave linear1.weight unchanged.
         assert torch.allclose(before, assoc.linear1.weight)
+
+
+class TestEdgeWeightDecay:
+    """Verify Hebbian counterbalance: weights don't drift to clamp."""
+
+    def _two_node_decay_setup(
+        self, *, initial_weight: float, decay: float, hebbian_lr: float = 0.001
+    ) -> tuple[Graph, Edge, SOMAConfig]:
+        cfg = SOMAConfig(
+            base_lr=0.001,
+            hebbian_lr=hebbian_lr,
+            edge_weight_decay=decay,
+            activation_threshold=0.01,
+        )
+        graph = Graph()
+        dim = 4
+        sensor = Node(NodeType.SENSOR, dim, dim, dim, 0, cfg)
+        out = Node(NodeType.OUTPUT, dim, dim, dim, 0, cfg)
+        graph.add_node(sensor, modality="text")
+        graph.add_node(out, modality="text")
+        edge = Edge(
+            source_id=sensor.id,
+            target_id=out.id,
+            source_output_dim=dim,
+            target_input_dim=dim,
+            creation_step=0,
+            initial_weight=initial_weight,
+        )
+        graph.add_edge(edge)
+        return graph, edge, cfg
+
+    def test_inactive_edge_decays_toward_zero(self) -> None:
+        graph, edge, cfg = self._two_node_decay_setup(
+            initial_weight=1.0, decay=0.99, hebbian_lr=0.0
+        )
+        loss = torch.zeros((), requires_grad=True)
+        initial = float(edge.weight.detach().item())
+        for _ in range(10):
+            update_step(graph, loss, activations={}, config=cfg)
+        final = float(edge.weight.detach().item())
+        assert final < initial, f"weight should decay; initial={initial}, final={final}"
+        assert abs(final - initial * (0.99**10)) < 1e-4
+
+    def test_co_active_edge_reaches_equilibrium_below_clamp(self) -> None:
+        graph, edge, cfg = self._two_node_decay_setup(
+            initial_weight=0.01, decay=0.99, hebbian_lr=0.01
+        )
+        # Constant activations => equilibrium w_eq = hebbian_lr * s*t / (1-decay)
+        # With s_norm=2 (sqrt(4 ones)), s*t = 4. Equilibrium = 0.01*4/0.01 = 4.
+        sensor_id, out_id = list(graph.nodes.keys())
+        activations = {
+            sensor_id: torch.ones(4),
+            out_id: torch.ones(4),
+        }
+        loss = torch.zeros((), requires_grad=True)
+        for _ in range(2000):
+            update_step(graph, loss, activations=activations, config=cfg)
+        final = float(edge.weight.detach().item())
+        assert 1.0 < final < cfg.max_edge_weight, (
+            f"equilibrium should approach 4.0 but stay under clamp 5.0, got {final}"
+        )
+
+    def test_decay_does_not_flip_sign(self) -> None:
+        graph, edge, cfg = self._two_node_decay_setup(
+            initial_weight=-1.0, decay=0.5, hebbian_lr=0.0
+        )
+        loss = torch.zeros((), requires_grad=True)
+        for _ in range(20):
+            update_step(graph, loss, activations={}, config=cfg)
+        final = float(edge.weight.detach().item())
+        assert final < 0.0, f"negative weight stayed negative? got {final}"
+        assert final > -1e-3, f"weight should decay close to zero, got {final}"

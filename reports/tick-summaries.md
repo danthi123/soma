@@ -438,3 +438,21 @@ ONE tick observes past step 40K. Projected timing at ~3 steps/s: the
 ---
 | 1776095447 | 2026-04-13T15:51:54Z | cold_start | Baseline seeded (loss_ema=268.1, step=35000, heldout=NaN) | — |
 | 1776097693 | 2026-04-13T16:30Z | cold_start | Baseline re-seeded (loss_ema=13.72, step=40000, heldout=Inf, nan_detected) | — |
+
+### Monitoring notes at ~12:30 EDT (step 42492, past 40K gate)
+
+**Tick 1776097693 outcome was cold-start** — baseline re-seeded at step=40K, loss_ema=13.72. New baseline now represents the post-fix living-weights system, not the pre-fix saturated-dead one.
+
+**Operational issue observed twice:** after a cold-start tick exits, run_tick leaves `tick.lock` dangling and skips the post-finalize `resume` signal. Service stays paused until next tick reclaims the stale lock via pid-aware detection. Manually cleared `tick.lock` and sent `signals/resume` — service resumed at step 42405, now advancing. Worth a fix to run_tick.{sh,ps1} but not urgent.
+
+**Config-class proposal queued (operator approval required):**
+
+- `queue_id`: `e1c9fc2d-c81e-495b-ac17-78c8e94ffd84`
+- `class`: config
+- Diff: `configs/current.yaml` lower `synaptogenesis_rate` from 0.01 to 0.005
+- Rationale: edges grew 64 to 1360 over 40K steps; each synaptogenesis burst adds ~10 edges and destabilizes learned weights, forcing homeostasis to clamp LR to ~0.001. Halving the rate attacks the oscillation cause while keeping `synaptogenesis_interval=100` intact.
+- Expected: loss_ema_500 trends below 10 within one confirm window (~15 min at 3 steps/s).
+- Base commit: `e077ca0`
+- Proposed by: monitoring-session (operator-instructed per prior message)
+
+---

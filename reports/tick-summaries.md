@@ -674,3 +674,28 @@ Both synaptogenesis and the Hebbian edge update used `tensor.norm()` as the "mag
 
 | 1776113229 | 2026-04-13 20:48 UTC | no_change | — | System stable at step 85K; loss_ema=0.0188, KL frozen at 23.03, zero graph growth. Actionable concerns in carveout paths. |
 | 1776115445 | 135000 | 0.01900 | 23.026 | 34/64 | no_change | growth stagnation, all targets carveout-protected |
+
+---
+
+## 2026-04-13 ~17:55 EDT — 180K milestone: RMS fix holding through step 183K+
+
+Heartbeat at 2026-04-13T21:54Z shows pid 39880 running at step **183,001** — 138K steps past the RMS fix (commit `d0f58fb` at step ~45K), 17x past the original failure point of 11K, 2.1x past the previous 85K stability report.
+
+**Trajectory since RMS fix:**
+
+| step   | loss_ema | heldout | lr_m | edges | notes                                   |
+|--------|----------|---------|------|-------|-----------------------------------------|
+| 30000  | 0.0172   | 0.0193  | 0.51 | 64    | first post-fix tick, recovering         |
+| 85000  | 0.0188   | 0.0192  | 1.00 | 64    | lr recovered cleanly                    |
+| 135000 | 0.0190   | 0.0193  | 1.00 | 64    | flat — 50K additional stable steps      |
+| 183000 | —        | —       | —    | —     | heartbeat only, next tick imminent      |
+
+Loss_ema drift across 105K steps: 0.0172 → 0.0190 (+0.0018). Heldout drift: 0.0193 → 0.0193 (flat). This is genuine stability, not a trend.
+
+**Status indicators:** no STOP, no permanent_failure, consecutive_failures=1 (stale from pre-fix), zero reverts, zero new halts since the RMS fix landed.
+
+**Growth concern persists (noted 85K, reaffirmed here):** synaptogenesis/neurogenesis have fired zero times across 138K+ post-fix steps. The seed topology (34 nodes / 64 edges) is sufficient for this dataset's complexity floor — but if the system is never stressed into needing capacity, we can't validate growth under RMS-scaled activations. Activation_threshold=0.1 with typical RMS ~1.0 should permit firing; what's missing is a task signal that would push a coactivation pair past the probability draw. Not urgent while the run is beating every prior milestone.
+
+**Next check:** 2 hours out (approx 2026-04-13T23:55Z) per stable-cadence protocol.
+
+---

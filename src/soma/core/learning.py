@@ -18,6 +18,7 @@ after ``execute_graph`` and loss computation.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Mapping
 
 import torch
@@ -25,6 +26,17 @@ import torch
 from soma.core.config import SOMAConfig
 from soma.core.edge import Edge
 from soma.core.graph import Graph
+
+
+def _rms_magnitude(tensor: torch.Tensor) -> float:
+    """Per-channel RMS magnitude. Unlike L2 norm, this is dim-invariant:
+    a 64-dim unit-per-channel activation reports ~1.0 instead of 8.0.
+    Used in the Hebbian coactivation product to prevent the magnitude
+    scale from tracking dim."""
+    numel = tensor.numel()
+    if numel == 0:
+        return 0.0
+    return float(tensor.detach().norm().item()) / math.sqrt(numel)
 
 
 def update_step(
@@ -169,8 +181,8 @@ def _apply_hebbian_edge_updates(
             if source_act is None or target_act is None:
                 continue  # edge did not participate this step
 
-            source_mag = float(source_act.detach().norm().item())
-            target_mag = float(target_act.detach().norm().item())
+            source_mag = _rms_magnitude(source_act)
+            target_mag = _rms_magnitude(target_act)
 
             if source_mag > threshold and target_mag > threshold:
                 edge.increment_coactivation()

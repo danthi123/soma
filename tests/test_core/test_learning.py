@@ -318,8 +318,8 @@ class TestEdgeWeightDecay:
         graph, edge, cfg = self._two_node_decay_setup(
             initial_weight=0.01, decay=0.99, hebbian_lr=0.01
         )
-        # Constant activations => equilibrium w_eq = hebbian_lr * s*t / (1-decay)
-        # With s_norm=2 (sqrt(4 ones)), s*t = 4. Equilibrium = 0.01*4/0.01 = 4.
+        # Equilibrium w_eq = hebbian_lr * s_rms * t_rms / (1 - decay)
+        # torch.ones(4) has RMS 1.0, so s*t = 1. w_eq = 0.01 * 1 / 0.01 = 1.0
         sensor_id, out_id = list(graph.nodes.keys())
         activations = {
             sensor_id: torch.ones(4),
@@ -329,8 +329,8 @@ class TestEdgeWeightDecay:
         for _ in range(2000):
             update_step(graph, loss, activations=activations, config=cfg)
         final = float(edge.weight.detach().item())
-        assert 1.0 < final < cfg.max_edge_weight, (
-            f"equilibrium should approach 4.0 but stay under clamp 5.0, got {final}"
+        assert 0.5 < final < cfg.max_edge_weight, (
+            f"equilibrium should approach 1.0 but stay under clamp, got {final}"
         )
 
     def test_decay_does_not_flip_sign(self) -> None:

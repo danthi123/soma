@@ -16,6 +16,7 @@ exist in that direction.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Mapping
 from typing import cast
 
@@ -50,7 +51,14 @@ def synaptogenesis(
     active_ids: list[str] = []
     magnitudes: dict[str, float] = {}
     for nid, act in activations.items():
-        mag = float(act.detach().norm().item())
+        # RMS magnitude (per-channel scale) rather than raw L2 norm, so
+        # coactivation doesn't grow linearly with dim. A 64-dim tensor
+        # at unit per-channel magnitude has norm=8 which would make
+        # coact=64 and drive synaptogenesis prob to 1 for nearly every
+        # pair regardless of rate. RMS keeps coact ~1 for unit signals.
+        tensor = act.detach()
+        numel = tensor.numel()
+        mag = float(tensor.norm().item()) / math.sqrt(numel) if numel > 0 else 0.0
         if mag > threshold and nid in graph.nodes:
             active_ids.append(nid)
             magnitudes[nid] = mag

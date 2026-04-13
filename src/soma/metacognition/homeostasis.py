@@ -100,6 +100,12 @@ class HomeostaticRegulator:
         else:
             self.global_lr_multiplier = min(1.0, self.global_lr_multiplier * self.recovery_factor)
 
+        # Floor the multiplier so repeated spikes can't drive it to 0
+        # and freeze learning. Recovery always has something to multiply
+        # back up. Ratified from tick-1776108773 proposal that was
+        # stashed when safety_gate's test phase failed.
+        self.global_lr_multiplier = max(0.01, self.global_lr_multiplier)
+
         # Density-based growth gating.
         num_nodes = graph.num_nodes
         num_edges = graph.num_edges

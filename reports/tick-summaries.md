@@ -437,3 +437,4 @@ ONE tick observes past step 40K. Projected timing at ~3 steps/s: the
 
 ---
 | 1776095447 | 2026-04-13T15:51:54Z | cold_start | Baseline seeded (loss_ema=268.1, step=35000, heldout=NaN) | — |
+| 1776097693 | 2026-04-13T16:30Z | cold_start | Baseline re-seeded (loss_ema=13.72, step=40000, heldout=Inf, nan_detected) | — |

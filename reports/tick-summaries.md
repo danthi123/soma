@@ -516,3 +516,53 @@ The fixes extended stable training 7.5x and turned silent saturation into explic
 I lean toward option 1 (fresh init + config fix), but this is your G40 gate call.
 
 ---
+
+## 2026-04-13 ~13:25 EDT — post-HALT recovery: Option 1 + carveout fix + fresh restart
+
+Operator authorized "any changes needed including carveout". Executed:
+
+**Carveout fix (commit `1927406`):** `src/soma/growth/pruning.py` now
+runs a **congestion-pruning** sweep after the existing low-utility
+sweep. When `avg_degree > max_edges_per_node`, the weakest edges past
+grace period are removed until back under cap. Root cause: the
+existing low-utility filter requires BOTH low strength AND long
+inactivity; in continuously-active dense graphs every edge stays
+"active" and strength stays above threshold, so pruning literally
+never fired. Three new tests in `tests/test_growth/test_pruning.py`
+verify correctness (grace respected, no-op when under cap,
+weakest-first ordering). 699/699 pytest, ruff + mypy clean.
+
+**Config changes (commit `0ef28de`):** `configs/current.yaml`:
+
+- `synaptogenesis_rate` 0.01 → 0.005 (halve edge-growth rate)
+- `neurogenesis_interval` 500 → 1000 (halve node-growth rate)
+
+Applied the queued proposal `e1c9fc2d` inline (queue entry updated
+to `queue_status=applied` with `approved_by="operator (inline via
+monitoring-session)"`).
+
+**State hygiene:**
+
+- NaN-poisoned checkpoints (step 5K-45K, current.*) moved to
+  `checkpoints/nan-poisoned-45k-2026-04-13/` for reference.
+- Cleared STOP, halt_reason.json, train_permanent_failure.json,
+  train_crash.json, heartbeat, tick.lock, git.lock, baseline.json,
+  push_failure.json, current_tick_id.*.
+- Touched `fresh_init.flag` so train_service cold-starts.
+
+**Fresh restart:** train_service pid 108116 on CUDA, step 0 → 268
+in ~10s (~27 steps/s early warmup), status=running, load_source=fresh.
+Fresh baseline will be captured on next tick per Phase 1.
+
+**Four levers now pulling against over-growth:**
+
+1. Hebbian weight decay (`edge_weight_decay=0.9999`) — damps weight drift
+2. Gradient clipping (`grad_clip_max_norm=1.0`) — caps backprop spikes
+3. Growth rate halving (config above) — reduces event magnitude
+4. Congestion pruning (carveout) — actively removes excess density
+
+Prediction: graph should now stabilize around avg_degree ≤ 20 instead
+of drifting to 50+. Loss oscillation should be much narrower. Next tick
+will tell.
+
+---

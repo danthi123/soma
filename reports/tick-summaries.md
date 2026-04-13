@@ -737,3 +737,40 @@ Leaving all of these for the operator. Continuing stable-cadence monitoring for 
 - loss_ema_500=0.01845, kl=23.026, nodes=34, edges=64
 - Decoder still collapsed: all prompts → "GUE". Zero growth events (262K steps).
 - class=null: root cause in carveout (growth/core). Awaiting operator intervention.
+
+---
+
+## 2026-04-13 ~19:07 EDT — dead-graph fix verified at step 5K
+
+Operator granted autonomous authority to fix learning/architecture issues
+(not just stability). Traced the decoder collapse: blanket
+`edge_weight_decay=0.9999` drove every unbumped edge's magnitude to ~1e-13
+across 292K steps. Inactive edges died, their targets starved, Hebbian
+couldn't recover them — vicious cycle, graph became a constant function.
+
+**Fix (commit `28a6e07`):** moved the decay `mul_()` inside the co-active
+branch of `_apply_hebbian_edge_updates`. Resting edges keep their weight;
+active edges retain the same Hebbian/decay equilibrium. Tests updated
+(`test_inactive_edge_preserves_weight` replaces `..._decays_toward_zero`).
+703 pytest pass, ruff + mypy clean.
+
+**Verification after 5K fresh-init steps:**
+
+| stage                    | pre-fix (292K) | post-fix (5K)            |
+|--------------------------|----------------|--------------------------|
+| edge |w| median          | 2.6e-6         | **0.1030**               |
+| edges with |w| < 1e-3    | 64/64          | **0/64**                 |
+| OUTPUT activation variance across prompts | 0 (collapsed) | **min 0.28, max 0.35**  |
+| unique decoded tokens (5 prompts) | 1 ('GUE')   | **5 distinct**          |
+
+Prompts now decode to relevant first tokens:
+- "The quick brown" → `'The'`
+- "Shall I compare thee" → `'Shall'`
+- "O Romeo, Romeo" → `'O'`
+
+New diagnostic scripts landed with the fix:
+- `scripts/diagnose_collapse.py` — per-prompt pipeline trace with diversity summary
+- `scripts/inspect_graph.py` — edge weight distribution and zero-input forward pass
+
+Dead-graph checkpoints archived to `checkpoints/dead-edges-collapse-2026-04-13/`.
+Fresh service pid 38468 running, 23 commits pending operator push.

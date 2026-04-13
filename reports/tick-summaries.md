@@ -68,3 +68,10 @@ operator completion of the three deferred checks.
 - tick 1776057013: exit=0 reason=harness_failure (NaN loss, CUDA assert in working_memory.occupancy; training service unaffected, still running)
 tick 1776057520: phase=11 finalize baseline_captured
 - tick 1776057714: applied queue entry 704632ce (base_lr→0.5 canary), sha=ad780944, gates OK, restart OK
+
+### tick 1776057749 — 2026-04-13T05:28:27Z
+- **outcome:** no change proposed
+- **reason:** regression from deliberate base_lr=0.5 test injection; waiting for watchdog revert
+- **loss_ema_500:** 0.0711 (+47.2% vs baseline)
+- **nodes:** 35 (−9), edges: 1180 (−90)
+- **health_flags:** wm_pinned_high, episodic_saturated

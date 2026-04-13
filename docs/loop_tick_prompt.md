@@ -196,7 +196,19 @@ for each diff[] entry in order:
 append to change_log.jsonl:
     {
       "change_log_id": "<uuid4>",
-      "status": "in_progress",
+      "status": "in_progress",      # NOT "applied". The change_log.status
+                                     # vocabulary is strict (Appendix B.1):
+                                     # pending | in_progress | confirmed |
+                                     # reverted | reverted_at_gate |
+                                     # commit_hook_blocked | stale |
+                                     # halted_by_diagnose.
+                                     # "applied" is a queue_status value
+                                     # (Phase 3, Appendix B.3), used only
+                                     # inside approval_queue.jsonl — never
+                                     # in change_log.jsonl. The watchdog
+                                     # finds in-progress entries to judge;
+                                     # writing "applied" here makes the
+                                     # entry invisible to auto_revert.
       "pre_change_metrics": <tick_report summary>,
       "commit_sha": null,
       "ts_proposed": now,

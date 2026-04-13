@@ -159,11 +159,15 @@ def _apply_hebbian_edge_updates(
 ) -> None:
     """Fire-together-wire-together edge reinforcement, clamp, and strength EMA.
 
-    Also applies passive multiplicative weight decay to every edge each
-    step (active or not). The decay counterbalances the monotonically
-    positive Hebbian add term so edge weights don't drift to the clamp
-    boundary over time. With ``edge_weight_decay`` slightly under 1 and
-    typical activations, the equilibrium is well below ``max_edge_weight``.
+    Weight decay (``config.edge_weight_decay``) is applied only to edges
+    that also receive a Hebbian bump this step — i.e., the same edges
+    where decay is needed to counterbalance the monotonic Hebbian add.
+    Resting edges keep their weight. An earlier version applied decay to
+    every edge every step; with decay=0.9999 over 300K steps, that
+    drove every unbumped edge's magnitude to ~1e-13 and the graph
+    became a constant function (output = OUTPUT node bias, decoder
+    collapsed to a single token regardless of input). See
+    diagnose_collapse.py and tick-summaries 2026-04-13 entry.
     """
     threshold = config.activation_threshold
     max_w = config.max_edge_weight
@@ -171,10 +175,6 @@ def _apply_hebbian_edge_updates(
     decay = config.edge_weight_decay
 
     with torch.no_grad():
-        if decay < 1.0:
-            for edge in graph.all_edges():
-                edge.weight.data.mul_(decay)
-
         for edge in graph.all_edges():
             source_act = activations.get(edge.source_id)
             target_act = activations.get(edge.target_id)
@@ -186,6 +186,10 @@ def _apply_hebbian_edge_updates(
 
             if source_mag > threshold and target_mag > threshold:
                 edge.increment_coactivation()
+                # Decay first, then Hebbian add — matches the equilibrium
+                # analysis w_eq = hebbian_lr * s * t / (1 - decay).
+                if decay < 1.0:
+                    edge.weight.data.mul_(decay)
                 edge.weight.data.add_(hebbian_lr * source_mag * target_mag)
 
             # Clamp after Hebbian bump so weights never exceed ±max_w.

@@ -302,7 +302,11 @@ class TestEdgeWeightDecay:
         graph.add_edge(edge)
         return graph, edge, cfg
 
-    def test_inactive_edge_decays_toward_zero(self) -> None:
+    def test_inactive_edge_preserves_weight(self) -> None:
+        """Resting edges keep their weight — decay only applies where Hebbian
+        also applies. Prevents a vicious cycle where low-activity edges
+        die, starving their targets, preventing any future Hebbian bumps.
+        """
         graph, edge, cfg = self._two_node_decay_setup(
             initial_weight=1.0, decay=0.99, hebbian_lr=0.0
         )
@@ -311,8 +315,9 @@ class TestEdgeWeightDecay:
         for _ in range(10):
             update_step(graph, loss, activations={}, config=cfg)
         final = float(edge.weight.detach().item())
-        assert final < initial, f"weight should decay; initial={initial}, final={final}"
-        assert abs(final - initial * (0.99**10)) < 1e-4
+        assert final == pytest.approx(initial, abs=1e-6), (
+            f"inactive edge weight should not change; initial={initial}, final={final}"
+        )
 
     def test_co_active_edge_reaches_equilibrium_below_clamp(self) -> None:
         graph, edge, cfg = self._two_node_decay_setup(
@@ -333,13 +338,21 @@ class TestEdgeWeightDecay:
             f"equilibrium should approach 1.0 but stay under clamp, got {final}"
         )
 
-    def test_decay_does_not_flip_sign(self) -> None:
+    def test_coactive_decay_pulls_toward_zero_preserves_sign(self) -> None:
+        """Under co-activation with hebbian_lr=0, the decay path can run alone
+        and should pull a negative weight toward zero without flipping sign.
+        """
         graph, edge, cfg = self._two_node_decay_setup(
             initial_weight=-1.0, decay=0.5, hebbian_lr=0.0
         )
+        sensor_id, out_id = list(graph.nodes.keys())
+        activations = {
+            sensor_id: torch.ones(4),
+            out_id: torch.ones(4),
+        }
         loss = torch.zeros((), requires_grad=True)
         for _ in range(20):
-            update_step(graph, loss, activations={}, config=cfg)
+            update_step(graph, loss, activations=activations, config=cfg)
         final = float(edge.weight.detach().item())
         assert final < 0.0, f"negative weight stayed negative? got {final}"
         assert final > -1e-3, f"weight should decay close to zero, got {final}"

@@ -50,7 +50,9 @@ def inspect_state(state_path: Path, label: str, *, device: str = "cpu") -> SOMA:
     edge_weights = torch.stack([e.weight.detach().flatten() for e in soma.graph.all_edges()])
     print(summarize("edge.weight (all)", edge_weights.flatten()))
 
-    edge_w_max_per = torch.tensor([float(e.weight.detach().abs().max()) for e in soma.graph.all_edges()])
+    edge_w_max_per = torch.tensor(
+        [float(e.weight.detach().abs().max()) for e in soma.graph.all_edges()]
+    )
     n_at_clamp = int((edge_w_max_per >= config.max_edge_weight - 0.01).sum().item())
     print(f"edges at weight-clamp boundary (|w| >= {config.max_edge_weight - 0.01}): "
           f"{n_at_clamp}/{n_edges}  ({100.0*n_at_clamp/max(n_edges,1):.1f}%)")
@@ -78,7 +80,8 @@ def inspect_state(state_path: Path, label: str, *, device: str = "cpu") -> SOMA:
     norms = torch.tensor(all_node_param_norms)
     print(summarize("node.parameters().norm()", norms))
     if nan_param_nodes:
-        print(f"  ! nodes with non-finite params: {len(nan_param_nodes)} (e.g. {nan_param_nodes[:5]})")
+        sample = nan_param_nodes[:5]
+        print(f"  ! nodes with non-finite params: {len(nan_param_nodes)} (e.g. {sample})")
 
     return soma
 

@@ -32,7 +32,7 @@ max_nodes: 50000
 max_edges_per_node: 20.0
 
 # Learning
-base_lr: 0.5
+base_lr: 0.001
 youth_lr_multiplier: 3.0
 hebbian_lr: 0.0001
 consolidation_lr_ratio: 0.1

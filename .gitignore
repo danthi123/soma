@@ -31,9 +31,14 @@ Thumbs.db
 
 # Logs and data
 *.log
-data/
+data/*
 wandb/
 runs/
+
+# Autonomous-loop seed + reference data (produced by bootstrap_loop.py)
+!data/fixed_prompts.txt
+!data/heldout.txt
+!data/corpus_token_freq.json
 
 # Environment
 .env

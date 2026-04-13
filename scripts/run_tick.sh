@@ -28,7 +28,7 @@ fi
 claude --print --dangerously-skip-permissions \
   --allowedTools "$ALLOWED" \
   --disallowedTools "$DISALLOWED" \
-  --prompt "$(cat "$PROMPT_FILE")" \
+  "$(cat "$PROMPT_FILE")" \
   > "$LOG" 2>&1 || true
 
 # Detect Claude CLI failure patterns (G71).

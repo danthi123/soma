@@ -356,3 +356,4 @@ Push: same no-tty issue as before (operator credentials needed).
 Commits land locally; operator will see them on wake.
 
 ---
+| 1776086567 | 2026-04-13T09:25:15 | harness_skipped | no checkpoint yet (step ~2021, interval=5000) | — |

@@ -396,3 +396,11 @@ beyond step ~30K, a future tick may reasonably propose lowering
 reduce the spike magnitude. Both are non-carveout.
 
 ---
+
+### tick 1776091009 — step 20000 (post-restart)
+- **Outcome:** no change (homeostatic recovery in progress)
+- **Key metrics:** loss_ema=1.373 (↓99% from 140.45), KL=20.71, heldout=Inf, nan_detected
+- **Trend:** loss converging rapidly post-restart; KL slightly up; NaN confined to eval path
+- **Rationale:** system recovering after stability fixes + fresh restart; intervening would risk disrupting convergence. Re-evaluate at step 30K.
+
+---

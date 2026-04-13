@@ -202,3 +202,22 @@ not patched silently.
 | 1776068823 | 2026-04-13T08:31:23Z | no_change | — | loss_ema=3.86e12 (exploded) but heldout=0.022 (healthy); homeostasis active lr=7e-12; waiting for next tick |
 | 1776071023 | 2026-04-13 09:07 UTC | no_change | — | Training healthy (loss=0.0163, heldout=0.0274); loss_ema_500=408 is restart artifact; fix touches carveout |
 | 1776073244 | 2026-04-13T09:41Z | no_change | — | loss_ema=0.020 (-58.7% vs baseline, best yet); heldout=NaN (persistent); no growth; all fixes need carveout paths |
+
+---
+
+## 2026-04-13 05:46 EDT — Skill update: clarified architecture class
+
+`~/.claude/skills-repo/skills/domain-specific/soma-diagnose/SKILL.md`
+template incorrectly led Claude to mark architecture class as "not
+applicable" whenever the fix touched a carveout path. Now states
+explicitly: architecture *is* the route for carveout-needed fixes
+(Phase 6 routes to the approval queue, operator remains the gate
+per G40). Ticks 1776068823 / 1776071023 / 1776073244 all hit this
+exact rationale and chose class=null. Future diagnoses should now
+emit class="architecture" with a diff so operator can approve real
+fixes during the validation window.
+
+Skill files live outside the repo (`~/.claude/skills-repo/`), so
+the change isn't tracked in git.
+
+---

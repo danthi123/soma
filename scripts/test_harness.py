@@ -386,6 +386,32 @@ def main(argv: list[str] | None = None) -> int:
         device=device,
     )
 
+    # Load trained encoder weights from the sidecar train_service wrote
+    # alongside the checkpoint. Without this, the harness's fresh-random
+    # embeddings have no relationship to the ones SOMA was trained
+    # against and heldout_loss is effectively noise. Decoder weights are
+    # tied to the encoder via tie_weights() in _build_encoder_decoder,
+    # so loading the encoder state dict also fixes decode-time logits.
+    encoder_sidecar = args.checkpoint.with_suffix("").with_suffix(".encoder.pt")
+    if not encoder_sidecar.exists():
+        encoder_sidecar = args.checkpoint.parent / "current.encoder.pt"
+    if encoder_sidecar.exists():
+        try:
+            encoder.load_state_dict(
+                torch.load(encoder_sidecar, map_location=device, weights_only=True)
+            )
+            encoder.to(device)
+            print(
+                f"test_harness: loaded encoder sidecar {encoder_sidecar.name}",
+                file=sys.stderr,
+            )
+        except Exception as exc:  # noqa: BLE001
+            print(
+                f"test_harness: encoder sidecar load failed ({exc}); "
+                f"heldout_loss will reflect random-init encoder drift",
+                file=sys.stderr,
+            )
+
     first_out = ckpt_config.output_modalities[0]
 
     # Heldout evaluation

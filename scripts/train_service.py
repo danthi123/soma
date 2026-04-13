@@ -305,9 +305,19 @@ def _save_checkpoint(
     step: int,
     *,
     permanent_every_steps: int,
+    encoder: Any | None = None,
+    decoder: Any | None = None,
 ) -> Path:
     """Save SOMA to ``step_NNNNNNNN.pt`` atomically and update ``current.pt``
     + ``current.txt`` pointer. Prunes old step checkpoints.
+
+    If ``encoder`` / ``decoder`` are provided, their ``state_dict()`` is
+    saved to sibling files (``current.encoder.pt`` / ``current.decoder.pt``)
+    so downstream readers (test_harness, chat_panel, any future eval tool)
+    can load the same embedding weights the graph was trained against.
+    SOMA itself doesn't own encoder/decoder — they're owned by
+    train_service — so we co-write them as sidecars rather than embedding
+    them in SOMA.save_state's payload.
     """
     ckpt_dir.mkdir(parents=True, exist_ok=True)
     step_path = ckpt_dir / f"step_{step:08d}.pt"
@@ -321,6 +331,17 @@ def _save_checkpoint(
     pointer_tmp = pointer.with_suffix(pointer.suffix + ".tmp")
     pointer_tmp.write_text(step_path.name, encoding="utf-8")
     os.replace(pointer_tmp, pointer)
+
+    if encoder is not None or decoder is not None:
+        import torch  # local import: keeps module import cheap
+
+        for name, module in (("encoder", encoder), ("decoder", decoder)):
+            if module is None:
+                continue
+            sidecar = ckpt_dir / f"current.{name}.pt"
+            tmp = sidecar.with_suffix(sidecar.suffix + ".tmp")
+            torch.save(module.state_dict(), tmp)
+            os.replace(tmp, sidecar)
 
     prune_step_checkpoints(
         ckpt_dir,
@@ -402,7 +423,11 @@ def run_training_loop(
             if sig == "shutdown":
                 try:
                     _save_checkpoint(
-                        soma, ckpt_dir, soma.global_step, permanent_every_steps=permanent_every
+                        soma,
+                        ckpt_dir,
+                        soma.global_step,
+                        permanent_every_steps=permanent_every,
+                        encoder=feeder.encoder,
                     )
                 except Exception as exc:  # noqa: BLE001 — shutdown save is best-effort
                     print(f"train_service: shutdown save failed: {exc}", file=sys.stderr)
@@ -416,7 +441,11 @@ def run_training_loop(
                 # Phase 1: treat as shutdown so the scheduler restarts with new config.
                 try:
                     _save_checkpoint(
-                        soma, ckpt_dir, soma.global_step, permanent_every_steps=permanent_every
+                        soma,
+                        ckpt_dir,
+                        soma.global_step,
+                        permanent_every_steps=permanent_every,
+                        encoder=feeder.encoder,
                     )
                 except Exception as exc:  # noqa: BLE001
                     print(f"train_service: reload save failed: {exc}", file=sys.stderr)
@@ -492,7 +521,11 @@ def run_training_loop(
         ):
             try:
                 _save_checkpoint(
-                    soma, ckpt_dir, soma.global_step, permanent_every_steps=permanent_every
+                    soma,
+                    ckpt_dir,
+                    soma.global_step,
+                    permanent_every_steps=permanent_every,
+                    encoder=feeder.encoder,
                 )
             except Exception as exc:  # noqa: BLE001 — checkpoint failure is non-fatal
                 print(f"train_service: checkpoint save failed: {exc}", file=sys.stderr)
@@ -500,7 +533,11 @@ def run_training_loop(
         if max_steps is not None and steps_taken >= max_steps:
             try:
                 _save_checkpoint(
-                    soma, ckpt_dir, soma.global_step, permanent_every_steps=permanent_every
+                    soma,
+                    ckpt_dir,
+                    soma.global_step,
+                    permanent_every_steps=permanent_every,
+                    encoder=feeder.encoder,
                 )
             except Exception as exc:  # noqa: BLE001
                 print(f"train_service: final save failed: {exc}", file=sys.stderr)
@@ -655,6 +692,31 @@ def main(argv: list[str] | None = None) -> int:
                 )
                 fresh_init = True
                 (state_dir / "fresh_init.flag").touch()
+
+        # Load encoder sidecar if present. Without this, every service
+        # restart starts with fresh random embedding weights that don't
+        # match what SOMA was trained against — makes the graph's inputs
+        # meaningless for the first few thousand steps of re-adaptation
+        # and makes heldout eval garbage until train_service + harness
+        # converge on the same random state (which they never do across
+        # process boundaries).
+        encoder_side = ckpt_dir / f"{load_result.source}.encoder.pt"
+        if not encoder_side.exists():
+            encoder_side = ckpt_dir / "current.encoder.pt"
+        if encoder_side.exists() and not fresh_init:
+            try:
+                import torch
+                encoder.load_state_dict(
+                    torch.load(encoder_side, map_location=device, weights_only=True)
+                )
+                encoder.to(device)
+                print(f"train_service: loaded encoder sidecar {encoder_side.name}", flush=True)
+            except Exception as exc:  # noqa: BLE001
+                print(
+                    f"train_service: encoder sidecar load failed ({exc}); "
+                    f"continuing with fresh encoder weights",
+                    file=sys.stderr,
+                )
 
         heartbeat = Heartbeat(heartbeat_path, device=str(device))
         poller = SignalPoller(signals_dir)

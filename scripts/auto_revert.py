@@ -405,6 +405,15 @@ def main() -> int:
             cp_lg = Path("checkpoints/last_good.pt")
             if cp_cur.exists():
                 _atomic_copy(cp_cur, cp_lg)
+            # Promote the encoder sidecar too so a future revert can load
+            # the matching-shape embeddings. Without this, falling back
+            # to last_good.pt on a future revert would either find no
+            # encoder sidecar or find the stale current.encoder.pt that
+            # was saved against a later step.
+            enc_cur = Path("checkpoints/current.encoder.pt")
+            enc_lg = Path("checkpoints/last_good.encoder.pt")
+            if enc_cur.exists():
+                _atomic_copy(enc_cur, enc_lg)
             _save_consecutive_failures(
                 consecutive_fail,
                 {
@@ -472,6 +481,13 @@ def main() -> int:
             cp_lg = Path("checkpoints/last_good.pt")
             if cp_lg.exists():
                 _atomic_copy(cp_lg, cp_cur)
+            # Restore matching encoder weights. Leaving current.encoder.pt
+            # from the post-regression period would mean the just-reverted
+            # SOMA graph is evaluated against embeddings it hasn't seen.
+            enc_cur = Path("checkpoints/current.encoder.pt")
+            enc_lg = Path("checkpoints/last_good.encoder.pt")
+            if enc_lg.exists():
+                _atomic_copy(enc_lg, enc_cur)
             (Path(".soma-loop/signals") / "shutdown").touch()
             print(f"auto_revert: reverted {commit_sha[:8]} ({reason})")
     finally:

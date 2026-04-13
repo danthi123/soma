@@ -15,6 +15,7 @@ pair for checkpointing.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -93,6 +94,12 @@ class SOMA:
 
         # Curiosity scores emitted by ``step`` — handy for logging.
         self.last_curiosity: float = 0.0
+
+        # Counts how many consecutive non-finite-loss steps have been
+        # skipped. Reset to 0 on any successful step. Raised once it
+        # exceeds config.max_consecutive_skipped_steps so train_service's
+        # CrashBackoff can detect a stuck training state.
+        self._consecutive_skipped_steps: int = 0
 
     # ------------------------------------------------------------------
     # Construction
@@ -197,11 +204,54 @@ class SOMA:
         if targets is not None:
             loss, loss_value = self._compute_loss(outputs, targets)
 
+        # Skip the entire learning/growth/curiosity pipeline if loss is
+        # non-finite. Bumps the skip counter; raises after
+        # config.max_consecutive_skipped_steps so train_service's
+        # CrashBackoff can flag a stuck training state.
+        if loss_value is not None and not math.isfinite(loss_value):
+            self._consecutive_skipped_steps += 1
+            if self._consecutive_skipped_steps > self.config.max_consecutive_skipped_steps:
+                raise ValueError(
+                    f"{self._consecutive_skipped_steps} consecutive non-finite "
+                    f"losses; training is stuck (last loss={loss_value!r})"
+                )
+            result_skipped: dict[str, Any] = {
+                "outputs": outputs,
+                "loss": loss_value,
+                "curiosity": self.last_curiosity,
+                "lr_multiplier": 1.0,
+                "global_step": self.global_step,
+                "num_nodes": self.graph.num_nodes,
+                "num_edges": self.graph.num_edges,
+                "experience_idx": None,
+                "skipped": True,
+            }
+            self.global_step += 1
+            return result_skipped
+
         experience = self._encode_episodic(inputs, outputs, targets, loss_value)
 
         lr_multiplier = 1.0
         if loss is not None and loss_value is not None:
-            lr_multiplier = self.homeostasis.update(self.graph, current_loss=loss_value)
+            mult = self.homeostasis.update(self.graph, current_loss=loss_value)
+            # Defensive: if homeostasis ever rejects a value we already
+            # passed the finite-check on (e.g., future expansion), treat
+            # like a skip so the service keeps breathing.
+            if mult is None:
+                self._consecutive_skipped_steps += 1
+                self.global_step += 1
+                return {
+                    "outputs": outputs,
+                    "loss": loss_value,
+                    "curiosity": self.last_curiosity,
+                    "lr_multiplier": 1.0,
+                    "global_step": self.global_step - 1,
+                    "num_nodes": self.graph.num_nodes,
+                    "num_edges": self.graph.num_edges,
+                    "experience_idx": experience,
+                    "skipped": True,
+                }
+            lr_multiplier = mult
             update_step(
                 self.graph,
                 loss,
@@ -209,6 +259,9 @@ class SOMA:
                 self.config,
                 lr_multiplier=lr_multiplier,
             )
+
+        # Successful learning step (or no-target inference): reset counter.
+        self._consecutive_skipped_steps = 0
 
         self.last_curiosity = self._update_curiosity(inputs, loss_value)
 

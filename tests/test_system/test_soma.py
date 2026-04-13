@@ -417,3 +417,95 @@ class TestCheckpoint:
         fresh = SOMA(soma.config)
         fresh.load_state(path)
         assert torch.equal(fresh.working_memory._age(), age_before)
+
+
+class TestNonFiniteLossSkip:
+    """SOMA.step gracefully skips when loss is inf/nan; raises after N skips."""
+
+    @pytest.fixture
+    def skip_config(self) -> SOMAConfig:
+        return SOMAConfig(
+            sensor_output_dim=8,
+            associator_input_dim=8,
+            associator_hidden_dim=16,
+            associator_output_dim=8,
+            wm_slots=4,
+            wm_dim=8,
+            key_dim=8,
+            value_dim=16,
+            text_embed_dim=8,
+            initial_associator_count=2,
+            initial_integrator_count=0,
+            max_nodes=64,
+            num_curiosity_domains=2,
+            base_lr=0.01,
+            hebbian_lr=0.0001,
+            youth_lr_multiplier=1.0,
+            activation_threshold=0.01,
+            synaptogenesis_interval=50,
+            neurogenesis_interval=200,
+            pruning_interval=100,
+            pruning_grace_period=20,
+            consolidation_interval=100,
+            consolidation_replay_steps=5,
+            max_consecutive_skipped_steps=3,
+            seed=0,
+        )
+
+    def _step_with_inf(self, soma: SOMA, monkeypatch: pytest.MonkeyPatch) -> dict:
+        dim = soma.config.sensor_output_dim
+        monkeypatch.setattr(
+            SOMA, "_compute_loss",
+            lambda self, outputs, targets: (torch.tensor(float("inf")), float("inf")),
+        )
+        return soma.step(
+            inputs={"text": torch.randn(dim)},
+            targets={"text": torch.randn(dim)},
+        )
+
+    def test_inf_loss_returns_skipped_marker(
+        self, skip_config: SOMAConfig, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        soma = SOMA(skip_config)
+        result = self._step_with_inf(soma, monkeypatch)
+        assert result.get("skipped") is True
+        assert soma.global_step == 1
+
+    def test_skipped_step_does_not_corrupt_homeostasis(
+        self, skip_config: SOMAConfig, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        soma = SOMA(skip_config)
+        initial_ema = soma.homeostasis.loss_ema
+        self._step_with_inf(soma, monkeypatch)
+        assert soma.homeostasis.loss_ema == initial_ema
+
+    def test_too_many_consecutive_skips_raises(
+        self, skip_config: SOMAConfig, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        soma = SOMA(skip_config)
+        for _ in range(skip_config.max_consecutive_skipped_steps):
+            self._step_with_inf(soma, monkeypatch)
+        with pytest.raises(ValueError, match="consecutive non-finite"):
+            self._step_with_inf(soma, monkeypatch)
+
+    def test_skip_counter_resets_after_finite_step(
+        self, skip_config: SOMAConfig, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        soma = SOMA(skip_config)
+        # First fill the skip counter to threshold.
+        for _ in range(skip_config.max_consecutive_skipped_steps):
+            self._step_with_inf(soma, monkeypatch)
+        # Restore original _compute_loss for one finite step.
+        monkeypatch.undo()
+        dim = soma.config.sensor_output_dim
+        soma.step(
+            inputs={"text": torch.randn(dim)},
+            targets={"text": torch.randn(dim)},
+        )
+        assert soma._consecutive_skipped_steps == 0
+        # Now M more inf steps should be tolerated without raising.
+        for _ in range(skip_config.max_consecutive_skipped_steps):
+            self._step_with_inf(soma, monkeypatch)
+        # The (N+1)-th inf step raises.
+        with pytest.raises(ValueError, match="consecutive non-finite"):
+            self._step_with_inf(soma, monkeypatch)

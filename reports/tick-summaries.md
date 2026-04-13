@@ -405,3 +405,34 @@ reduce the spike magnitude. Both are non-carveout.
 
 ---
 | 1776093231 | 2026-04-13T15:16:40Z | 25000 | 81.17 | null | no_change | loss divergence (+169,000% vs baseline); core stability issue, no auto-committable fix |
+
+### Monitoring notes at ~11:42 EDT (step 34523)
+
+**Baseline.json was stale.** It was captured at tick 1776057520 from
+the pre-fix saturated-dead run (loss=0.048 looked "healthy" because
+the graph was pinned at weight-clamp and couldn't learn). Every tick
+since the restart has compared against that meaningless value and
+reported loss-delta percentages in the 100,000%+ range. Moved to
+`baseline.pre-fix-stale.json`; next tick will re-capture baseline
+from the current post-fix system per design §Phase 1.
+
+**Persistent oscillation observed post-20K** (from metrics.current.jsonl):
+
+| step | loss | lr_m | nodes | edges |
+|------|------|------|-------|-------|
+| 22909 | 30.7 | 0.002 | 48 | 1190 |
+| 23489 | 92.5 | 0.315 | 49 | 1200 |
+| 26969 | 64.0 | 0.017 | 52 | 1230 |
+| 29289 | 69.6 | 0.011 | 55 | 1260 |
+| 29869 | 231.2 | 0.102 | 56 | 1270 |
+| 32769 | 173.4 | 1.000 | 59 | 1300 |
+
+Each spike correlates with a neurogenesis event (nodes +1). Between
+spikes loss drops to 0.4-2.0. Homeostasis recovers in 500-1500 steps
+per spike. No service crashes, no skip-counter escalations.
+
+Per operator instruction, hold config-class proposal until at least
+ONE tick observes past step 40K. Projected timing at ~3 steps/s: the
+12:20 tick (estimated step ~41K) is the gating observation.
+
+---

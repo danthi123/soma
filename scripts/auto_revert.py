@@ -90,6 +90,26 @@ def bucket_by_minute(records: Sequence[dict[str, Any]]) -> list[list[dict[str, A
     return [buckets[k] for k in sorted(buckets.keys())]
 
 
+def service_crashed_after_apply(
+    perm_fail_path: Path, *, ts_applied: float
+) -> bool:
+    """Return True if ``perm_fail_path`` exists and post-dates ``ts_applied``.
+
+    train_service writes ``train_permanent_failure.json`` after 3 uncaught
+    crashes in 5 minutes. If it post-dates the current in-flight change's
+    apply-time, the change killed the service and we should revert
+    immediately (no metrics will ever arrive to regression-judge against).
+    """
+    if not perm_fail_path.exists():
+        return False
+    try:
+        perm_fail = json.loads(perm_fail_path.read_text(encoding="utf-8"))
+        perm_fail_ts = float(perm_fail.get("ts", 0) or 0)
+    except (OSError, json.JSONDecodeError, TypeError, ValueError):
+        return False
+    return perm_fail_ts > ts_applied
+
+
 def check_confirmation(
     pre: dict[str, Any],
     recent: Sequence[dict[str, Any]],
@@ -334,22 +354,30 @@ def main() -> int:
         return 0
 
     since_ts = _parse_ts(target.get("ts_applied") or target.get("ts_proposed") or 0)
-    recent = read_recent_metrics(metrics_path, since_ts=since_ts)
-    if not recent:
-        return 0
 
-    first_step = min(int(r.get("step", 0)) for r in recent)
-    last_step = max(int(r.get("step", 0)) for r in recent)
-    if last_step == first_step:
-        # Training paused — defer judgment per design §5.2 G30.
-        return 0
-
-    pre = dict(target.get("pre_change_metrics", {}) or {})
-    verdict, reason, criteria = check_confirmation(
-        pre, recent, window_min=WINDOW_MIN, min_step_advance=MIN_STEP_ADVANCE
-    )
-    if verdict == "pending":
-        return 0
+    # Service-crash short-circuit: if train_service hit its permanent
+    # failure after the change was applied, there will never be post-change
+    # metrics to regression-judge against. Revert immediately.
+    perm_fail_path = state_dir / "train_permanent_failure.json"
+    if service_crashed_after_apply(perm_fail_path, ts_applied=since_ts):
+        verdict, reason = "revert", "train_service permanent_failure after change applied"
+        criteria: list[str] = ["service_dead"]
+        recent: list[dict[str, Any]] = []
+    else:
+        recent = read_recent_metrics(metrics_path, since_ts=since_ts)
+        if not recent:
+            return 0
+        first_step = min(int(r.get("step", 0)) for r in recent)
+        last_step = max(int(r.get("step", 0)) for r in recent)
+        if last_step == first_step:
+            # Training paused — defer judgment per design §5.2 G30.
+            return 0
+        pre = dict(target.get("pre_change_metrics", {}) or {})
+        verdict, reason, criteria = check_confirmation(
+            pre, recent, window_min=WINDOW_MIN, min_step_advance=MIN_STEP_ADVANCE
+        )
+        if verdict == "pending":
+            return 0
 
     change_log_id = str(target["change_log_id"])
     commit_sha = str(target["commit_sha"])

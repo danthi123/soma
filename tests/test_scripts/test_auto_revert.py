@@ -16,10 +16,35 @@ from scripts.auto_revert import (
     check_confirmation,
     is_stale_tick,
     read_recent_metrics,
+    service_crashed_after_apply,
     update_change_log_entry,
 )
 
 # ---- staleness ------------------------------------------------------------
+
+
+def test_service_crashed_after_apply_missing_file(tmp_path: Path) -> None:
+    assert service_crashed_after_apply(tmp_path / "missing.json", ts_applied=100.0) is False
+
+
+def test_service_crashed_after_apply_post_dates(tmp_path: Path) -> None:
+    path = tmp_path / "train_permanent_failure.json"
+    path.write_text(json.dumps({"ts": 200.0, "step": 1}), encoding="utf-8")
+    assert service_crashed_after_apply(path, ts_applied=100.0) is True
+
+
+def test_service_crashed_after_apply_pre_dates(tmp_path: Path) -> None:
+    path = tmp_path / "train_permanent_failure.json"
+    path.write_text(json.dumps({"ts": 50.0, "step": 1}), encoding="utf-8")
+    # A stale pre-apply permanent_failure (from before this change) must
+    # NOT trigger revert - the change could still be fine.
+    assert service_crashed_after_apply(path, ts_applied=100.0) is False
+
+
+def test_service_crashed_after_apply_malformed(tmp_path: Path) -> None:
+    path = tmp_path / "train_permanent_failure.json"
+    path.write_text("not json", encoding="utf-8")
+    assert service_crashed_after_apply(path, ts_applied=100.0) is False
 
 
 def test_is_stale_tick_recent() -> None:

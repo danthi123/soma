@@ -566,3 +566,5 @@ of drifting to 50+. Loss oscillation should be much narrower. Next tick
 will tell.
 
 ---
+
+- **tick 1776104322** (2026-04-13T18:22:23Z): baseline_set — first tick post-recovery, loss=2.1e17, kl=20.71, step=10000. Fixed test_harness.py overflow guard (queued for approval).

@@ -75,3 +75,4 @@ tick 1776057520: phase=11 finalize baseline_captured
 - **loss_ema_500:** 0.0711 (+47.2% vs baseline)
 - **nodes:** 35 (−9), edges: 1180 (−90)
 - **health_flags:** wm_pinned_high, episodic_saturated
+- tick 1776058371: reverted_at_gate (Task 25 gate-failure validation — ruff check, as expected)

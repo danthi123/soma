@@ -222,3 +222,4 @@ Skill files live outside the repo (`~/.claude/skills-repo/`), so
 the change isn't tracked in git.
 
 ---
+| 1776077690 | 2026-04-13T10:57:41Z | 30000 | 0.02377 | null | class=null | no change — heldout NaN + kl=0.0 are carveout bugs |

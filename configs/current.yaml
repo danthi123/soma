@@ -40,7 +40,7 @@ maturity_increment: 0.0001
 
 # Growth Thresholds
 activation_threshold: 0.1
-synaptogenesis_rate: 0.01
+synaptogenesis_rate: 0.005
 neurogenesis_threshold: 1.2
 edge_strength_threshold: 0.001
 inactivity_threshold: 5000
@@ -53,7 +53,7 @@ position_jitter: 0.1
 
 # Intervals
 synaptogenesis_interval: 100
-neurogenesis_interval: 500
+neurogenesis_interval: 1000
 consolidation_interval: 1000
 consolidation_replay_steps: 100
 pruning_interval: 1000

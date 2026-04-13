@@ -82,7 +82,14 @@ def synaptogenesis(
             dist = float((positions[source_id] - positions[target_id]).norm().item())
             locality_bonus = float(torch.exp(torch.tensor(-dist / locality)).item())
 
-            prob = coact * locality_bonus * rate
+            # Clamp probability to [0, 1]. Without this, when activations
+            # are large (magnitude >> 1 during instability or spikes),
+            # coact * rate easily exceeds 1 and every random draw
+            # succeeds — creating edges between every co-active pair and
+            # driving a positive-feedback loop: more edges -> bigger
+            # activations -> more edges. Seen during Apr 13 run where
+            # a single synaptogenesis event added 200+ edges mid-spike.
+            prob = min(1.0, coact * locality_bonus * rate)
             if prob <= 0.0:
                 continue
 

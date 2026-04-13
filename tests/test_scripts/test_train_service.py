@@ -201,9 +201,7 @@ def test_crash_backoff_forgets_old_crashes() -> None:
 def test_prune_step_checkpoints_keeps_last_n(tmp_path: Path) -> None:
     for step in (100, 200, 300, 400, 500, 600):
         (tmp_path / f"step_{step:08d}.pt").write_bytes(b"x")
-    deleted = prune_step_checkpoints(
-        tmp_path, keep_last=3, permanent_every_steps=10_000
-    )
+    deleted = prune_step_checkpoints(tmp_path, keep_last=3, permanent_every_steps=10_000)
     remaining = sorted(p.name for p in tmp_path.glob("step_*.pt"))
     # 400, 500, 600 kept
     assert remaining == ["step_00000400.pt", "step_00000500.pt", "step_00000600.pt"]

@@ -43,18 +43,14 @@ def test_lock_context_manager(tmp_path: Path) -> None:
 def test_lock_blocked_by_live_pid(tmp_path: Path) -> None:
     lock_path = tmp_path / "test.lock"
     # Seed the lock file with the current (alive) PID.
-    lock_path.write_text(
-        json.dumps({"pid": os.getpid(), "ts": time.time(), "purpose": "seed"})
-    )
+    lock_path.write_text(json.dumps({"pid": os.getpid(), "ts": time.time(), "purpose": "seed"}))
     lock = FileLock(lock_path, timeout=1.0, purpose="blocked")
     assert lock.acquire() is False  # our own PID is alive; timeout hits
 
 
 def test_lock_reclaims_stale_pid(tmp_path: Path) -> None:
     lock_path = tmp_path / "test.lock"
-    lock_path.write_text(
-        json.dumps({"pid": 999_999_999, "ts": time.time(), "purpose": "dead"})
-    )
+    lock_path.write_text(json.dumps({"pid": 999_999_999, "ts": time.time(), "purpose": "dead"}))
     lock = FileLock(lock_path, timeout=1.0, purpose="reclaim")
     assert lock.acquire() is True
     lock.release()
@@ -64,9 +60,7 @@ def test_lock_reclaims_old_timestamp(tmp_path: Path) -> None:
     lock_path = tmp_path / "test.lock"
     # 30+ min old timestamp — considered stale even with a (possibly) live PID.
     very_old = time.time() - 31 * 60
-    lock_path.write_text(
-        json.dumps({"pid": os.getpid(), "ts": very_old, "purpose": "old"})
-    )
+    lock_path.write_text(json.dumps({"pid": os.getpid(), "ts": very_old, "purpose": "old"}))
     lock = FileLock(lock_path, timeout=1.0, purpose="reclaim-old")
     assert lock.acquire() is True
     lock.release()

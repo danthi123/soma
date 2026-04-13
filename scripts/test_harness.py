@@ -215,7 +215,7 @@ def _evaluate_heldout(
             inputs = {first_in: embeds[t].detach()}
             target = {first_out: embeds[t + 1].detach()}
             try:
-                result = soma.step(inputs=inputs, targets=target)
+                result = soma.step(inputs=inputs, targets=target, eval_mode=True)
             except Exception as exc:  # noqa: BLE001 — eval failure is a harness bug
                 print(f"test_harness: step raised during eval: {exc}", file=sys.stderr)
                 return float("nan"), 0
@@ -425,7 +425,9 @@ def main(argv: list[str] | None = None) -> int:
     )
     heldout_perplexity = (
         math.exp(heldout_loss)
-        if not math.isnan(heldout_loss) and not math.isinf(heldout_loss)
+        if not math.isnan(heldout_loss)
+        and not math.isinf(heldout_loss)
+        and heldout_loss < 700
         else float("nan")
     )
 

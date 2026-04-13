@@ -510,3 +510,93 @@ class TestNonFiniteLossSkip:
         # The (N+1)-th inf step raises.
         with pytest.raises(ValueError, match="consecutive non-finite"):
             self._step_with_inf(soma, monkeypatch)
+
+
+class TestEvalMode:
+    """eval_mode=True skips learning/growth/consolidation — read-only eval."""
+
+    def _make_soma(self) -> SOMA:
+        cfg = SOMAConfig(
+            sensor_output_dim=8,
+            associator_input_dim=8,
+            associator_hidden_dim=16,
+            associator_output_dim=8,
+            wm_slots=4,
+            wm_dim=8,
+            key_dim=8,
+            value_dim=16,
+            text_embed_dim=8,
+            initial_associator_count=3,
+            initial_integrator_count=0,
+            max_nodes=64,
+            num_curiosity_domains=2,
+            base_lr=0.1,
+            hebbian_lr=0.01,
+            synaptogenesis_rate=1.0,
+            synaptogenesis_interval=1,
+            neurogenesis_interval=1,
+            pruning_interval=1,
+            consolidation_interval=1,
+            activation_threshold=0.001,
+            seed=7,
+        )
+        return SOMA(cfg)
+
+    def test_eval_mode_does_not_mutate_graph(self) -> None:
+        soma = self._make_soma()
+        dim = soma.config.sensor_output_dim
+        edges_before = soma.graph.num_edges
+        nodes_before = soma.graph.num_nodes
+
+        for _ in range(50):
+            soma.step(
+                inputs={"text": torch.randn(dim)},
+                targets={"text": torch.randn(dim)},
+                eval_mode=True,
+            )
+
+        assert soma.graph.num_edges == edges_before
+        assert soma.graph.num_nodes == nodes_before
+
+    def test_eval_mode_does_not_mutate_weights(self) -> None:
+        soma = self._make_soma()
+        dim = soma.config.sensor_output_dim
+        before = {id(p): p.detach().clone() for n in soma.graph.all_nodes() for p in n.parameters()}
+        edge_weights_before = [e.weight.detach().clone() for e in soma.graph.all_edges()]
+
+        for _ in range(20):
+            soma.step(
+                inputs={"text": torch.randn(dim)},
+                targets={"text": torch.randn(dim)},
+                eval_mode=True,
+            )
+
+        for n in soma.graph.all_nodes():
+            for p in n.parameters():
+                assert torch.allclose(p.detach(), before[id(p)]), (
+                    "node params must be unchanged in eval_mode"
+                )
+        for e, w0 in zip(soma.graph.all_edges(), edge_weights_before, strict=False):
+            assert torch.allclose(e.weight.detach(), w0), (
+                "edge weights must be unchanged in eval_mode"
+            )
+
+    def test_eval_mode_does_not_touch_skip_counter(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        soma = self._make_soma()
+        soma._consecutive_skipped_steps = 5
+        monkeypatch.setattr(
+            SOMA,
+            "_compute_loss",
+            lambda self, outputs, targets: (
+                torch.tensor(float("inf")),
+                float("inf"),
+            ),
+        )
+        dim = soma.config.sensor_output_dim
+        for _ in range(100):
+            soma.step(
+                inputs={"text": torch.randn(dim)},
+                targets={"text": torch.randn(dim)},
+                eval_mode=True,
+            )
+        assert soma._consecutive_skipped_steps == 5

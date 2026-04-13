@@ -190,8 +190,17 @@ class SOMA:
         targets: dict[str, torch.Tensor] | None = None,
         *,
         rng: torch.Generator | None = None,
+        eval_mode: bool = False,
     ) -> dict[str, Any]:
-        """Run one interaction step; returns a dict with outputs/loss/etc."""
+        """Run one interaction step; returns a dict with outputs/loss/etc.
+
+        When ``eval_mode=True``, skip weight updates, growth, and
+        consolidation. Used by evaluation harnesses that need loss /
+        output metrics without mutating the graph. Working-memory and
+        curiosity are still updated (cheap, read-only for graph
+        structure). ``global_step`` still advances so downstream
+        metrics stay monotonic.
+        """
         outputs, activations = execute_graph(
             self.graph, inputs=inputs, current_step=self.global_step
         )
@@ -207,14 +216,17 @@ class SOMA:
         # Skip the entire learning/growth/curiosity pipeline if loss is
         # non-finite. Bumps the skip counter; raises after
         # config.max_consecutive_skipped_steps so train_service's
-        # CrashBackoff can flag a stuck training state.
+        # CrashBackoff can flag a stuck training state. In eval_mode
+        # the counter is neither incremented nor inspected — eval
+        # callers expect a tolerant read-only pass.
         if loss_value is not None and not math.isfinite(loss_value):
-            self._consecutive_skipped_steps += 1
-            if self._consecutive_skipped_steps > self.config.max_consecutive_skipped_steps:
-                raise ValueError(
-                    f"{self._consecutive_skipped_steps} consecutive non-finite "
-                    f"losses; training is stuck (last loss={loss_value!r})"
-                )
+            if not eval_mode:
+                self._consecutive_skipped_steps += 1
+                if self._consecutive_skipped_steps > self.config.max_consecutive_skipped_steps:
+                    raise ValueError(
+                        f"{self._consecutive_skipped_steps} consecutive non-finite "
+                        f"losses; training is stuck (last loss={loss_value!r})"
+                    )
             result_skipped: dict[str, Any] = {
                 "outputs": outputs,
                 "loss": loss_value,
@@ -252,21 +264,26 @@ class SOMA:
                     "skipped": True,
                 }
             lr_multiplier = mult
-            update_step(
-                self.graph,
-                loss,
-                activations,
-                self.config,
-                lr_multiplier=lr_multiplier,
-            )
+            if not eval_mode:
+                update_step(
+                    self.graph,
+                    loss,
+                    activations,
+                    self.config,
+                    lr_multiplier=lr_multiplier,
+                )
 
         # Successful learning step (or no-target inference): reset counter.
-        self._consecutive_skipped_steps = 0
+        # Never modify the counter in eval_mode — eval is read-only for
+        # training-mode state.
+        if not eval_mode:
+            self._consecutive_skipped_steps = 0
 
         self.last_curiosity = self._update_curiosity(inputs, loss_value)
 
-        self._maybe_grow(activations, loss_value, rng=rng)
-        self._maybe_consolidate(rng=rng)
+        if not eval_mode:
+            self._maybe_grow(activations, loss_value, rng=rng)
+            self._maybe_consolidate(rng=rng)
 
         if loss_value is not None:
             self._recent_errors.append(loss_value)

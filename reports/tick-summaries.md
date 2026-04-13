@@ -67,3 +67,4 @@ operator completion of the three deferred checks.
 
 - tick 1776057013: exit=0 reason=harness_failure (NaN loss, CUDA assert in working_memory.occupancy; training service unaffected, still running)
 tick 1776057520: phase=11 finalize baseline_captured
+- tick 1776057714: applied queue entry 704632ce (base_lr→0.5 canary), sha=ad780944, gates OK, restart OK

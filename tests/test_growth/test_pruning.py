@@ -142,3 +142,89 @@ class TestPruning:
         graph, _, _, _ = _linear_graph(config)
         with pytest.raises(ValueError, match="step"):
             pruning(graph, step=-1, config=config)
+
+
+class TestCongestionPruning:
+    """Congestion pruning: remove excess edges when avg_degree > cap."""
+
+    def _dense_graph(
+        self,
+        *,
+        n_sensors: int = 2,
+        n_assocs: int = 4,
+        n_outputs: int = 2,
+        edges_per_pair: int = 1,
+    ) -> tuple[Graph, list[Node], list[Node], list[Node]]:
+        cfg = SOMAConfig(max_edges_per_node=2.0)  # tight cap
+        graph = Graph()
+        dim = 4
+        sensors = [Node(NodeType.SENSOR, dim, dim, dim, 0, cfg) for _ in range(n_sensors)]
+        assocs = [Node(NodeType.ASSOCIATOR, dim, dim, dim, 0, cfg) for _ in range(n_assocs)]
+        outputs = [Node(NodeType.OUTPUT, dim, dim, dim, 0, cfg) for _ in range(n_outputs)]
+        for i, s in enumerate(sensors):
+            graph.add_node(s, modality=f"m{i}")
+        for a in assocs:
+            graph.add_node(a)
+        for i, o in enumerate(outputs):
+            graph.add_node(o, modality=f"m{i}")
+        # Fully connect sensors -> assocs -> outputs
+        for s in sensors:
+            for a in assocs:
+                graph.add_edge(_make_edge(s, a))
+        for a in assocs:
+            for o in outputs:
+                graph.add_edge(_make_edge(a, o))
+        return graph, sensors, assocs, outputs
+
+    def test_congestion_prunes_weakest_past_grace(self) -> None:
+        graph, sensors, assocs, outputs = self._dense_graph()
+        cfg = SOMAConfig(
+            max_edges_per_node=1.5,  # tighter than setup avg (2.0)
+            pruning_grace_period=100,
+            edge_strength_threshold=0.0,  # disable low-utility path
+            inactivity_threshold=100_000,
+        )
+        # Set distinct strengths so we know which get pruned.
+        for i, edge in enumerate(graph.all_edges()):
+            edge.strength = float(i + 1)  # 1, 2, 3, ...
+            edge.last_active_step = 1000  # all active, not stale
+
+        n_nodes_before = graph.num_nodes
+        n_edges_before = graph.num_edges
+        assert n_edges_before / n_nodes_before > cfg.max_edges_per_node
+
+        result = pruning(graph, step=500, config=cfg)
+
+        target = int(cfg.max_edges_per_node * n_nodes_before)
+        assert graph.num_edges <= target + 1, (
+            f"should cut to ~{target} edges, got {graph.num_edges}"
+        )
+        assert result.removed_edges > 0
+
+    def test_grace_period_protects_young_from_congestion_prune(self) -> None:
+        graph, _, _, _ = self._dense_graph()
+        cfg = SOMAConfig(
+            max_edges_per_node=2.0,
+            pruning_grace_period=1000,
+            edge_strength_threshold=0.0,
+            inactivity_threshold=100_000,
+        )
+        for edge in graph.all_edges():
+            edge.strength = 0.001
+            edge.last_active_step = 100
+        n_edges_before = graph.num_edges
+
+        # Step is within grace for all edges.
+        result = pruning(graph, step=500, config=cfg)
+
+        assert graph.num_edges == n_edges_before
+        assert result.removed_edges == 0
+
+    def test_no_congestion_pruning_when_under_cap(self, config: SOMAConfig) -> None:
+        graph, _, _, _ = _linear_graph(config)
+        # 2 edges, 3 nodes → avg_degree 0.67, way under cap 20.
+        for edge in graph.all_edges():
+            edge.strength = 1.0  # strong
+            edge.last_active_step = 100  # recent
+        result = pruning(graph, step=10_000, config=config)
+        assert result.removed_edges == 0

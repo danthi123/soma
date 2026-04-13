@@ -61,6 +61,24 @@ def pruning(graph: Graph, step: int, config: SOMAConfig) -> PruningResult:
     for edge_id in removed_edge_ids:
         graph.remove_edge(edge_id)
 
+    # Congestion pruning: if avg_degree still exceeds max_edges_per_node
+    # after the low-utility sweep, remove the weakest edges past the
+    # grace period until we're back under the density cap. Critical in
+    # densely-wired graphs where every edge stays "active" and the
+    # strength / inactivity filters never fire on their own.
+    if graph.num_nodes > 0:
+        avg_degree = graph.num_edges / graph.num_nodes
+        if avg_degree > config.max_edges_per_node:
+            target = int(config.max_edges_per_node * graph.num_nodes)
+            excess = graph.num_edges - target
+            if excess > 0:
+                eligible = [e for e in graph.all_edges() if step - e.creation_step >= grace]
+                eligible.sort(key=lambda e: e.strength)  # weakest first
+                congestion_removed = [e.id for e in eligible[:excess]]
+                for eid in congestion_removed:
+                    graph.remove_edge(eid)
+                removed_edge_ids.extend(congestion_removed)
+
     removed_node_ids: list[str] = []
     for node in graph.all_nodes():
         if node.node_type in (NodeType.SENSOR, NodeType.OUTPUT):

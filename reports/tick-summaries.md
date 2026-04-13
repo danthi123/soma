@@ -732,3 +732,8 @@ Leaving all of these for the operator. Continuing stable-cadence monitoring for 
 **Next check:** 3600s out (runtime cap).
 
 ---
+
+### tick 1776122099 — step 292,166 — no_change
+- loss_ema_500=0.01845, kl=23.026, nodes=34, edges=64
+- Decoder still collapsed: all prompts → "GUE". Zero growth events (262K steps).
+- class=null: root cause in carveout (growth/core). Awaiting operator intervention.

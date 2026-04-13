@@ -225,3 +225,77 @@ the change isn't tracked in git.
 | 1776077690 | 2026-04-13T10:57:41Z | 30000 | 0.02377 | null | class=null | no change — heldout NaN + kl=0.0 are carveout bugs |
 | 1776079940 | 2026-04-13T11:32Z | 40000 | 0.02026 | null | class=architecture | queued: fix heldout eval abort (skip NaN pairs instead of return) |
 | 1776082129 | 2026-04-13T12:11:59Z | applied-approved | auto: Fix heldout eval abort — skip NaN token pairs | 121be10b | architecture |
+
+---
+
+## BLOCKED 2026-04-13 08:40 EDT — training fragility blocks restart, STOP touched
+
+Tick 1776082129 applied `121be10` (eval-only fix in `scripts/test_harness.py`)
+and the new `service_crashed_after_apply` watchdog reverted to `6295327`
+because train_service permfailed 39s after `ts_applied` with `current_loss
+must be finite, got inf`. The revert was technically correct per watchdog
+rules but a false positive root-cause-wise: the diff only modifies
+`_evaluate_heldout`'s exception handler in the harness, which is never
+called from train_service. The training crash was the same pre-existing
+NaN/Inf training fragility flagged in the earlier BLOCKED entry — operator
+explicitly noted it as a Phase 2 carveout fix ("left for operator to
+design, not patched silently").
+
+`consecutive_failures.count` reached 3 (Task 25 revert injection +
+Task 25 gate-failure injection + this false-positive revert). I reset
+to 0 because all three increments have identified non-pathological
+root causes documented above; per memory `feedback_overnight_autonomy.md`
+this is "with root-cause investigation". `last_reset_ts` set to
+1776082800.0 in `.soma-loop/state/consecutive_failures.json`.
+
+Then attempted train_service restart from progressively older checkpoints:
+
+| checkpoint | result |
+|------------|--------|
+| current.pt (step 53740) | inf loss x3 → permfail |
+| step_00050000.pt | inf loss x3 → permfail |
+| step_00040000.pt | nan loss x3 → permfail (1 step succeeded then crashed) |
+
+The fragility is not specific to one checkpoint — it's the same numerical
+issue manifesting across a 13K-step span. Encoder/graph drift may be a
+factor (encoder sidecar is from step 53740, was paired with all three
+attempts), but the consistent NaN/Inf strongly suggests the training
+update path itself needs gradient clipping or skip-with-rollback. Both
+are SOMA carveout (`src/soma/system.py` `step()`), so I cannot patch
+silently per the operator's explicit instruction.
+
+Original step_00053740.pt preserved as
+`checkpoints/current.corrupt_1776082129.pt.bak`. Current `checkpoints/current.pt`
+now points at step_00040000 (last attempted, also broken). Pid file dir
+empty. Loop tick scheduler still ENABLED — `.soma-loop/STOP` touched so
+next tick will halt at Phase 0a per design §4.2 rather than burn credits
+spinning on a known-blocking issue.
+
+**Action for operator on wake:**
+
+1. Decide on training-fragility fix approach. Options A and B are both
+   carveout (`src/soma/system.py`); design call belongs to operator:
+   - **A.** Gradient clipping in `SOMA.step()` before the finite-loss check.
+     `torch.nn.utils.clip_grad_norm_` on all parameter groups with a
+     conservative bound (e.g., 1.0). Cheap, well-understood, but may
+     mask the underlying instability rather than diagnose it.
+   - **B.** NaN-skip-with-state-rollback. Detect non-finite loss, restore
+     pre-step parameters from a saved snapshot, advance global_step
+     anyway, log the skip. More principled — preserves training signal
+     when it exists, drops it when it doesn't — but harder to get right
+     (snapshot/restore overhead, interaction with optimizer state).
+2. Investigate WHY training is now NaN-prone at step ~40K-53K when it
+   was stable at step ~5K. Could be: parametric-memory growth pushing
+   weights out of their stable regime, working-memory occupancy
+   feedback loop (`wm_pinned_high` flag was on in early ticks),
+   episodic saturation, or curiosity scaling. Worth a short exploratory
+   notebook before committing to A or B.
+3. Once a fix is applied: `rm .soma-loop/STOP`, restart train_service
+   from a clean checkpoint (probably step_00010000.pt or earlier),
+   and let the loop resume.
+
+`consecutive_failures.count=0` is correct after the reset above.
+Approval queue empty. No git state was disturbed beyond the
+auto-generated finalize/revert commits already in `git log`.
+
+---

@@ -343,3 +343,33 @@ class TestEdgeWeightDecay:
         final = float(edge.weight.detach().item())
         assert final < 0.0, f"negative weight stayed negative? got {final}"
         assert final > -1e-3, f"weight should decay close to zero, got {final}"
+
+
+class TestGradientClipping:
+    """Verify gradient clipping bounds the update magnitude."""
+
+    def test_huge_gradient_gets_clipped(self, config: SOMAConfig) -> None:
+        graph, _sensor, assoc, _out = _three_node_graph(config)
+        cfg = SOMAConfig(
+            base_lr=config.base_lr,
+            hebbian_lr=config.hebbian_lr,
+            grad_clip_max_norm=0.5,
+            activation_threshold=config.activation_threshold,
+        )
+        # Inject huge gradients on the assoc node's params.
+        for param in assoc.parameters():
+            param.grad = torch.full_like(param, 100.0)
+        loss = torch.zeros((), requires_grad=True)
+        before = {id(p): p.detach().clone() for p in assoc.parameters()}
+        update_step(
+            graph, loss, activations={assoc.id: torch.ones(8)}, config=cfg
+        )
+        for p in assoc.parameters():
+            delta = float((p.detach() - before[id(p)]).abs().max().item())
+            assert delta < 1.0, f"clipped update should be small, got {delta}"
+
+    def test_clipping_handles_none_grads(self, config: SOMAConfig) -> None:
+        graph, _, _, _ = _three_node_graph(config)
+        loss = torch.zeros((), requires_grad=True)
+        # No backward call; all grads are None. Should not raise.
+        update_step(graph, loss, activations={}, config=config)

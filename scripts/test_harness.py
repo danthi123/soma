@@ -216,9 +216,9 @@ def _evaluate_heldout(
             target = {first_out: embeds[t + 1].detach()}
             try:
                 result = soma.step(inputs=inputs, targets=target)
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001 — eval failure is a harness bug
                 print(f"test_harness: step raised during eval: {exc}", file=sys.stderr)
-                continue
+                return float("nan"), 0
             loss = result.get("loss")
             if loss is None:
                 continue

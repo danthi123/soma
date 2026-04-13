@@ -64,3 +64,5 @@ proceed to Task 24 (create Task Scheduler entries, keep DISABLED) pending
 operator completion of the three deferred checks.
 
 ---
+
+- tick 1776057013: exit=0 reason=harness_failure (NaN loss, CUDA assert in working_memory.occupancy; training service unaffected, still running)

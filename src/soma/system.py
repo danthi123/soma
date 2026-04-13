@@ -480,6 +480,11 @@ class SOMA:
         self.global_step = int(state["global_step"])
         self._recent_errors = [float(v) for v in state["recent_errors"]]
         self.graph = Graph.deserialize(state["graph"], config=self.config)
+        # Graph.deserialize rebuilds Nodes/Edges on the default device (CPU);
+        # move the freshly-built graph back onto SOMA's device so subsequent
+        # steps don't cross cuda/cpu. The other modules below preserve their
+        # own device via load_state_dict, but this one gets fully replaced.
+        self.graph.to(self.device)
         self.working_memory.load_state_dict(state["working_memory"])
         self.episodic_memory.load_state_dict(state["episodic_memory"])
         self.curiosity.load_state_dict(state["curiosity_state_dict"])

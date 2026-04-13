@@ -106,3 +106,32 @@ class TestSOMAOnCUDA:
         soma_cpu.load_state(path)
         assert soma_cpu.global_step == soma_gpu.global_step
         assert soma_cpu.graph.num_nodes == soma_gpu.graph.num_nodes
+
+    def test_load_state_realigns_graph_to_target_device(
+        self, small_config: SOMAConfig, tmp_path: Path
+    ) -> None:
+        """Save on CPU, load into a fresh CUDA SOMA, step. Regression for the
+        autonomous-loop restart path: train_service rebuilds SOMA(device=cuda)
+        then calls load_state on a checkpoint that was serialized from a
+        different session. Without realignment, Graph.deserialize creates the
+        graph on CPU while other modules stay on CUDA, and the first step
+        crashes with a cross-device addmm."""
+        soma_cpu = SOMA(small_config, device=torch.device("cpu"))
+        dim = small_config.sensor_output_dim
+        for _ in range(2):
+            soma_cpu.step(
+                inputs={"text": torch.randn(dim)},
+                targets={"text": torch.randn(dim)},
+            )
+        path = tmp_path / "soma_cpu.pt"
+        soma_cpu.save_state(path)
+
+        soma_gpu = SOMA(small_config, device=torch.device("cuda"))
+        soma_gpu.load_state(path)
+        for param in soma_gpu.graph.parameters():
+            assert param.device.type == "cuda", f"graph param stayed on {param.device}"
+        # Most-important check: can we step without a device-mismatch crash?
+        soma_gpu.step(
+            inputs={"text": torch.randn(dim, device="cuda")},
+            targets={"text": torch.randn(dim, device="cuda")},
+        )

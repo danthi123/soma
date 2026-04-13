@@ -404,3 +404,4 @@ reduce the spike magnitude. Both are non-carveout.
 - **Rationale:** system recovering after stability fixes + fresh restart; intervening would risk disrupting convergence. Re-evaluate at step 30K.
 
 ---
+| 1776093231 | 2026-04-13T15:16:40Z | 25000 | 81.17 | null | no_change | loss divergence (+169,000% vs baseline); core stability issue, no auto-committable fix |

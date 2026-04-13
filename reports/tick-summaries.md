@@ -638,3 +638,4 @@ push.
 
 - **tick 1776104322** (2026-04-13T18:22:23Z): baseline_set — first tick post-recovery, loss=2.1e17, kl=20.71, step=10000. Fixed test_harness.py overflow guard (queued for approval).
 | 1776106547 | cold_start | — | baseline captured, no change proposed |
+| 1776108773 | 2026-04-13 19:41 UTC | reverted_at_gate | bugfix | Add lr_multiplier floor (0.01) | Pre-existing flaky test test_co_active_edge_reaches_equilibrium_below_clamp failed (unrelated to change) |

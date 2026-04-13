@@ -21,8 +21,9 @@ import json
 import os
 import sys
 import tempfile
+import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -74,6 +75,60 @@ def check_pid_collision(pid_path: Path) -> bool:
     except (ValueError, OSError):
         return False
     return is_pid_alive(pid)
+
+
+# ---- Heartbeat --------------------------------------------------------------
+
+HEARTBEAT_STATUS_WARMING_UP = "warming_up"
+HEARTBEAT_STATUS_RUNNING = "running"
+HEARTBEAT_STATUS_PAUSED = "paused"
+HEARTBEAT_STATUS_SHUTDOWN = "shutdown"
+
+HeartbeatStatus = Literal["warming_up", "running", "paused", "shutdown"]
+
+
+class Heartbeat:
+    """Writes a JSON heartbeat file atomically with current step + status."""
+
+    def __init__(self, path: Path, *, device: str) -> None:
+        self.path = path
+        self.device = device
+
+    def update(self, *, step: int, status: HeartbeatStatus) -> None:
+        atomic_write_json(
+            self.path,
+            {
+                "ts": time.time(),
+                "step": step,
+                "status": status,
+                "device": self.device,
+                "pid": os.getpid(),
+            },
+        )
+
+
+# ---- Signals ----------------------------------------------------------------
+
+
+class SignalPoller:
+    """Filesystem sentinel poller. Signals consumed by deleting the file."""
+
+    KNOWN_SIGNALS = frozenset({"shutdown", "pause", "resume", "reload_config"})
+
+    def __init__(self, signals_dir: Path) -> None:
+        self.signals_dir = signals_dir
+
+    def read_and_consume(self) -> list[str]:
+        if not self.signals_dir.exists():
+            return []
+        seen: list[str] = []
+        for name in self.KNOWN_SIGNALS:
+            path = self.signals_dir / name
+            if path.exists():
+                seen.append(name)
+                with contextlib.suppress(OSError):
+                    path.unlink()
+        return seen
 
 
 def main(argv: list[str] | None = None) -> int:

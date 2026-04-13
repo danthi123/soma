@@ -105,10 +105,23 @@ class TestUpdateMechanics:
         assert reg.global_lr_multiplier > low
         assert reg.global_lr_multiplier <= 1.0
 
-    def test_nan_loss_rejected(self, empty_graph: Graph) -> None:
+    def test_nan_loss_returns_none(self, empty_graph: Graph) -> None:
+        """Non-finite loss returns None instead of raising; state unchanged."""
         reg = HomeostaticRegulator()
-        with pytest.raises(ValueError, match="finite"):
-            reg.update(empty_graph, current_loss=float("nan"))
+        initial_ema = reg.loss_ema
+        initial_count = reg._update_count
+        assert reg.update(empty_graph, current_loss=float("nan")) is None
+        assert reg.update(empty_graph, current_loss=float("inf")) is None
+        assert reg.update(empty_graph, current_loss=float("-inf")) is None
+        assert reg.loss_ema == initial_ema, "EMA must not be corrupted by bad loss"
+        assert reg._update_count == initial_count, "step count must not advance"
+
+    def test_finite_loss_after_nan_works_normally(self, empty_graph: Graph) -> None:
+        reg = HomeostaticRegulator()
+        reg.update(empty_graph, current_loss=float("nan"))  # ignored
+        mult = reg.update(empty_graph, current_loss=0.5)
+        assert mult is not None
+        assert 0.0 < mult <= 1.0
 
 
 class TestGrowthGates:

@@ -70,14 +70,16 @@ class HomeostaticRegulator:
     # ------------------------------------------------------------------
     # Update
     # ------------------------------------------------------------------
-    def update(self, graph: Graph, current_loss: float) -> float:
+    def update(self, graph: Graph, current_loss: float) -> float | None:
         """Update the internal state for this step; return the LR multiplier.
 
         ``current_loss`` should be a finite non-negative scalar (MSE, cross-
-        entropy, etc.). NaN/inf losses are rejected.
+        entropy, etc.). If non-finite, returns ``None`` and leaves all state
+        unchanged so the caller can skip the learning step gracefully
+        without corrupting the loss EMA / variance / step counter.
         """
         if not math.isfinite(current_loss):
-            raise ValueError(f"current_loss must be finite, got {current_loss!r}")
+            return None
 
         # EMA and variance of loss.
         prev_loss_ema = self.loss_ema

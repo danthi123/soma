@@ -46,3 +46,5 @@ runs/
 .claude/settings.local.json
 .claude/
 
+# Autonomous loop runtime state
+.soma-loop/

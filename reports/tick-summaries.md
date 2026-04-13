@@ -76,3 +76,70 @@ tick 1776057520: phase=11 finalize baseline_captured
 - **nodes:** 35 (−9), edges: 1180 (−90)
 - **health_flags:** wm_pinned_high, episodic_saturated
 - tick 1776058371: reverted_at_gate (Task 25 gate-failure validation — ruff check, as expected)
+
+---
+
+## 2026-04-13 — Task 25 validation injections complete
+
+Both §6.3 validation injections ran end-to-end against the live loop
+infrastructure. All signals landed as specified.
+
+**Revert-path test (change_log_id `e74c5c0f`, queue `704632`):**
+- Injected `base_lr: 0.001 → 0.5` into the approval queue, approved.
+- Tick 1776057714 applied the change: commit `ad78094`
+  `auto: Task 25 revert-path validation: set base_lr to 0.5 (expected to regress)`.
+- train_service restarted with `base_lr=0.5`, hit `current_loss must be finite, got inf`
+  three times within ~2 s, wrote `train_permanent_failure.json` and exited.
+- Watchdog detected `train_permanent_failure.json` post-dating `ts_applied`
+  and reverted immediately (new fast-path, commit `0de288e`):
+  `revert(auto): revert ad780944 (train_service permanent_failure after change applied)`.
+- change_log updated: status=`reverted`, reverted_by=`watchdog`,
+  failure_signal=`["service_dead"]`, failure_reason matches.
+- `consecutive_failures.count` 0 → 1.
+
+**Gate-failure test (change_log_id `31bdce7b`, queue `b2707a`):**
+- Injected bad import into `src/soma/ui/panels/metrics_panel.py`, approved.
+- Tick 1776058371 applied the diff in its workspace, `safety_gate.py` ran
+  and failed at the `check` stage (ruff F401 unused import + F821 undefined name).
+- Tick Phase 8 stashed + dropped the diff, wrote change_log entry with
+  status=`reverted_at_gate`, failure_signal=`check`, commit_sha=`null`.
+- No `auto:` commit was produced — tree stays clean (verified via
+  `head -5 src/soma/ui/panels/metrics_panel.py` showing original docstring).
+- `consecutive_failures.count` 1 → 2.
+- Finalize commit `b541bd3 chore(auto): finalize tick 1776058371` only.
+
+**Incidentally discovered and fixed during the validation window:**
+
+1. `fix(loop): drop --prompt flag from run_tick.{sh,ps1}` (`afc3592`) — the
+   Claude CLI 2.1.104 removed `--prompt` in favor of positional/stdin.
+2. `fix(loop): pipe tick prompt via stdin instead of positional arg` (`0275543`) —
+   `--allowedTools <tools...>` is variadic and was eating the positional prompt.
+3. `fix(loop): default test_harness device to cpu` (`ab9bd1b`) — CUDA async
+   device-side assert after NaN/Inf loss killed the harness before it could
+   write a graceful report; cpu path handles it cleanly.
+4. `fix(loop): watchdog reverts immediately on post-apply service crash`
+   (`0de288e`) — extracted `service_crashed_after_apply()` + 4 unit tests.
+   Without this, a change catastrophic enough to kill the train service
+   before writing metrics was undetectable by the regression-metric
+   watchdog and the loop deadlocked.
+
+Also observed but not yet fixed:
+- Tick Claude wrote `status="applied"` in the `change_log.jsonl` entry; the
+  design schema (Appendix B.1) accepts only
+  `pending|in_progress|confirmed|reverted|reverted_at_gate|commit_hook_blocked|stale|halted_by_diagnose`.
+  `applied` is the `queue_status` vocabulary. The tick prompt should be
+  tightened to disambiguate — for now I manually rewrote the entry to
+  `in_progress` so the watchdog could find it via `_find_last_in_progress`.
+- GPU contention from concurrent gaming workload (league) correlates with
+  sporadic NaN/inf on training resume from some mid-run checkpoints
+  (step 7000, 10000, 13565). Resuming from cleanly-saved permanent
+  checkpoints (step 5000) has been reliable. Suggests either numerical
+  fragility at specific graph configurations or CUDA context cross-
+  talk from shared GPU; worth investigating before Phase 2.
+
+**Status:** §6.3 validation complete. End-to-end pipeline validated —
+carveout→queue→approve→apply→gate→commit→restart→watchdog-revert all fire as
+designed. Task 26 (48-hour continuous validation window) remains and is
+operator-scoped wall-clock: scheduler is enabled, train_service running,
+watchdog active. Monitor `git log --grep="^auto:"` and `change_log.jsonl`.
+

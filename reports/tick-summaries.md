@@ -899,3 +899,4 @@ materialized.
 
 Operator paused the service for gaming at step 233,069. Heartbeat healthy,
 no crash indicators. Will resume monitoring once the loop is unpaused.
+| 1776142118 | 245000 | 0.01434 | 0.02373 | 20.71 | no_change | overfitting plateau; interventions need operator scope |

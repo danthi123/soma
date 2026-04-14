@@ -167,3 +167,53 @@ def test_soma_chat_end_to_end_with_mock_llm():
         max_new_tokens=3,
     )
     assert isinstance(response, str)
+
+
+class _StubTextDecoder:
+    """Mock SOMA text_decoder: returns a fixed string regardless of input."""
+
+    def __init__(self) -> None:
+        self.call_count = 0
+        self.last_activations: torch.Tensor | None = None
+
+    def decode_sequence(self, activations: torch.Tensor) -> str:
+        self.call_count += 1
+        self.last_activations = activations
+        return "stub-fallback-response"
+
+
+def test_soma_chat_falls_back_when_no_chat_head():
+    """When chat_head=None, SOMA.chat routes through verbalizer.fallback_text
+    which in turn calls soma.text_decoder.decode_sequence. This test attaches
+    a stub decoder (SOMA doesn't ship one by default) and asserts the
+    fallback pipeline was exercised and returned its string verbatim.
+    """
+    cfg = _soma_cfg()
+    soma = SOMA(cfg, device=torch.device("cpu"))
+    # Attach a stub text_decoder — SOMA has no default text_decoder attribute,
+    # so callers relying on the fallback branch must provide one. T6 verifies
+    # the contract the branch expects.
+    stub_decoder = _StubTextDecoder()
+    soma.text_decoder = stub_decoder
+
+    spec = VerbalizerSpec(
+        soma_output_dim=cfg.integrator_output_dim,
+        llm_name="none",
+        llm_hidden_dim=8,
+        num_prefix_tokens=2,
+    )
+    verbalizer = SomaVerbalizer(spec)
+
+    response = soma.chat(
+        user_text="hello",
+        verbalizer=verbalizer,
+        chat_head=None,
+    )
+
+    assert response == "stub-fallback-response"
+    assert stub_decoder.call_count == 1
+    # The decoder was called with the pooled activations (shape (1, 16) for
+    # this cfg). The aggregator outputs zeros on a cold graph, but shape
+    # should still be right.
+    assert stub_decoder.last_activations is not None
+    assert stub_decoder.last_activations.shape == (1, cfg.integrator_output_dim)

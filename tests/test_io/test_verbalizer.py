@@ -1,3 +1,5 @@
+import json
+from dataclasses import asdict
 from pathlib import Path
 
 import pytest
@@ -237,3 +239,54 @@ def test_fallback_text_delegates_to_soma_text_decoder():
     assert out.startswith("stub-decoded:")
     assert len(soma.text_decoder.calls) == 1
     assert soma.text_decoder.calls[0] is acts  # no copy
+
+
+def test_two_specs_independently_valid():
+    # Simulate swap from SmolLM2-360M → Qwen2.5-1.5B (960 → 1536 hidden)
+    spec_old = VerbalizerSpec(
+        soma_output_dim=128,
+        llm_name="HuggingFaceTB/SmolLM2-360M-Instruct",
+        llm_hidden_dim=960,
+        num_prefix_tokens=16,
+    )
+    spec_new = VerbalizerSpec(
+        soma_output_dim=128,
+        llm_name="Qwen/Qwen2.5-1.5B-Instruct",
+        llm_hidden_dim=1536,
+        num_prefix_tokens=8,
+    )
+    v_old = SomaVerbalizer(spec_old)
+    v_new = SomaVerbalizer(spec_new)
+
+    x = torch.randn(2, 128)
+    y_old = v_old(x)
+    y_new = v_new(x)
+    assert y_old.shape == (2, 16, 960)
+    assert y_new.shape == (2, 8, 1536)
+    # The two projectors are NOT interchangeable — loading one into the other
+    # would fail, which is the correct property (VerbalizerSpec pins identity).
+
+
+def test_cannot_load_spec_mismatch(tmp_path: Path):
+    spec_a = VerbalizerSpec(
+        soma_output_dim=128,
+        llm_name="a",
+        llm_hidden_dim=512,
+        num_prefix_tokens=4,
+    )
+    spec_b = VerbalizerSpec(
+        soma_output_dim=128,
+        llm_name="b",
+        llm_hidden_dim=1024,  # different!
+        num_prefix_tokens=4,
+    )
+    v_a = SomaVerbalizer(spec_a)
+    v_a.save(tmp_path / "a")
+
+    # Hand-tamper: replace spec.json with spec_b's contents (simulating a
+    # careless bundle edit)
+    (tmp_path / "a" / "spec.json").write_text(json.dumps(asdict(spec_b)))
+    # Now load should raise (shape mismatch) because load_state_dict
+    # checks weight shapes.
+    with pytest.raises((RuntimeError, ValueError)):
+        SomaVerbalizer.load(tmp_path / "a")

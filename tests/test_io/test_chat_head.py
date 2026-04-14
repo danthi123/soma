@@ -1,12 +1,15 @@
 import torch
 from torch import nn
 
+from soma.core.config import SOMAConfig
 from soma.io.chat_head import (
     ChatHead,
     build_attention_mask,
     build_attention_mask_from_pad,
     build_position_ids,
 )
+from soma.io.verbalizer import SomaVerbalizer, VerbalizerSpec
+from soma.system import SOMA
 
 
 class _TinyCausalLM(nn.Module):
@@ -117,3 +120,50 @@ def test_attention_mask_zero_for_padded_tokens():
     assert mask.shape == (1, 9)
     assert torch.all(mask[0, :4] == 1)
     assert torch.all(mask[0, 4:] == pad_mask[0])
+
+
+def _soma_cfg() -> SOMAConfig:
+    return SOMAConfig(
+        sensor_output_dim=8,
+        associator_input_dim=8,
+        associator_hidden_dim=16,
+        associator_output_dim=8,
+        integrator_input_dim=16,
+        integrator_hidden_dim=16,
+        integrator_output_dim=16,
+        position_dim=4,
+        wm_slots=2,
+        wm_dim=8,
+        episodic_capacity=4,
+        key_dim=8,
+        value_dim=8,
+        vocab_size=16,
+        text_embed_dim=8,
+        max_nodes=32,
+        initial_associator_count=2,
+        initial_integrator_count=1,
+        max_input_tokens=8,
+        max_output_tokens=4,
+        seed=0,
+    )
+
+
+def test_soma_chat_end_to_end_with_mock_llm():
+    cfg = _soma_cfg()
+    soma = SOMA(cfg, device=torch.device("cpu"))
+    spec = VerbalizerSpec(
+        soma_output_dim=cfg.integrator_output_dim,
+        llm_name="mock",
+        llm_hidden_dim=16,
+        num_prefix_tokens=4,
+        proj_hidden_dim=16,
+    )
+    verbalizer = SomaVerbalizer(spec)
+    chat_head = ChatHead(model=_TinyCausalLM(vocab=32, d_model=16), tokenizer=_TinyTokenizer())
+    response = soma.chat(
+        user_text="hello",
+        verbalizer=verbalizer,
+        chat_head=chat_head,
+        max_new_tokens=3,
+    )
+    assert isinstance(response, str)

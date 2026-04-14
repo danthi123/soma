@@ -19,7 +19,7 @@ import math
 from collections import deque
 from collections.abc import Callable, Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import torch
 from torch.nn import functional as F  # noqa: N812
@@ -658,6 +658,89 @@ class SOMA:
                 break
             pieces.append(piece)
         return "".join(pieces)
+
+    # ------------------------------------------------------------------
+    # Chat (verbalizer-mediated natural-language generation)
+    # ------------------------------------------------------------------
+    def chat(
+        self,
+        *,
+        user_text: str,
+        verbalizer: Any,
+        chat_head: Any | None = None,
+        max_new_tokens: int = 64,
+        **generate_kwargs: Any,
+    ) -> str:
+        """Generate an NL response conditioned on current SOMA state.
+
+        Pipeline:
+          1. Aggregate OUTPUT-node activations via ``SomaAggregator.collapse``.
+          2. Project to a soft-prompt prefix via the verbalizer.
+          3. Tokenize ``user_text`` via ``chat_head.tokenizer``.
+          4. Fetch token embeddings via ``chat_head.model.get_input_embeddings()``.
+          5. Concat prefix + token_embeds -> ``inputs_embeds``.
+          6. Build ``position_ids`` + ``attention_mask``.
+          7. Call ``chat_head.generate_text(...)``.
+
+        If ``chat_head`` is ``None``, routes through
+        ``verbalizer.fallback_text(self, pooled)`` so callers still get a
+        string response when no LLM is loaded (embedded, offline, debug).
+        """
+        from soma.io.chat_head import build_attention_mask_from_pad, build_position_ids
+        from soma.io.verbalizer import SomaAggregator
+
+        output_acts = self._current_output_activations()
+        pooled = SomaAggregator.collapse(
+            output_acts, soma_output_dim=verbalizer.spec.soma_output_dim
+        )
+        prefix = verbalizer(pooled)  # (1, k, d_model)
+
+        if chat_head is None:
+            return cast(str, verbalizer.fallback_text(self, pooled))
+
+        tok_out = chat_head.tokenizer(user_text, return_tensors="pt")
+        input_ids = tok_out["input_ids"]
+        pad_mask = tok_out.get("attention_mask")
+        if pad_mask is None:
+            pad_mask = torch.ones_like(input_ids)
+        token_embeds = chat_head.model.get_input_embeddings()(input_ids)  # (1, T, D)
+
+        inputs_embeds = torch.cat([prefix, token_embeds], dim=1)
+
+        k = verbalizer.spec.num_prefix_tokens
+        num_tokens = int(input_ids.shape[1])
+        attention_mask = build_attention_mask_from_pad(num_prefix=k, pad_mask=pad_mask)
+        position_ids = build_position_ids(num_prefix=k, num_tokens=num_tokens, batch_size=1)
+
+        return cast(
+            str,
+            chat_head.generate_text(
+                inputs_embeds=inputs_embeds,
+                attention_mask=attention_mask,
+                position_ids=position_ids,
+                max_new_tokens=max_new_tokens,
+                **generate_kwargs,
+            ),
+        )
+
+    def _current_output_activations(self) -> dict[str, torch.Tensor]:
+        """Last per-OUTPUT-node activation values from the graph, flattened.
+
+        Reads ``Node.last_activation``, the detached tensor stashed after
+        each forward pass by ``Node._record_activation`` /
+        ``execution._record_batched_activations``. Missing/None values
+        are skipped — that leaves ``SomaAggregator.collapse`` to return
+        zeros, giving ``chat()`` a safe cold start on an unwarmed graph.
+        """
+        output_acts: dict[str, torch.Tensor] = {}
+        for node_id, node in self.graph.nodes.items():
+            if node.node_type is not NodeType.OUTPUT:
+                continue
+            last_act = node.last_activation
+            if last_act is None:
+                continue
+            output_acts[node_id] = last_act.detach().view(-1)
+        return output_acts
 
     # ------------------------------------------------------------------
     # Defaults / serialization

@@ -598,3 +598,80 @@ def test_train_saves_intermediate_checkpoints(tmp_path: Path):
     assert (tmp_path / "verbalizer_final").exists(), "missing final checkpoint"
     # Step 5 is NOT a checkpoint boundary (5 % 2 != 0).
     assert not (tmp_path / "verbalizer_step_5").exists()
+
+
+# ---------------------------------------------------------------------------
+# T7: eval_lm_loss — held-out measurement
+# ---------------------------------------------------------------------------
+
+
+def test_eval_lm_loss_returns_mean_scalar():
+    t = _fresh_trainer()
+    val = t.eval_lm_loss(texts=["foo", "bar", "baz qux"])
+    assert isinstance(val, float)
+    assert val > 0
+
+
+def test_eval_lm_loss_does_not_update_verbalizer_weights():
+    t = _fresh_trainer()
+    before = [p.detach().clone() for p in t.verbalizer.parameters()]
+    _ = t.eval_lm_loss(texts=["hello", "world"])
+    after = [p.detach().clone() for p in t.verbalizer.parameters()]
+    for b, a in zip(before, after, strict=True):
+        assert torch.equal(b, a), "verbalizer param drifted during eval_lm_loss — no_grad missing?"
+
+
+def test_eval_lm_loss_restores_train_mode():
+    """After eval_lm_loss returns, the verbalizer should be back in train
+    mode so subsequent train_step calls are correct."""
+    t = _fresh_trainer()
+    _ = t.eval_lm_loss(texts=["foo"])
+    assert t.verbalizer.training, "verbalizer left in inference mode after eval_lm_loss"
+
+
+def test_eval_lm_loss_after_training_is_lower():
+    """Load-bearing: eval loss should drop after training on the same text.
+
+    Uses elevated LR (same pattern as T5 loss-decrease test) to converge
+    within a reasonable test budget.
+    """
+    cfg = replace(_soma_cfg(), verbalizer_lr=0.01)
+    soma = SOMA(cfg, device=torch.device("cpu"))
+    spec = VerbalizerSpec(
+        soma_output_dim=cfg.sensor_output_dim,
+        llm_name="mock",
+        llm_hidden_dim=16,
+        num_prefix_tokens=4,
+        proj_hidden_dim=16,
+    )
+    verbalizer = SomaVerbalizer(spec)
+    chat_head = ChatHead(
+        model=_TinyCausalLM(vocab=32, d_model=16),
+        tokenizer=_TinyTokenizer(),
+    )
+    encoder = TextEncoder(
+        _shared_bpe_tokenizer,
+        embed_dim=cfg.text_embed_dim,
+        max_seq_len=cfg.max_input_tokens,
+    )
+    t = VerbalizerTrainer(
+        soma=soma,
+        verbalizer=verbalizer,
+        chat_head=chat_head,
+        config=cfg,
+        tokenizer=_shared_bpe_tokenizer,
+        encoder=encoder,
+    )
+    text = "the quick brown fox jumps over the lazy dog"
+    pre = t.eval_lm_loss(texts=[text])
+    for _ in range(100):
+        t.train_step(text=text)
+    post = t.eval_lm_loss(texts=[text])
+    assert post < pre * 0.95, f"pre={pre:.4f} post={post:.4f}"
+
+
+def test_eval_lm_loss_handles_empty_texts():
+    """Edge case: empty text list should return 0.0 (no division by zero)."""
+    t = _fresh_trainer()
+    val = t.eval_lm_loss(texts=[])
+    assert val == 0.0

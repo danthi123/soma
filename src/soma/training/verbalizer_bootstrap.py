@@ -127,6 +127,39 @@ class VerbalizerTrainer:
         self.verbalizer.save(out_dir / "verbalizer_final")
         return losses
 
+    @torch.no_grad()
+    def eval_lm_loss(self, *, texts: list[str]) -> float:
+        """Mean LM loss over held-out texts. No gradient, no optim step.
+
+        Puts the verbalizer in inference mode (``.train(False)``) for the
+        duration, then restores training mode before returning — so callers
+        can freely alternate eval and train calls without manual bookkeeping.
+        """
+        self.verbalizer.train(False)
+        try:
+            total = 0.0
+            count = 0
+            for text in texts:
+                state = text_to_state(
+                    text=text,
+                    soma=self.soma,
+                    tokenizer=self._tokenizer,
+                    encoder=self._encoder,
+                    soma_output_dim=self.verbalizer.spec.soma_output_dim,
+                )
+                prefix = self.verbalizer(state)
+                tok_out = self.chat_head.tokenizer(text, return_tensors="pt")
+                loss = compute_lm_loss(
+                    chat_head=self.chat_head,
+                    prefix=prefix,
+                    token_ids=tok_out["input_ids"],
+                )
+                total += float(loss.item())
+                count += 1
+        finally:
+            self.verbalizer.train(True)
+        return total / count if count > 0 else 0.0
+
 
 def compute_lm_loss(
     *,

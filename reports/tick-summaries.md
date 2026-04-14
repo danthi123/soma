@@ -1284,3 +1284,12 @@ to Stage 5 multimodal).
 - WM occupancy 0.0, episodic saturated
 - Two recent growth-knob reverts (517448b, 91b6c88) both failed curiosity gate
 - **Decision**: no change — loss improving, curiosity spike unconfirmed, growth levers exhausted within auto-scope
+
+### tick-1776177593 — step 805K — no change (loss trend healthy)
+
+- **loss_ema_500=0.01572** (new best, -8.8% vs baseline, -4.1% vs prior tick)
+- **heldout_loss=0.02020** (+4.9% vs baseline — mild train/heldout gap, monitoring)
+- Graph: 34 nodes / 141 edges (-2 edges, slight pruning), 0 syn/neuro/prune in last 1K steps
+- WM occupancy 0.0, episodic saturated (both persistent)
+- Two recent growth-knob reverts still in effect — no new config changes viable within auto-scope
+- **Decision**: no change — steady 6-tick loss decline (0.01769→0.01572), system in healthy equilibrium

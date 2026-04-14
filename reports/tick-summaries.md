@@ -829,3 +829,9 @@ loss_ema=0.0154 (-10.5% vs baseline), heldout=0.0235, KL=20.71 (improving from 2
 Graph static at 34n/64e, zero growth events, wm_occupancy=0.0, episodic saturated.
 Training stable post-NaN-crisis; structural concerns (empty WM, frozen growth) flagged
 for operator review — both require carveout-path changes. No auto-intervention warranted.
+
+### Tick 1776128742 — step 145K — no change
+loss_ema=0.0140 (-18.9% vs baseline), heldout=0.0237 (+22.9% vs baseline), KL=20.71.
+Graph static 34n/64e, zero growth, wm_occupancy=0.0, episodic saturated.
+Training loss improving; heldout gap widening — monitoring for overfitting signal.
+No auto-intervention; recommend operator review if heldout continues rising next tick.

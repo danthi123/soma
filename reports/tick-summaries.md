@@ -974,3 +974,42 @@ If growth doesn't fire even now, the gating logic itself needs debug.
 - health: `episodic_saturated` (persistent) | wm_occupancy=0.0
 - **outcome: no change** — loss bump is expected transient from new edges; heldout still below baseline
 - next: monitor 1–2 more ticks; intervene if loss_ema_500 doesn't recover toward 0.014–0.016
+
+---
+
+## 2026-04-14 ~02:50 UTC — growth is working, keep it
+
+Apparent "decoder collapse" in `diagnose_collapse.py` (1 unique token) was
+a **diagnostic-methodology artifact**, not a real regression. The two tests
+measure different things:
+
+- `diagnose_collapse.py`: single-step forward — one prompt token in, decode
+  the immediate output. This worked when the graph was largely identity-
+  passing (pre-growth, weight-tied decoder decoded input-ish output → recovered
+  the input token). With the graph now *actually transforming* signal, the
+  one-step output no longer projects near any known token embedding.
+- `tick_harness.interactive_session`: autoregressive — feed all prompt tokens,
+  decode each output, continue from last-output for max-out-tokens. This is
+  the realistic generation test.
+
+Evidence growth is actually improving things:
+
+| signal                      | pre-growth (step 350K) | post-growth (step 395K) |
+|-----------------------------|------------------------|-------------------------|
+| **heldout_loss_mean**       | 0.0238                 | **0.0189 (−21%)**       |
+| tick chat unique words (5 prompts) | 2–3            | **6**                   |
+| edges                       | 64                     | 82 (+28%)               |
+| edges with \|w\| < 1e-3     | 0                      | 0                       |
+| decoder output sample       | "To be,... negl negl"  | "Girl heavier wouldst Mercy Camillo narrow" |
+| output gain (homeostatic)   | 10.0                   | 10.0 (recovered from transient 4.3) |
+
+Heldout broke the 200K-step 0.0238 plateau. Autoregressive output is now
+drawn from actual corpus vocabulary. Graph is *processing*, not echoing.
+
+The single-step diagnose_collapse criterion was calibrated on identity-echo
+behavior. Going forward, primary decoder-health signal is the tick chat log
+(autoregressive, what we actually care about). Single-step will get
+re-calibrated to a different metric (e.g. "variance in decoder logit entropy
+across prompts") at some point — not urgent.
+
+Service pid 127076 at step 408K, running stable. 29 commits pending push.

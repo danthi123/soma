@@ -1307,3 +1307,4 @@ to Stage 5 multimodal).
 | 1776199802 | 1060000 | 0.01545 | 0.02039 | 34/158 | no_change | stable plateau, growth stalled, no viable auto-scope intervention |
 | 1776202029 | 1085000 | 0.01706 | 0.00219 | 34/152 | no_change | loss plateau within noise; growth interventions exhausted (2 reverts); waiting |
 | 1776204242 | 1110000 | 0.01610 | 0.02046 | 34/149 | no_change | stable plateau, no intervention |
+| 1776206476 | 2026-04-14T22:44:18Z | 1135000 | 0.01706 | 0.00504 | 35/149 | no_change | stable plateau, observing curiosity spike |

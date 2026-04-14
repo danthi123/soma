@@ -927,3 +927,4 @@ not a monotonic overfit. Decoder outputs still diverse:
 ```
 
 Stable-cadence continues. 27 commits pending push.| 1776144292 | 2026-04-14 05:28 UTC | 295000 | no_change | loss_ema=0.0159 heldout=0.0238 nodes=34 edges=64 | graph stagnant 250K steps, operator-scoped growth decision |
+- **tick 1776146522** (step 350K): class=null — no in-scope change. heldout_loss=0.0238 (+23.5% vs baseline), loss_ema=0.0139, graph frozen 34/64, wm=0.0. Overfitting continues; all fixes require carveout paths.

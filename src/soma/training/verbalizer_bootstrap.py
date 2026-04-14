@@ -8,6 +8,8 @@ contract — enforced at trainer init).
 
 from __future__ import annotations
 
+from collections.abc import Iterable
+from pathlib import Path
 from typing import Any, cast
 
 import torch
@@ -89,6 +91,41 @@ class VerbalizerTrainer:
         loss.backward()  # type: ignore[no-untyped-call]
         self.optim.step()
         return float(loss.item())
+
+    def train(
+        self,
+        *,
+        corpus: Iterable[str],
+        max_steps: int,
+        out_dir: Path,
+    ) -> list[float]:
+        """Run up to ``max_steps`` train_step calls over ``corpus``.
+
+        Saves an intermediate verbalizer checkpoint every
+        ``self.config.verbalizer_checkpoint_interval`` steps (directory named
+        ``verbalizer_step_N``), plus a final checkpoint named
+        ``verbalizer_final``. Returns the per-step loss list.
+
+        Exits early if the corpus iterator is exhausted before ``max_steps``;
+        the final checkpoint is still written to mark where training stopped.
+        """
+        out_dir.mkdir(parents=True, exist_ok=True)
+        losses: list[float] = []
+        corpus_iter = iter(corpus)
+        interval = self.config.verbalizer_checkpoint_interval
+
+        for step in range(1, max_steps + 1):
+            try:
+                text = next(corpus_iter)
+            except StopIteration:
+                break
+            loss = self.train_step(text=text)
+            losses.append(loss)
+            if step % interval == 0:
+                self.verbalizer.save(out_dir / f"verbalizer_step_{step}")
+
+        self.verbalizer.save(out_dir / "verbalizer_final")
+        return losses
 
 
 def compute_lm_loss(

@@ -1,4 +1,5 @@
 from dataclasses import replace
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -513,3 +514,87 @@ def test_train_step_loss_decreases_over_iterations():
     assert final_loss < first_loss * 0.95, (
         f"final_loss={final_loss:.4f} not sufficiently below first_loss={first_loss:.4f}"
     )
+
+
+# ---------------------------------------------------------------------------
+# T6: train — outer loop with intermediate + final checkpoints
+# ---------------------------------------------------------------------------
+
+
+def test_train_runs_to_max_steps(tmp_path: Path):
+    t = _fresh_trainer()
+    corpus = ["hello world"] * 10
+    losses = t.train(
+        corpus=iter(corpus),
+        max_steps=5,
+        out_dir=tmp_path,
+    )
+    assert len(losses) == 5
+    assert all(isinstance(loss, float) for loss in losses)
+
+
+def test_train_stops_early_on_corpus_exhaustion(tmp_path: Path):
+    t = _fresh_trainer()
+    # Corpus has 3 samples; max_steps=10 — loop should exit after 3.
+    corpus = ["sample a", "sample b", "sample c"]
+    losses = t.train(
+        corpus=iter(corpus),
+        max_steps=10,
+        out_dir=tmp_path,
+    )
+    assert len(losses) == 3
+
+
+def test_train_saves_final_verbalizer_checkpoint(tmp_path: Path):
+    t = _fresh_trainer()
+    t.train(
+        corpus=iter(["hello world"] * 20),
+        max_steps=3,
+        out_dir=tmp_path,
+    )
+    assert (tmp_path / "verbalizer_final").exists()
+    assert (tmp_path / "verbalizer_final" / "spec.json").exists()
+    assert (tmp_path / "verbalizer_final" / "weights.pt").exists()
+
+
+def test_train_saves_intermediate_checkpoints(tmp_path: Path):
+    """With checkpoint_interval=2 and max_steps=5: save at step 2, step 4,
+    and final."""
+    # Build a trainer with checkpoint_interval=2.
+    cfg = replace(_soma_cfg(), verbalizer_checkpoint_interval=2)
+    soma = SOMA(cfg, device=torch.device("cpu"))
+    spec = VerbalizerSpec(
+        soma_output_dim=cfg.sensor_output_dim,
+        llm_name="mock",
+        llm_hidden_dim=16,
+        num_prefix_tokens=4,
+        proj_hidden_dim=16,
+    )
+    verbalizer = SomaVerbalizer(spec)
+    chat_head = ChatHead(
+        model=_TinyCausalLM(vocab=32, d_model=16),
+        tokenizer=_TinyTokenizer(),
+    )
+    encoder = TextEncoder(
+        _shared_bpe_tokenizer,
+        embed_dim=cfg.text_embed_dim,
+        max_seq_len=cfg.max_input_tokens,
+    )
+    t = VerbalizerTrainer(
+        soma=soma,
+        verbalizer=verbalizer,
+        chat_head=chat_head,
+        config=cfg,
+        tokenizer=_shared_bpe_tokenizer,
+        encoder=encoder,
+    )
+    t.train(
+        corpus=iter(["sample"] * 10),
+        max_steps=5,
+        out_dir=tmp_path,
+    )
+    assert (tmp_path / "verbalizer_step_2").exists(), "missing step-2 checkpoint"
+    assert (tmp_path / "verbalizer_step_4").exists(), "missing step-4 checkpoint"
+    assert (tmp_path / "verbalizer_final").exists(), "missing final checkpoint"
+    # Step 5 is NOT a checkpoint boundary (5 % 2 != 0).
+    assert not (tmp_path / "verbalizer_step_5").exists()

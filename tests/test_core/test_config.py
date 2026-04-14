@@ -29,6 +29,13 @@ class TestDefaults:
         assert config.gain_min == pytest.approx(0.1)
         assert config.gain_max == pytest.approx(10.0)
 
+    def test_verbalizer_bootstrap_defaults(self) -> None:
+        config = SOMAConfig()
+        assert config.verbalizer_lr == pytest.approx(1e-4)
+        assert config.verbalizer_checkpoint_interval == 500
+        assert config.bootstrap_sample_tokens == 64
+        assert config.bootstrap_max_steps == 5000
+
     def test_default_modalities_independent(self) -> None:
         """Every ``SOMAConfig()`` must get its own list (no shared defaults)."""
         a = SOMAConfig()
@@ -113,6 +120,21 @@ class TestToYaml:
         original.to_yaml(yaml_path)
         recovered = SOMAConfig.from_yaml(yaml_path)
         assert recovered.to_dict() == original.to_dict()
+
+    def test_verbalizer_bootstrap_fields_round_trip(self, tmp_path: Path) -> None:
+        original = SOMAConfig(
+            verbalizer_lr=3e-5,
+            verbalizer_checkpoint_interval=100,
+            bootstrap_sample_tokens=32,
+            bootstrap_max_steps=1000,
+        )
+        yaml_path = tmp_path / "bootstrap.yaml"
+        original.to_yaml(yaml_path)
+        recovered = SOMAConfig.from_yaml(yaml_path)
+        assert recovered.verbalizer_lr == pytest.approx(3e-5)
+        assert recovered.verbalizer_checkpoint_interval == 100
+        assert recovered.bootstrap_sample_tokens == 32
+        assert recovered.bootstrap_max_steps == 1000
 
     def test_to_dict_is_independent(self) -> None:
         config = SOMAConfig()

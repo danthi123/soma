@@ -69,6 +69,15 @@ class SOMAConfig:
     grad_clip_max_norm: float = 1.0
     max_consecutive_skipped_steps: int = 50
 
+    # --- Verbalizer bootstrap (Phase 4) -----------------------------------
+    # LR for the verbalizer-bootstrap Adam optimizer. Smaller than base_lr
+    # because the verbalizer is one dense projector, not a sparse Hebbian
+    # graph, so a few good gradient steps compound quickly.
+    verbalizer_lr: float = 1e-4
+    verbalizer_checkpoint_interval: int = 500
+    bootstrap_sample_tokens: int = 64
+    bootstrap_max_steps: int = 5000
+
     # --- Growth Thresholds ------------------------------------------------
     activation_threshold: float = 0.1
     synaptogenesis_rate: float = 0.01
@@ -160,6 +169,9 @@ class SOMAConfig:
             "max_output_tokens",
             "max_input_tokens",
             "activation_history_size",
+            "verbalizer_checkpoint_interval",
+            "bootstrap_sample_tokens",
+            "bootstrap_max_steps",
         ]
         for name in positive_ints:
             value = getattr(self, name)

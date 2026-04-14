@@ -696,6 +696,10 @@ class SOMA:
         prefix = verbalizer(pooled)  # (1, k, d_model)
 
         if chat_head is None:
+            # NOTE: ``verbalizer.fallback_text`` reads ``self.text_decoder``,
+            # which isn't a default SOMA attribute today. Callers using this
+            # branch must attach a ``text_decoder`` with ``.decode_sequence``
+            # (see verbalizer.py). Phase 4+ will formalise the contract.
             return cast(str, verbalizer.fallback_text(self, pooled))
 
         tok_out = chat_head.tokenizer(user_text, return_tensors="pt")

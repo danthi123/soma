@@ -158,7 +158,9 @@ class Node(nn.Module):
         # ``SOMA.chat`` aggregating OUTPUT-node state into a soft prompt.
         # Kept as a plain attribute (not a buffer) because it is not part of
         # the node's persistent state — checkpoints restore activations by
-        # replaying, not by storing per-step tensors.
+        # replaying, not by storing per-step tensors. Per-node cost is a
+        # single detached tensor; at scale only OUTPUT nodes (a handful) are
+        # actually read, so total footprint is trivial.
         self.last_activation: torch.Tensor | None = None
 
         # Homeostatic parameters.

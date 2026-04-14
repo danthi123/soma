@@ -404,9 +404,7 @@ class TestBatchedNodeForward:
         nodes = [Node(NodeType.ASSOCIATOR, 8, 16, 8, 0, config) for _ in range(4)]
         x = torch.randn(4, 8)  # pre-aggregated inputs
         # Sequential reference.
-        seq_out = torch.stack(
-            [nodes[i].forward({"fake": x[i]}, current_step=0) for i in range(4)]
-        )
+        seq_out = torch.stack([nodes[i].forward({"fake": x[i]}, current_step=0) for i in range(4)])
         # Reset state so the batched helper isn't comparing to nodes whose
         # stats have been mutated by the sequential forward above.
         from soma.core.ring_buffer import RingBuffer
@@ -460,9 +458,7 @@ class TestBatchedNodeForward:
             assert n.linear2.weight.grad is not None
             assert n.linear2.bias.grad is not None
         # Distinct gradients — stack/unbind did not collapse them.
-        assert not torch.allclose(
-            nodes[0].linear1.weight.grad, nodes[1].linear1.weight.grad
-        )
+        assert not torch.allclose(nodes[0].linear1.weight.grad, nodes[1].linear1.weight.grad)
 
 
 class TestRecordBatchedActivations:
@@ -570,9 +566,7 @@ class TestBatchedExecutorScaffold:
         # are byte-identical before we run them.
         graph2 = copy.deepcopy(graph)
         out_seq, _ = execute_graph(graph, inputs={"text": data}, current_step=1)
-        out_bat, _ = execute_graph_batched(
-            graph2, inputs={"text": data}, current_step=1
-        )
+        out_bat, _ = execute_graph_batched(graph2, inputs={"text": data}, current_step=1)
         assert set(out_seq.keys()) == set(out_bat.keys())
         for k in out_seq:
             assert torch.allclose(out_seq[k], out_bat[k], atol=1e-5, rtol=1e-5)
@@ -596,9 +590,13 @@ class TestBatchedExecutorParity:
             g.add_node(n)
         g.add_node(out, modality="text")
         edges = [
-            (s, a1), (s, a2), (s, a3),
+            (s, a1),
+            (s, a2),
+            (s, a3),
             (s, integ),
-            (a1, out), (a2, out), (a3, out),
+            (a1, out),
+            (a2, out),
+            (a3, out),
         ]
         for src, tgt in edges:
             g.add_edge(
@@ -622,6 +620,7 @@ class TestBatchedExecutorParity:
         implementation.
         """
         import inspect
+
         from soma.core import execution
 
         src = inspect.getsource(execution.execute_graph_batched)
@@ -633,17 +632,12 @@ class TestBatchedExecutorParity:
         g1 = self._make_graph(config, seed=123)
         g2 = copy.deepcopy(g1)
         data = torch.randn(config.sensor_output_dim)
-        seq_out, seq_act = execute_graph(
-            g1, inputs={"text": data}, current_step=1
-        )
-        bat_out, bat_act = execute_graph_batched(
-            g2, inputs={"text": data}, current_step=1
-        )
+        seq_out, seq_act = execute_graph(g1, inputs={"text": data}, current_step=1)
+        bat_out, bat_act = execute_graph_batched(g2, inputs={"text": data}, current_step=1)
         assert set(seq_out.keys()) == set(bat_out.keys())
         for k in seq_out:
             assert torch.allclose(seq_out[k], bat_out[k], atol=1e-5, rtol=1e-5), (
-                f"Output {k!r} diverges: max diff "
-                f"{(seq_out[k] - bat_out[k]).abs().max().item()}"
+                f"Output {k!r} diverges: max diff {(seq_out[k] - bat_out[k]).abs().max().item()}"
             )
         assert set(seq_act.keys()) == set(bat_act.keys())
 
@@ -688,9 +682,7 @@ class TestBatchedExecutorParity:
             n1 = g1.nodes[nid]
             n2 = g2.nodes[nid]
             assert n1.last_active_step == n2.last_active_step
-            assert n1.activation_ema == pytest.approx(
-                n2.activation_ema, rel=1e-6, abs=1e-9
-            )
+            assert n1.activation_ema == pytest.approx(n2.activation_ema, rel=1e-6, abs=1e-9)
             assert n1.activation_history.to_list() == pytest.approx(
                 n2.activation_history.to_list(), rel=1e-6, abs=1e-9
             )
@@ -725,9 +717,7 @@ class TestBatchedExecutorParity:
         g2 = copy.deepcopy(g1)
         data = torch.ones(config.sensor_output_dim)
         _, prev_seq = execute_graph(g1, inputs={"text": data}, current_step=1)
-        _, prev_bat = execute_graph_batched(
-            g2, inputs={"text": data}, current_step=1
-        )
+        _, prev_bat = execute_graph_batched(g2, inputs={"text": data}, current_step=1)
         out_seq, _ = execute_graph(
             g1,
             inputs={"text": data},

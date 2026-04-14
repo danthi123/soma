@@ -368,9 +368,7 @@ def _batched_node_forward(nodes: list[Node], x: torch.Tensor) -> torch.Tensor:
     # Per-node gain: broadcast (N,) -> (N, 1).
     device = x.device
     dtype = x.dtype
-    gain = torch.tensor(
-        [n.gain for n in nodes], device=device, dtype=dtype
-    ).unsqueeze(-1)
+    gain = torch.tensor([n.gain for n in nodes], device=device, dtype=dtype).unsqueeze(-1)
     h = h * gain
 
     if input_dim == output_dim:
@@ -427,9 +425,7 @@ def _aggregate_bucket_inputs(
     for node in nodes:
         agg: torch.Tensor | None = None
         for edge in graph.get_incoming_edges(node.id):
-            source_act = _source_activation_for(
-                edge, back_edges, activations, previous_activations
-            )
+            source_act = _source_activation_for(edge, back_edges, activations, previous_activations)
             if source_act is None:
                 continue
             signal = edge.transmit(source_act)

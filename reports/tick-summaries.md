@@ -1299,3 +1299,5 @@ to Stage 5 multimodal).
 
 - **tick 1776184285** (step 890K): no-op. loss_ema=0.01529, heldout=0.02030, kl=20.71, nodes=34, edges=140. Stable plateau; two recent growth-config reverts (consolidation_error_threshold, neurogenesis_threshold) block similar proposals. Deeper issues (frozen KL, empty WM) need carveout paths.
 | 1776186504 | 915000 | 0.0167 | 20.71 | 34/143 | no_change | stable plateau, KL stuck, WM=0 |
+| 1776188713 | 935000 | 0.0157 | 20.71 | 34/150 | no_change | stable plateau, growth-config reverts block proposals |
+- **tick 1776190930** (step 960K): no-change. loss_ema=0.01585 kl=20.71 nodes=34 edges=150. Plateau continues; recent growth-config reverts block similar proposals.

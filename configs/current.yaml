@@ -41,7 +41,7 @@ maturity_increment: 0.0001
 # Growth Thresholds
 activation_threshold: 0.05
 synaptogenesis_rate: 0.01
-neurogenesis_threshold: 1.05
+neurogenesis_threshold: 1.2
 edge_strength_threshold: 0.001
 inactivity_threshold: 5000
 pruning_grace_period: 2000

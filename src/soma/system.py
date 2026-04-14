@@ -19,7 +19,7 @@ import math
 from collections import deque
 from collections.abc import Callable, Sequence
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import torch
 from torch.nn import functional as F  # noqa: N812
@@ -39,6 +39,9 @@ from soma.memory.working_memory import WorkingMemory
 from soma.metacognition.curiosity import CuriosityModule
 from soma.metacognition.development import DevelopmentSchedule
 from soma.metacognition.homeostasis import HomeostaticRegulator
+
+if TYPE_CHECKING:
+    from soma.io.verbalizer import SomaVerbalizer
 
 
 def _current_soma_version() -> str:
@@ -826,7 +829,7 @@ class SOMA:
             interface_spec=interface_spec,
         )
 
-    def load_bundle(self, dir_path: str | Path) -> tuple[Any, Any, Any]:
+    def load_bundle(self, dir_path: str | Path) -> tuple[Any, Any, SomaVerbalizer | None]:
         """Load a directory-shaped brain bundle from ``dir_path``.
 
         Returns ``(tokenizer, encoder, verbalizer)``; any of the three

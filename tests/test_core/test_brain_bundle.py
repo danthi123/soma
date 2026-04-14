@@ -302,6 +302,13 @@ def test_load_bundle_returns_verbalizer_when_present(tmp_path: Path):
     assert loaded_verb is not None
     assert loaded_verb.spec == spec
 
+    # Belt-and-suspenders: confirm actual weights round-trip (not just spec).
+    orig_state = verb.state_dict()
+    loaded_state = loaded_verb.state_dict()
+    assert orig_state.keys() == loaded_state.keys()
+    for key in orig_state:
+        assert torch.equal(orig_state[key], loaded_state[key])
+
 
 def test_load_bundle_returns_none_verbalizer_when_absent(tmp_path: Path):
     cfg = _small_cfg()

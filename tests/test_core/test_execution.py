@@ -10,6 +10,9 @@ import torch
 from soma.core.config import SOMAConfig
 from soma.core.edge import Edge
 from soma.core.execution import (
+    _aggregate_bucket_inputs,
+    _batched_node_forward,
+    _record_batched_activations,
     bucket_wave_by_shape,
     compute_wave_layers,
     execute_graph,
@@ -393,6 +396,165 @@ class TestBucketWaveByShape:
         all_ids = [nid for ids in buckets.values() for nid in ids]
         assert sensor.id not in all_ids
         assert assoc.id in all_ids
+
+
+class TestBatchedNodeForward:
+    def test_matches_sequential_same_shape(self, config: SOMAConfig) -> None:
+        torch.manual_seed(0)
+        nodes = [Node(NodeType.ASSOCIATOR, 8, 16, 8, 0, config) for _ in range(4)]
+        x = torch.randn(4, 8)  # pre-aggregated inputs
+        # Sequential reference.
+        seq_out = torch.stack(
+            [nodes[i].forward({"fake": x[i]}, current_step=0) for i in range(4)]
+        )
+        # Reset state so the batched helper isn't comparing to nodes whose
+        # stats have been mutated by the sequential forward above.
+        from soma.core.ring_buffer import RingBuffer
+
+        for n in nodes:
+            n.activation_history = RingBuffer(n.activation_history.capacity)
+            n.activation_ema = 0.0
+            n.last_active_step = 0
+        bat_out = _batched_node_forward(nodes, x)
+        assert bat_out.shape == (4, 8)
+        assert torch.allclose(bat_out, seq_out, atol=1e-5, rtol=1e-5)
+
+    def test_gain_applied_per_node(self, config: SOMAConfig) -> None:
+        nodes = [Node(NodeType.ASSOCIATOR, 4, 8, 4, 0, config) for _ in range(2)]
+        nodes[0].gain = 2.0
+        nodes[1].gain = 0.5
+        # Zero-out weights so residual + gain is all that matters.
+        for n in nodes:
+            with torch.no_grad():
+                n.linear1.weight.zero_()
+                n.linear1.bias.zero_()
+                n.linear2.weight.zero_()
+                n.linear2.bias.zero_()
+        x = torch.tensor([[1.0, 2.0, 3.0, 4.0], [5.0, 6.0, 7.0, 8.0]])
+        out = _batched_node_forward(nodes, x)
+        # h = 0 * gain + residual = x (since input_dim == output_dim).
+        assert torch.allclose(out, x)
+
+    def test_no_residual_when_dims_differ(self, config: SOMAConfig) -> None:
+        nodes = [Node(NodeType.INTEGRATOR, 4, 8, 6, 0, config) for _ in range(2)]
+        for n in nodes:
+            with torch.no_grad():
+                n.linear1.weight.zero_()
+                n.linear1.bias.zero_()
+                n.linear2.weight.zero_()
+                n.linear2.bias.zero_()
+        x = torch.randn(2, 4)
+        out = _batched_node_forward(nodes, x)
+        # All linear layers zeroed + no residual -> output is zero.
+        assert torch.allclose(out, torch.zeros(2, 6))
+
+    def test_gradient_routes_to_each_node(self, config: SOMAConfig) -> None:
+        nodes = [Node(NodeType.ASSOCIATOR, 4, 8, 4, 0, config) for _ in range(3)]
+        x = torch.randn(3, 4, requires_grad=False)
+        out = _batched_node_forward(nodes, x)
+        loss = out.sum()
+        loss.backward()
+        for n in nodes:
+            assert n.linear1.weight.grad is not None
+            assert n.linear1.bias.grad is not None
+            assert n.linear2.weight.grad is not None
+            assert n.linear2.bias.grad is not None
+        # Distinct gradients — stack/unbind did not collapse them.
+        assert not torch.allclose(
+            nodes[0].linear1.weight.grad, nodes[1].linear1.weight.grad
+        )
+
+
+class TestRecordBatchedActivations:
+    def test_matches_sequential_record(self, config: SOMAConfig) -> None:
+        # Build two equivalent node lists. Run sequential on one, batched
+        # record on the other. Compare final state.
+        seq_nodes = [Node(NodeType.ASSOCIATOR, 4, 8, 4, 0, config) for _ in range(3)]
+        bat_nodes = [Node(NodeType.ASSOCIATOR, 4, 8, 4, 0, config) for _ in range(3)]
+        # Sync params so output magnitudes would match in the real flow
+        # (this helper is agnostic but it documents intent).
+        for s, b in zip(seq_nodes, bat_nodes, strict=True):
+            b.load_state_dict(s.state_dict())
+        outs = torch.stack([torch.randn(4) * 3.0 for _ in range(3)])
+        for i, n in enumerate(seq_nodes):
+            n._record_activation(outs[i], current_step=7)
+        _record_batched_activations(bat_nodes, outs, current_step=7)
+        for s, b in zip(seq_nodes, bat_nodes, strict=True):
+            assert len(s.activation_history) == len(b.activation_history)
+            assert s.activation_history.to_list() == pytest.approx(
+                b.activation_history.to_list(), rel=1e-6, abs=1e-9
+            )
+            assert s.activation_ema == pytest.approx(b.activation_ema, rel=1e-6)
+            assert s.last_active_step == b.last_active_step
+
+
+class TestAggregateBucketInputs:
+    def test_sums_multiple_incoming_edges(self, config: SOMAConfig) -> None:
+        graph, sensor, assoc, out = _matched_linear_graph(config)
+        dim = sensor.output_dim
+        # Another parallel path: sensor -> out direct.
+        graph.add_edge(
+            Edge(
+                source_id=sensor.id,
+                target_id=out.id,
+                source_output_dim=dim,
+                target_input_dim=dim,
+                creation_step=0,
+                initial_weight=0.5,
+            )
+        )
+        # Prepare synthetic activations: sensor=ones, assoc=twos.
+        activations = {
+            sensor.id: torch.ones(dim),
+            assoc.id: torch.full((dim,), 2.0),
+        }
+        x, active_nodes = _aggregate_bucket_inputs(
+            graph=graph,
+            nodes=[graph.nodes[out.id]],
+            activations=activations,
+            previous_activations={},
+            back_edges=set(),
+            current_step=5,
+            record_edge_activity=False,
+        )
+        assert active_nodes == [graph.nodes[out.id]]
+        assert x.shape == (1, dim)
+        # assoc->out (w=1.0): 2.0 * 1.0 = 2.0
+        # sensor->out (w=0.5): 1.0 * 0.5 = 0.5
+        # Total: 2.5 per feature.
+        assert torch.allclose(x[0], torch.full((dim,), 2.5), atol=1e-5)
+
+    def test_dormant_node_excluded(self, config: SOMAConfig) -> None:
+        graph, sensor, assoc, out = _matched_linear_graph(config)
+        # No source activations -> every non-sensor node is dormant.
+        x, active = _aggregate_bucket_inputs(
+            graph=graph,
+            nodes=[graph.nodes[assoc.id], graph.nodes[out.id]],
+            activations={},
+            previous_activations={},
+            back_edges=set(),
+            current_step=0,
+            record_edge_activity=False,
+        )
+        assert active == []
+        assert x.numel() == 0
+
+    def test_mark_active_when_record_activity(self, config: SOMAConfig) -> None:
+        graph, sensor, assoc, _ = _matched_linear_graph(config)
+        dim = sensor.output_dim
+        activations = {sensor.id: torch.ones(dim)}
+        s_to_a = graph.get_edge(sensor.id, assoc.id)
+        assert s_to_a.last_active_step == 0
+        _aggregate_bucket_inputs(
+            graph=graph,
+            nodes=[graph.nodes[assoc.id]],
+            activations=activations,
+            previous_activations={},
+            back_edges=set(),
+            current_step=42,
+            record_edge_activity=True,
+        )
+        assert s_to_a.last_active_step == 42
 
 
 class TestBatchedExecutorScaffold:

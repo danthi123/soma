@@ -15,10 +15,11 @@ from __future__ import annotations
 from collections.abc import Iterator, Mapping
 
 import torch
+from torch.nn import functional as F  # noqa: N812
 
 from soma.core.edge import Edge
 from soma.core.graph import Graph
-from soma.core.node import NodeType
+from soma.core.node import Node, NodeType
 
 
 def topological_sort(graph: Graph) -> tuple[list[str], set[str]]:
@@ -271,3 +272,139 @@ def _collect_outputs(
         if act is not None:
             outputs[modality] = act
     return outputs
+
+
+def _batched_node_forward(nodes: list[Node], x: torch.Tensor) -> torch.Tensor:
+    """Run the MLP step for a list of same-shape nodes in one batched pass.
+
+    Parameters
+    ----------
+    nodes:
+        Non-empty list. All must share ``(input_dim, hidden_dim, output_dim)``.
+    x:
+        Pre-aggregated input tensor of shape ``(len(nodes), input_dim)``.
+
+    Returns
+    -------
+    Tensor of shape ``(len(nodes), output_dim)`` equal (up to float
+    re-association) to ``torch.stack([n.forward({'_': x[i]}, ...)])``.
+
+    Notes
+    -----
+    Gradients flow back to each node's individual ``linear1.weight``,
+    ``linear1.bias``, ``linear2.weight``, ``linear2.bias`` because we
+    build the batched weight tensor with ``torch.stack``, whose backward
+    splits the accumulated gradient back to the input tensors. ``gain``
+    is a Python float (not a ``nn.Parameter``), so it does not receive
+    gradients — matches the sequential path.
+    """
+    assert nodes, "_batched_node_forward called with empty node list"
+    input_dim = nodes[0].input_dim
+    hidden_dim = nodes[0].hidden_dim
+    output_dim = nodes[0].output_dim
+    # Defensive: catch shape mismatches early.
+    for n in nodes:
+        assert (n.input_dim, n.hidden_dim, n.output_dim) == (
+            input_dim,
+            hidden_dim,
+            output_dim,
+        ), (
+            f"Shape mismatch in bucket: {n.id[:8]} has "
+            f"{(n.input_dim, n.hidden_dim, n.output_dim)}, expected "
+            f"{(input_dim, hidden_dim, output_dim)}"
+        )
+
+    # Stack weight/bias into (N, hidden, input) / (N, hidden) tensors.
+    # torch.stack preserves autograd edges, so grads flow back to each
+    # node's own parameters.
+    W1 = torch.stack([n.linear1.weight for n in nodes])  # (N, hidden, input)
+    b1 = torch.stack([n.linear1.bias for n in nodes])  # (N, hidden)
+    W2 = torch.stack([n.linear2.weight for n in nodes])  # (N, output, hidden)
+    b2 = torch.stack([n.linear2.bias for n in nodes])  # (N, output)
+
+    # Batched linear: h[n] = W1[n] @ x[n] + b1[n]. einsum keeps it
+    # explicit; torch.bmm would also work.
+    h = torch.einsum("nhi,ni->nh", W1, x) + b1
+    h = F.gelu(h)
+    h = torch.einsum("noh,nh->no", W2, h) + b2
+
+    # Per-node gain: broadcast (N,) -> (N, 1).
+    device = x.device
+    dtype = x.dtype
+    gain = torch.tensor(
+        [n.gain for n in nodes], device=device, dtype=dtype
+    ).unsqueeze(-1)
+    h = h * gain
+
+    if input_dim == output_dim:
+        h = h + x
+
+    return h
+
+
+def _record_batched_activations(
+    nodes: list[Node],
+    outputs: torch.Tensor,
+    current_step: int,
+) -> None:
+    """Per-node state update for a batched-forward output.
+
+    Must match :meth:`Node._record_activation` exactly: append magnitude
+    to ring buffer, EMA-update ``activation_ema`` with 0.99/0.01 blend,
+    and bump ``last_active_step`` iff magnitude > threshold.
+
+    Processes nodes in list order so sequential-vs-batched ordering of
+    host-side state updates is identical.
+    """
+    # Compute per-row L2 norms in one shot, then pull to host for the
+    # Python-float state that Node holds.
+    mags = outputs.detach().norm(dim=-1).tolist()
+    for node, mag in zip(nodes, mags, strict=True):
+        node.activation_history.append(mag)
+        node.activation_ema = 0.99 * node.activation_ema + 0.01 * mag
+        if mag > node._activation_threshold:
+            node.last_active_step = current_step
+
+
+def _aggregate_bucket_inputs(
+    graph: Graph,
+    nodes: list[Node],
+    activations: Mapping[str, torch.Tensor],
+    previous_activations: Mapping[str, torch.Tensor],
+    back_edges: set[str],
+    current_step: int,
+    record_edge_activity: bool,
+) -> tuple[torch.Tensor, list[Node]]:
+    """Aggregate incoming edges for each node, return stacked inputs.
+
+    Nodes with zero active incoming edges are dropped (dormant). Returned
+    ``active_nodes`` preserves the input order minus dropped nodes, and
+    row ``i`` of the returned tensor is the aggregated input for
+    ``active_nodes[i]``.
+
+    Iterates edges in the same order as the sequential executor so
+    edge ``mark_active`` bookkeeping is identical.
+    """
+    rows: list[torch.Tensor] = []
+    active_nodes: list[Node] = []
+    for node in nodes:
+        agg: torch.Tensor | None = None
+        for edge in graph.get_incoming_edges(node.id):
+            source_act = _source_activation_for(
+                edge, back_edges, activations, previous_activations
+            )
+            if source_act is None:
+                continue
+            signal = edge.transmit(source_act)
+            agg = signal if agg is None else agg + signal
+            if record_edge_activity:
+                edge.mark_active(current_step)
+        if agg is None:
+            continue  # dormant
+        rows.append(agg)
+        active_nodes.append(node)
+    if not rows:
+        # Empty bucket — return a zero-row tensor so downstream shape
+        # checks don't crash. Caller should test ``active_nodes``.
+        return torch.empty(0), active_nodes
+    return torch.stack(rows), active_nodes

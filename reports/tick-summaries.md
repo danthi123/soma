@@ -1042,3 +1042,5 @@ not strictly worse.
 
 Not intervening. Stable cadence continues. If unique words drop <3 AND
 KL reverses upward, will tighten synaptogenesis_rate. 30 commits pending.
+
+| 1776153183 | 475000 | 0.01751 | 0.01904 | 34/99 | no_change | training stable, no intervention needed |

@@ -151,6 +151,28 @@ def execute_graph(
     return outputs, activations
 
 
+def execute_graph_batched(
+    graph: Graph,
+    inputs: Mapping[str, torch.Tensor],
+    current_step: int,
+    *,
+    previous_activations: Mapping[str, torch.Tensor] | None = None,
+    record_edge_activity: bool = True,
+) -> tuple[dict[str, torch.Tensor], dict[str, torch.Tensor]]:
+    """Batched variant of :func:`execute_graph`.
+
+    Currently delegates to the sequential path. Subsequent tasks replace
+    the body with wave-grouped batched matmuls.
+    """
+    return execute_graph(
+        graph,
+        inputs,
+        current_step,
+        previous_activations=previous_activations,
+        record_edge_activity=record_edge_activity,
+    )
+
+
 # ----------------------------------------------------------------------
 # Helpers
 # ----------------------------------------------------------------------

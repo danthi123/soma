@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import copy
+
 import pytest
 import torch
 
 from soma.core.config import SOMAConfig
 from soma.core.edge import Edge
-from soma.core.execution import execute_graph, topological_sort
+from soma.core.execution import execute_graph, execute_graph_batched, topological_sort
 from soma.core.graph import Graph
 from soma.core.node import Node, NodeType
 
@@ -292,3 +294,24 @@ class TestExecuteGraph:
             current_step=0,
         )
         assert set(outputs.keys()) == {"text", "image"}
+
+
+class TestBatchedExecutorScaffold:
+    def test_batched_symbol_exported(self) -> None:
+        from soma.core import execution
+
+        assert hasattr(execution, "execute_graph_batched")
+
+    def test_batched_matches_sequential_on_linear_graph(self, config: SOMAConfig) -> None:
+        graph, sensor, _, _ = _matched_linear_graph(config)
+        data = torch.randn(sensor.output_dim)
+        # Deepcopy preserves UUIDs + weights + buffers so the two graphs
+        # are byte-identical before we run them.
+        graph2 = copy.deepcopy(graph)
+        out_seq, _ = execute_graph(graph, inputs={"text": data}, current_step=1)
+        out_bat, _ = execute_graph_batched(
+            graph2, inputs={"text": data}, current_step=1
+        )
+        assert set(out_seq.keys()) == set(out_bat.keys())
+        for k in out_seq:
+            assert torch.allclose(out_seq[k], out_bat[k], atol=1e-5, rtol=1e-5)

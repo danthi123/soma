@@ -8,6 +8,23 @@ Whitepaper Section 3.3 / 3.4. Key points:
 - Dormant nodes (no active incoming signal) are skipped and produce no
   activation for this step.
 - Edges that transmit a signal have their ``last_active_step`` bumped.
+
+Two executors are available:
+
+- :func:`execute_graph` — sequential reference path. One Python-level
+  iteration over nodes; one MLP's worth of kernel launches per non-
+  dormant node per wave. Always correct; easy to debug.
+- :func:`execute_graph_batched` — wave-batched path. Groups same-shape
+  nodes within each topological wave into a single stacked matmul per
+  MLP layer, collapsing per-node kernel launches into per-bucket
+  launches. Produces outputs equal-up-to-float-reassociation
+  (atol=1e-5) to the sequential path. Use this in hot loops on GPU.
+
+``SOMAConfig.use_batched_executor`` selects which path ``SOMA.step``
+and ``consolidation_cycle`` use at runtime. Both paths are tested for
+per-step parity in ``tests/test_core/test_execution_parity.py``; flip
+the flag to ``False`` if the batched path ever exposes a bug (no data
+or weight migration is needed).
 """
 
 from __future__ import annotations

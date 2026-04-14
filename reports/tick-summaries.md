@@ -1013,3 +1013,5 @@ re-calibrated to a different metric (e.g. "variance in decoder logit entropy
 across prompts") at some point — not urgent.
 
 Service pid 127076 at step 408K, running stable. 29 commits pending push.
+
+| 1776150952 | 435000 | 0.01899 | 0.01893 | 20.24 | 34/90 | no_change | healthy — heldout plateau broken, edges growing |

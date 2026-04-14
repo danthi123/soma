@@ -9,7 +9,13 @@ import torch
 
 from soma.core.config import SOMAConfig
 from soma.core.edge import Edge
-from soma.core.execution import execute_graph, execute_graph_batched, topological_sort
+from soma.core.execution import (
+    bucket_wave_by_shape,
+    compute_wave_layers,
+    execute_graph,
+    execute_graph_batched,
+    topological_sort,
+)
 from soma.core.graph import Graph
 from soma.core.node import Node, NodeType
 
@@ -294,6 +300,99 @@ class TestExecuteGraph:
             current_step=0,
         )
         assert set(outputs.keys()) == {"text", "image"}
+
+
+class TestComputeWaveLayers:
+    def test_linear_graph_has_three_waves(self, config: SOMAConfig) -> None:
+        graph, sensor, assoc, out = _matched_linear_graph(config)
+        waves = compute_wave_layers(graph)
+        assert [sorted(w) for w in waves] == [[sensor.id], [assoc.id], [out.id]]
+
+    def test_back_edge_does_not_increase_wave(self, config: SOMAConfig) -> None:
+        graph = Graph()
+        dim = config.sensor_output_dim
+        sensor = Node(NodeType.SENSOR, dim, dim * 2, dim, 0, config)
+        a = Node(NodeType.ASSOCIATOR, dim, dim * 2, dim, 0, config)
+        b = Node(NodeType.ASSOCIATOR, dim, dim * 2, dim, 0, config)
+        out = Node(NodeType.OUTPUT, dim, dim * 2, dim, 0, config)
+        graph.add_node(sensor, modality="text")
+        graph.add_node(a)
+        graph.add_node(b)
+        graph.add_node(out, modality="text")
+        for src, tgt in [(sensor, a), (a, b), (b, out), (b, a)]:
+            graph.add_edge(
+                Edge(
+                    source_id=src.id,
+                    target_id=tgt.id,
+                    source_output_dim=dim,
+                    target_input_dim=dim,
+                    creation_step=0,
+                    initial_weight=1.0,
+                )
+            )
+        waves = compute_wave_layers(graph)
+        flat = [nid for wave in waves for nid in wave]
+        assert set(flat) == {sensor.id, a.id, b.id, out.id}
+        idx = {nid: i for i, wave in enumerate(waves) for nid in wave}
+        # Forward-edge constraints hold (back-edge b->a is ignored for wave).
+        assert idx[sensor.id] < idx[a.id] < idx[b.id] < idx[out.id]
+
+    def test_disconnected_component(self, config: SOMAConfig) -> None:
+        graph = Graph()
+        dim = 4
+        nodes = [Node(NodeType.ASSOCIATOR, dim, 8, dim, 0, config) for _ in range(3)]
+        for n in nodes:
+            graph.add_node(n)
+        graph.add_edge(
+            Edge(
+                source_id=nodes[0].id,
+                target_id=nodes[1].id,
+                source_output_dim=dim,
+                target_input_dim=dim,
+                creation_step=0,
+            )
+        )
+        waves = compute_wave_layers(graph)
+        idx = {nid: i for i, w in enumerate(waves) for nid in w}
+        # Two connected + one isolated. Isolated node sits at wave 0.
+        assert idx[nodes[0].id] < idx[nodes[1].id]
+        assert idx[nodes[2].id] == 0
+
+
+class TestBucketWaveByShape:
+    def test_uniform_wave_single_bucket(self, config: SOMAConfig) -> None:
+        graph = Graph()
+        nodes = [Node(NodeType.ASSOCIATOR, 8, 16, 8, 0, config) for _ in range(3)]
+        for n in nodes:
+            graph.add_node(n)
+        wave = [n.id for n in nodes]
+        buckets = bucket_wave_by_shape(graph, wave)
+        assert list(buckets.keys()) == [(8, 16, 8)]
+        assert buckets[(8, 16, 8)] == wave  # order preserved
+
+    def test_mixed_wave_multiple_buckets(self, config: SOMAConfig) -> None:
+        graph = Graph()
+        a = Node(NodeType.ASSOCIATOR, 8, 16, 8, 0, config)
+        b = Node(NodeType.ASSOCIATOR, 8, 16, 8, 0, config)
+        c = Node(NodeType.INTEGRATOR, 8, 32, 16, 0, config)
+        for n in (a, b, c):
+            graph.add_node(n)
+        wave = [a.id, c.id, b.id]
+        buckets = bucket_wave_by_shape(graph, wave)
+        assert buckets[(8, 16, 8)] == [a.id, b.id]  # a before b (input order)
+        assert buckets[(8, 32, 16)] == [c.id]
+
+    def test_sensor_excluded(self, config: SOMAConfig) -> None:
+        graph = Graph()
+        sensor = Node(NodeType.SENSOR, 8, 16, 8, 0, config)
+        assoc = Node(NodeType.ASSOCIATOR, 8, 16, 8, 0, config)
+        graph.add_node(sensor, modality="text")
+        graph.add_node(assoc)
+        buckets = bucket_wave_by_shape(graph, [sensor.id, assoc.id])
+        # Sensor must not appear in any bucket — it's handled separately.
+        all_ids = [nid for ids in buckets.values() for nid in ids]
+        assert sensor.id not in all_ids
+        assert assoc.id in all_ids
 
 
 class TestBatchedExecutorScaffold:

@@ -151,6 +151,63 @@ def execute_graph(
     return outputs, activations
 
 
+def compute_wave_layers(graph: Graph) -> list[list[str]]:
+    """Group node IDs into topological waves.
+
+    A node's wave index is ``1 + max(wave of each predecessor via forward
+    edges)``, or ``0`` if it has no forward-edge predecessors. Back-edges
+    (detected the same way as in :func:`topological_sort`) are ignored
+    for wave assignment because they carry previous-step signal, not
+    this-step signal.
+
+    Returns a list of waves, each a list of node IDs. The order of node
+    IDs *within* a wave matches the order they appear in
+    :func:`topological_sort` — the batched executor updates per-node
+    state in this same order to keep sequential-vs-batched state-update
+    ordering identical.
+    """
+    order, back_edges = topological_sort(graph)
+    wave_of: dict[str, int] = {}
+    for node_id in order:
+        max_pred = -1
+        for edge in graph.get_incoming_edges(node_id):
+            if edge.id in back_edges:
+                continue
+            if edge.source_id in wave_of and wave_of[edge.source_id] > max_pred:
+                max_pred = wave_of[edge.source_id]
+        wave_of[node_id] = max_pred + 1
+
+    if not wave_of:
+        return []
+    num_waves = max(wave_of.values()) + 1
+    waves: list[list[str]] = [[] for _ in range(num_waves)]
+    # Preserve topological order within each wave.
+    for node_id in order:
+        waves[wave_of[node_id]].append(node_id)
+    return waves
+
+
+def bucket_wave_by_shape(
+    graph: Graph,
+    wave: list[str],
+) -> dict[tuple[int, int, int], list[str]]:
+    """Bucket a wave's node IDs by their MLP shape.
+
+    Key is ``(input_dim, hidden_dim, output_dim)``. SENSOR nodes are
+    skipped because they don't run an MLP (their ``forward`` returns
+    the injected input). Order within each bucket follows the order of
+    ``wave`` — callers depend on this for deterministic state updates.
+    """
+    buckets: dict[tuple[int, int, int], list[str]] = {}
+    for node_id in wave:
+        node = graph.nodes[node_id]
+        if node.node_type is NodeType.SENSOR:
+            continue
+        key = (node.input_dim, node.hidden_dim, node.output_dim)
+        buckets.setdefault(key, []).append(node_id)
+    return buckets
+
+
 def execute_graph_batched(
     graph: Graph,
     inputs: Mapping[str, torch.Tensor],

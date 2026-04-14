@@ -40,8 +40,7 @@ def build_benchmark_graph(config: SOMAConfig, device: torch.device) -> Graph:
     g.add_node(s_text, modality="text")
     g.add_node(s_img, modality="image")
     assocs = [
-        Node(NodeType.ASSOCIATOR, dim, dim * 2, dim, 0, config, device=device)
-        for _ in range(30)
+        Node(NodeType.ASSOCIATOR, dim, dim * 2, dim, 0, config, device=device) for _ in range(30)
     ]
     for a in assocs:
         g.add_node(a)
@@ -142,9 +141,7 @@ def main(argv: list[str] | None = None) -> int:
     print(f"[bench] device={device.type}  warmup={args.warmup}  steps={args.steps}")
     print(f"[bench] graph: {g_seq.num_nodes} nodes, {g_seq.num_edges} edges")
     sps_seq = run_bench(g_seq, data, execute_graph, args.warmup, args.steps, device)
-    sps_bat = run_bench(
-        g_bat, data, execute_graph_batched, args.warmup, args.steps, device
-    )
+    sps_bat = run_bench(g_bat, data, execute_graph_batched, args.warmup, args.steps, device)
     ratio = sps_bat / sps_seq if sps_seq > 0 else float("inf")
     print(f"[bench] sequential: {sps_seq:.1f} steps/sec")
     print(f"[bench] batched:    {sps_bat:.1f} steps/sec")

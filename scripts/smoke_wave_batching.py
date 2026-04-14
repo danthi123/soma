@@ -63,9 +63,7 @@ def run_training(config: SOMAConfig, steps: int, device: torch.device) -> dict:
             break
         if sample.target.numel() == 0:
             continue
-        inputs = {
-            m: t[0].detach() for m, t in sample.inputs.items() if t.numel() > 0
-        }
+        inputs = {m: t[0].detach() for m, t in sample.inputs.items() if t.numel() > 0}
         if not inputs:
             continue
         target = {first_out: sample.target[0].detach()}
@@ -90,9 +88,7 @@ def run_training(config: SOMAConfig, steps: int, device: torch.device) -> dict:
     for sample in heldout_feeder:
         if sample.target.numel() == 0:
             continue
-        inputs = {
-            m: t[0].detach() for m, t in sample.inputs.items() if t.numel() > 0
-        }
+        inputs = {m: t[0].detach() for m, t in sample.inputs.items() if t.numel() > 0}
         if not inputs:
             continue
         target = {first_out: sample.target[0].detach()}

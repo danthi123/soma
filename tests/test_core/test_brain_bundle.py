@@ -1,4 +1,5 @@
 import pytest
+import torch
 
 from soma.core.brain_bundle import (
     SCHEMA_VERSION,
@@ -52,3 +53,22 @@ def test_migrate_legacy_schema_zero_wraps_as_payload():
     # Assert nothing is lost
     for key in legacy:
         assert key in migrated
+
+
+def test_to_cpu_normalizes_nested_tensor_state():
+    from soma.core.brain_bundle import to_cpu_state
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    state = {
+        "a": torch.tensor([1.0, 2.0], device=device),
+        "nested": {"b": torch.tensor([3.0], device=device)},
+        "list": [torch.tensor([4.0], device=device)],
+        "scalar": 42,
+        "string": "hello",
+    }
+    normalized = to_cpu_state(state)
+    assert normalized["a"].device.type == "cpu"
+    assert normalized["nested"]["b"].device.type == "cpu"
+    assert normalized["list"][0].device.type == "cpu"
+    assert normalized["scalar"] == 42
+    assert normalized["string"] == "hello"

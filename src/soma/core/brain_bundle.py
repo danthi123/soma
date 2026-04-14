@@ -84,3 +84,15 @@ def migrate_payload(payload: dict[str, Any], *, from_schema: int) -> tuple[dict[
         payload = step(payload)
         current += 1
     return payload, current
+
+
+def to_cpu_state(obj: Any) -> Any:
+    """Recursively move every tensor in a nested mapping/list to CPU."""
+    if isinstance(obj, torch.Tensor):
+        return obj.detach().cpu()
+    if isinstance(obj, dict):
+        return {k: to_cpu_state(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        t = type(obj)
+        return t(to_cpu_state(v) for v in obj)
+    return obj

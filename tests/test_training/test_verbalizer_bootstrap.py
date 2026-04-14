@@ -6,7 +6,7 @@ from soma.core.config import SOMAConfig
 from soma.io.chat_head import ChatHead
 from soma.io.verbalizer import SomaVerbalizer, VerbalizerSpec
 from soma.system import SOMA
-from soma.training.verbalizer_bootstrap import VerbalizerTrainer
+from soma.training.verbalizer_bootstrap import VerbalizerTrainer, compute_lm_loss
 
 
 # Reuse the Phase 3 mock shape — thinnest possible HF-like surface.
@@ -146,3 +146,59 @@ def test_trainer_raises_if_chat_head_is_not_frozen():
             chat_head=chat_head,
             config=cfg,
         )
+
+
+def test_compute_lm_loss_returns_scalar_tensor():
+    prefix = torch.randn(1, 4, 16, requires_grad=True)
+    token_ids = torch.tensor([[1, 2, 3, 4, 5]], dtype=torch.long)
+    head = ChatHead(
+        model=_TinyCausalLM(vocab=32, d_model=16),
+        tokenizer=_TinyTokenizer(),
+    )
+    loss = compute_lm_loss(chat_head=head, prefix=prefix, token_ids=token_ids)
+    assert loss.ndim == 0
+    assert loss.item() > 0
+
+
+def test_compute_lm_loss_gradient_reaches_prefix_only():
+    prefix = torch.randn(1, 4, 16, requires_grad=True)
+    token_ids = torch.tensor([[1, 2, 3, 4, 5]], dtype=torch.long)
+    head = ChatHead(
+        model=_TinyCausalLM(vocab=32, d_model=16),
+        tokenizer=_TinyTokenizer(),
+    )
+    loss = compute_lm_loss(chat_head=head, prefix=prefix, token_ids=token_ids)
+    loss.backward()
+    assert prefix.grad is not None
+    assert torch.any(prefix.grad != 0), "prefix got zero gradient — loss path broken"
+    # Frozen LLM params must stay grad-free.
+    assert all(p.grad is None for p in head.model.parameters())
+
+
+def test_compute_lm_loss_masks_prefix_positions():
+    """Loss must ignore prefix-position predictions (labels=-100 contract).
+
+    With a zero-valued prefix, k=4 vs k=0 should produce near-identical
+    token-position loss (prefix zero vectors don't change logits). If
+    prefix positions were NOT masked, loss_k4 would include k=4 extra
+    uniform-random-prediction positions of significant extra loss.
+    """
+    torch.manual_seed(0)
+    token_ids = torch.tensor([[1, 2, 3, 4, 5]], dtype=torch.long)
+    head = ChatHead(
+        model=_TinyCausalLM(vocab=32, d_model=16),
+        tokenizer=_TinyTokenizer(),
+    )
+
+    prefix_k4 = torch.zeros(1, 4, 16)  # zero prefix, no meaningful content
+    prefix_k0 = torch.zeros(1, 0, 16)  # empty prefix
+
+    loss_k4 = compute_lm_loss(chat_head=head, prefix=prefix_k4, token_ids=token_ids)
+    loss_k0 = compute_lm_loss(chat_head=head, prefix=prefix_k0, token_ids=token_ids)
+
+    # Same per-token loss — delta must be small (< ~0.3 accounting for
+    # marginal effects of the zero prefix passing through attention).
+    assert abs(loss_k4.item() - loss_k0.item()) < 0.3, (
+        f"k=4 vs k=0 loss differ by {abs(loss_k4.item() - loss_k0.item()):.3f} — "
+        "prefix positions may not be masked with -100"
+    )

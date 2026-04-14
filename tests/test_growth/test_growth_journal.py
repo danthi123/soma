@@ -347,7 +347,16 @@ def test_consolidation_myelination_events_logged() -> None:
     """Myelination only ever runs during consolidation. If a ripe chain
     exists and the cycle compresses it, the journal must record a
     ``myelinate`` event per new merged node — otherwise myelination is
-    100% invisible to structural archaeology."""
+    100% invisible to structural archaeology.
+
+    ``detect_linear_chains`` only treats a node as chainable when it has
+    exactly in=1 / out=1 and its predecessor is NOT itself chainable. So
+    we stand up a 5-node line ``a -> b -> c -> d -> e`` where the
+    bookends ``a`` and ``e`` fail the in/out=1 test (``a`` has in=0,
+    ``e`` has out=0), and the middle three ``b, c, d`` form a chain of
+    length 3 (>= the default ``min_length=2``) that myelination can
+    compress.
+    """
     cfg = _small_cfg(
         synaptogenesis_interval=10**9,
         neurogenesis_interval=10**9,
@@ -363,12 +372,13 @@ def test_consolidation_myelination_events_logged() -> None:
     )
     soma = SOMA(cfg, device=torch.device("cpu"))
 
-    # Build a ripe 2-node chain between two associators that have exactly
-    # one in / one out edge each. The seed graph guarantees the initial
-    # associators have fan-in from sensors + fan-out to outputs, so we
-    # stand up fresh isolated associators instead.
-    chain_nodes: list[Node] = []
-    for _ in range(3):
+    # Five isolated associators: a -> b -> c -> d -> e. Bookends a and e
+    # fall out of the "chainable" set (in-degree 0 / out-degree 0), so b,
+    # c, and d form the detectable chain. The seed graph's initial
+    # associators already have sensor/output fan-in/fan-out that would
+    # disqualify them, so we stand up fresh isolated nodes here.
+    nodes: list[Node] = []
+    for _ in range(5):
         n = Node(
             node_type=NodeType.ASSOCIATOR,
             input_dim=cfg.associator_input_dim,
@@ -378,17 +388,17 @@ def test_consolidation_myelination_events_logged() -> None:
             config=cfg,
         )
         soma.graph.add_node(n)
-        chain_nodes.append(n)
-    for src, tgt in zip(chain_nodes, chain_nodes[1:], strict=False):
+        nodes.append(n)
+    for src, tgt in zip(nodes, nodes[1:], strict=False):
         e = Edge(
             source_id=src.id,
             target_id=tgt.id,
             source_output_dim=src.output_dim,
             target_input_dim=tgt.input_dim,
-            creation_step=0,
+            creation_step=0,  # age = step - 0 = 10 > myelination_age_threshold=5
             initial_weight=1.0,
         )
-        e.strength = 1.0
+        e.strength = 1.0  # > myelination_strength_threshold=0.1
         soma.graph.add_edge(e)
 
     # Seed episodic memory so the cycle runs.
@@ -396,29 +406,43 @@ def test_consolidation_myelination_events_logged() -> None:
         vec = torch.randn(soma.episodic_memory.value_dim)
         soma.episodic_memory.encode(experience=vec, prediction_error=1.0, current_step=t)
 
-    soma.global_step = cfg.consolidation_interval
+    # Chain detection should pick b, c, d (the middle three).
+    inner_chain_ids = {nodes[1].id, nodes[2].id, nodes[3].id}
+    all_line_ids = {n.id for n in nodes}
+
+    soma.global_step = cfg.consolidation_interval  # = 10, aligns divmod == 0
     before = len(soma.growth_log)
-    chain_ids_before = {n.id for n in chain_nodes}
     soma._maybe_consolidate(rng=None)
     after_events = list(soma.growth_log)[before:]
     myelinate_events = [ev for ev in after_events if ev["event_type"] == "myelinate"]
 
-    # Either the chain was compressed (journal has matching myelinate
-    # events) or it wasn't (no chain nodes were removed from the graph).
-    still_present = chain_ids_before & set(soma.graph.nodes.keys())
-    was_compressed = still_present != chain_ids_before
-    if was_compressed:
-        assert myelinate_events, (
-            "myelination removed chain nodes but journal has no myelinate events"
-        )
-        for ev in myelinate_events:
-            assert "new_node_id" in ev
-            assert "chain_node_ids" in ev
-            assert isinstance(ev["chain_node_ids"], list)
-            assert len(ev["chain_node_ids"]) >= 2
-            # Chain IDs recorded must match the nodes that actually got removed.
-            for cid in ev["chain_node_ids"]:
-                assert cid in chain_ids_before
-    else:
-        # Contract: if nothing was compressed, no myelinate event should fire.
-        assert not myelinate_events
+    # POSITIVE-branch assertion: the ripe inner chain MUST have been
+    # compressed. If this fails, the test config no longer actually
+    # exercises myelination and the assertions below are meaningless.
+    still_present = inner_chain_ids & set(soma.graph.nodes.keys())
+    assert not still_present, (
+        f"expected inner chain nodes {inner_chain_ids} to be removed by myelination, "
+        f"but still present: {still_present}"
+    )
+    # Bookends a and e must survive — they weren't part of any ripe chain.
+    assert nodes[0].id in soma.graph.nodes
+    assert nodes[4].id in soma.graph.nodes
+
+    # Journal must record exactly one myelinate event (one chain compressed).
+    assert len(myelinate_events) == 1, (
+        f"expected 1 myelinate event, got {len(myelinate_events)}: {myelinate_events}"
+    )
+    ev = myelinate_events[0]
+    assert "new_node_id" in ev
+    assert "chain_node_ids" in ev
+    assert isinstance(ev["chain_node_ids"], list)
+    # The chain we built has three internal nodes.
+    assert len(ev["chain_node_ids"]) == 3
+    # Chain IDs recorded must be exactly the inner nodes of our line.
+    assert set(ev["chain_node_ids"]) == inner_chain_ids
+    # The new merged node must actually exist in the graph.
+    assert ev["new_node_id"] in soma.graph.nodes
+    # And it must be fresh — not one of the five we built.
+    assert ev["new_node_id"] not in all_line_ids
+    # Event must carry the standard step stamp.
+    assert ev["step"] == soma.global_step

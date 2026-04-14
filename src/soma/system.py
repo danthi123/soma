@@ -496,9 +496,9 @@ class SOMA:
             if self.global_step % config.pruning_interval == 0:
                 result = pruning(self.graph, step=self.global_step, config=config)
                 for edge_id in result.removed_edge_ids:
-                    self.record_growth_event("prune_edge", id=edge_id)
+                    self.record_growth_event("prune_edge", edge_id=edge_id)
                 for node_id in result.removed_node_ids:
-                    self.record_growth_event("prune_node", id=node_id)
+                    self.record_growth_event("prune_node", node_id=node_id)
 
     def _maybe_consolidate(self, *, rng: torch.Generator | None) -> None:
         if (
@@ -506,7 +506,7 @@ class SOMA:
             and self.global_step % self.config.consolidation_interval == 0
             and self.episodic_memory.num_valid > 0
         ):
-            consolidation_cycle(
+            result = consolidation_cycle(
                 self.graph,
                 self.episodic_memory,
                 current_step=self.global_step,
@@ -514,6 +514,29 @@ class SOMA:
                 experience_unpacker=self.experience_unpacker,
                 rng=rng,
             )
+            # Drain structural events from the cycle into the journal so
+            # pruning / myelination / (opt-in) neurogenesis that happens
+            # during artificial sleep shows up in the archaeology trace
+            # the same way online _maybe_grow events do.
+            for edge_id in result.removed_edge_ids:
+                self.record_growth_event("prune_edge", edge_id=edge_id)
+            for node_id in result.removed_node_ids:
+                self.record_growth_event("prune_node", node_id=node_id)
+            for new_node_id, chain_ids in zip(
+                result.myelination_new_node_ids,
+                result.myelination_chain_ids,
+                strict=False,
+            ):
+                self.record_growth_event(
+                    "myelinate",
+                    new_node_id=new_node_id,
+                    chain_node_ids=list(chain_ids),
+                )
+            if result.neurogenesis_node_id is not None:
+                self.record_growth_event(
+                    "neurogenesis",
+                    node_id=result.neurogenesis_node_id,
+                )
 
     # ------------------------------------------------------------------
     # Interactive helpers

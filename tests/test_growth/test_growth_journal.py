@@ -186,7 +186,7 @@ def test_growth_log_persists_round_trip(tmp_path: Path) -> None:
     """Save + load must preserve the journal contents (bounded deque)."""
     soma = SOMA(_small_cfg(), device=torch.device("cpu"))
     soma.record_growth_event("synaptogenesis", edge_id="e1")
-    soma.record_growth_event("prune_edge", id="e2")
+    soma.record_growth_event("prune_edge", edge_id="e2")
 
     save_path = tmp_path / "brain.pt"
     soma.save_state(str(save_path))
@@ -216,3 +216,209 @@ def test_load_state_with_missing_growth_log_is_backward_compatible(tmp_path: Pat
     assert hasattr(soma2, "growth_log")
     assert len(soma2.growth_log) == 0
     assert soma2.growth_log.maxlen == 10_000
+
+
+def test_prune_event_uses_edge_id_not_id() -> None:
+    """Regression: ``prune_edge`` / ``prune_node`` once used ``id=`` —
+    inconsistent with ``synaptogenesis`` / ``neurogenesis`` (``edge_id`` /
+    ``node_id``). The journal must use the same field name for the same
+    conceptual identifier across create + destroy events, so dashboards
+    can group events by object without special-casing the field name."""
+    cfg = _small_cfg(
+        synaptogenesis_interval=10**9,
+        neurogenesis_interval=10**9,
+        pruning_interval=1,
+        pruning_grace_period=1,
+        edge_strength_threshold=1.0,
+        inactivity_threshold=1,
+    )
+    soma = SOMA(cfg, device=torch.device("cpu"))
+    a = Node(
+        node_type=NodeType.ASSOCIATOR,
+        input_dim=cfg.associator_input_dim,
+        hidden_dim=cfg.associator_hidden_dim,
+        output_dim=cfg.associator_output_dim,
+        creation_step=0,
+        config=cfg,
+    )
+    b = Node(
+        node_type=NodeType.ASSOCIATOR,
+        input_dim=cfg.associator_input_dim,
+        hidden_dim=cfg.associator_hidden_dim,
+        output_dim=cfg.associator_output_dim,
+        creation_step=0,
+        config=cfg,
+    )
+    soma.graph.add_node(a)
+    soma.graph.add_node(b)
+    stale_edge = Edge(
+        source_id=a.id,
+        target_id=b.id,
+        source_output_dim=a.output_dim,
+        target_input_dim=b.input_dim,
+        creation_step=0,
+        initial_weight=0.0,
+    )
+    soma.graph.add_edge(stale_edge)
+    soma.global_step = 100
+    soma._maybe_grow(activations={}, loss_value=None, rng=None)
+
+    prune_edge_events = [ev for ev in soma.growth_log if ev["event_type"] == "prune_edge"]
+    assert prune_edge_events, "expected at least one prune_edge event"
+    for ev in prune_edge_events:
+        assert "edge_id" in ev, f"prune_edge event missing 'edge_id' key: {ev}"
+        assert "id" not in ev, f"prune_edge event still uses legacy 'id' key: {ev}"
+
+    prune_node_events = [ev for ev in soma.growth_log if ev["event_type"] == "prune_node"]
+    for ev in prune_node_events:
+        assert "node_id" in ev, f"prune_node event missing 'node_id' key: {ev}"
+        assert "id" not in ev, f"prune_node event still uses legacy 'id' key: {ev}"
+
+
+def test_consolidation_pruning_events_logged() -> None:
+    """Pruning that runs inside ``consolidation_cycle`` (during artificial
+    sleep) must show up in the journal the same way online pruning does.
+    Force a cycle by aligning ``global_step`` with ``consolidation_interval``
+    and stage a weak stale edge the cycle will drop."""
+    cfg = _small_cfg(
+        synaptogenesis_interval=10**9,
+        neurogenesis_interval=10**9,
+        pruning_interval=10**9,
+        consolidation_interval=10,
+        consolidation_replay_steps=3,
+        pruning_grace_period=1,
+        edge_strength_threshold=1.0,
+        inactivity_threshold=1,
+        myelination_strength_threshold=1000.0,  # suppress myelination
+        consolidation_error_threshold=1e9,  # suppress neurogenesis
+    )
+    soma = SOMA(cfg, device=torch.device("cpu"))
+
+    # Stage a weak stale edge between two fresh associators the cycle can drop.
+    a = Node(
+        node_type=NodeType.ASSOCIATOR,
+        input_dim=cfg.associator_input_dim,
+        hidden_dim=cfg.associator_hidden_dim,
+        output_dim=cfg.associator_output_dim,
+        creation_step=0,
+        config=cfg,
+    )
+    b = Node(
+        node_type=NodeType.ASSOCIATOR,
+        input_dim=cfg.associator_input_dim,
+        hidden_dim=cfg.associator_hidden_dim,
+        output_dim=cfg.associator_output_dim,
+        creation_step=0,
+        config=cfg,
+    )
+    soma.graph.add_node(a)
+    soma.graph.add_node(b)
+    stale_edge = Edge(
+        source_id=a.id,
+        target_id=b.id,
+        source_output_dim=a.output_dim,
+        target_input_dim=b.input_dim,
+        creation_step=0,
+        initial_weight=0.0,
+    )
+    stale_edge.strength = 0.0
+    stale_edge.last_active_step = 0
+    soma.graph.add_edge(stale_edge)
+
+    # Seed episodic memory so sample_for_replay returns something.
+    for t in range(4):
+        vec = torch.randn(soma.episodic_memory.value_dim)
+        soma.episodic_memory.encode(experience=vec, prediction_error=1.0, current_step=t)
+
+    soma.global_step = cfg.consolidation_interval  # aligns divmod == 0
+    before = len(soma.growth_log)
+    soma._maybe_consolidate(rng=None)
+    after_events = list(soma.growth_log)[before:]
+    event_types = {ev["event_type"] for ev in after_events}
+    assert "prune_edge" in event_types, (
+        f"expected prune_edge event from consolidation, got types={event_types}"
+    )
+    # The stale edge we staged must be among the pruned edges.
+    pruned_ids = {ev["edge_id"] for ev in after_events if ev["event_type"] == "prune_edge"}
+    assert stale_edge.id in pruned_ids
+
+
+def test_consolidation_myelination_events_logged() -> None:
+    """Myelination only ever runs during consolidation. If a ripe chain
+    exists and the cycle compresses it, the journal must record a
+    ``myelinate`` event per new merged node — otherwise myelination is
+    100% invisible to structural archaeology."""
+    cfg = _small_cfg(
+        synaptogenesis_interval=10**9,
+        neurogenesis_interval=10**9,
+        pruning_interval=10**9,
+        consolidation_interval=10,
+        consolidation_replay_steps=3,
+        pruning_grace_period=10**9,  # suppress pruning
+        edge_strength_threshold=0.0,
+        inactivity_threshold=10**9,
+        myelination_strength_threshold=0.1,  # low -> edges count as strong
+        myelination_age_threshold=5,  # low -> edges count as old
+        consolidation_error_threshold=1e9,  # suppress neurogenesis
+    )
+    soma = SOMA(cfg, device=torch.device("cpu"))
+
+    # Build a ripe 2-node chain between two associators that have exactly
+    # one in / one out edge each. The seed graph guarantees the initial
+    # associators have fan-in from sensors + fan-out to outputs, so we
+    # stand up fresh isolated associators instead.
+    chain_nodes: list[Node] = []
+    for _ in range(3):
+        n = Node(
+            node_type=NodeType.ASSOCIATOR,
+            input_dim=cfg.associator_input_dim,
+            hidden_dim=cfg.associator_hidden_dim,
+            output_dim=cfg.associator_output_dim,
+            creation_step=0,
+            config=cfg,
+        )
+        soma.graph.add_node(n)
+        chain_nodes.append(n)
+    for src, tgt in zip(chain_nodes, chain_nodes[1:], strict=False):
+        e = Edge(
+            source_id=src.id,
+            target_id=tgt.id,
+            source_output_dim=src.output_dim,
+            target_input_dim=tgt.input_dim,
+            creation_step=0,
+            initial_weight=1.0,
+        )
+        e.strength = 1.0
+        soma.graph.add_edge(e)
+
+    # Seed episodic memory so the cycle runs.
+    for t in range(4):
+        vec = torch.randn(soma.episodic_memory.value_dim)
+        soma.episodic_memory.encode(experience=vec, prediction_error=1.0, current_step=t)
+
+    soma.global_step = cfg.consolidation_interval
+    before = len(soma.growth_log)
+    chain_ids_before = {n.id for n in chain_nodes}
+    soma._maybe_consolidate(rng=None)
+    after_events = list(soma.growth_log)[before:]
+    myelinate_events = [ev for ev in after_events if ev["event_type"] == "myelinate"]
+
+    # Either the chain was compressed (journal has matching myelinate
+    # events) or it wasn't (no chain nodes were removed from the graph).
+    still_present = chain_ids_before & set(soma.graph.nodes.keys())
+    was_compressed = still_present != chain_ids_before
+    if was_compressed:
+        assert myelinate_events, (
+            "myelination removed chain nodes but journal has no myelinate events"
+        )
+        for ev in myelinate_events:
+            assert "new_node_id" in ev
+            assert "chain_node_ids" in ev
+            assert isinstance(ev["chain_node_ids"], list)
+            assert len(ev["chain_node_ids"]) >= 2
+            # Chain IDs recorded must match the nodes that actually got removed.
+            for cid in ev["chain_node_ids"]:
+                assert cid in chain_ids_before
+    else:
+        # Contract: if nothing was compressed, no myelinate event should fire.
+        assert not myelinate_events

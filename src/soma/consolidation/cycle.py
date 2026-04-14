@@ -38,7 +38,16 @@ ExperienceUnpacker = Callable[
 
 @dataclass(frozen=True)
 class ConsolidationResult:
-    """Summary of one consolidation cycle."""
+    """Summary of one consolidation cycle.
+
+    The ``*_ids`` / ``*_chain_ids`` fields let callers (e.g. the growth
+    journal in ``SOMA._maybe_consolidate``) attribute each structural
+    change — pruning, myelination, neurogenesis — without having to
+    diff the graph themselves. The scalar ``edges_pruned`` /
+    ``nodes_pruned`` / ``chains_compressed`` fields are retained for
+    backward compatibility with prior consumers; they track the lengths
+    of the corresponding ID lists.
+    """
 
     num_replayed: int
     replay_losses: list[float]
@@ -46,6 +55,11 @@ class ConsolidationResult:
     nodes_pruned: int = 0
     chains_compressed: int = 0
     neurogenesis_nodes: list[str] = field(default_factory=list)
+    removed_edge_ids: list[str] = field(default_factory=list)
+    removed_node_ids: list[str] = field(default_factory=list)
+    myelination_new_node_ids: list[str] = field(default_factory=list)
+    myelination_chain_ids: list[list[str]] = field(default_factory=list)
+    neurogenesis_node_id: str | None = None
 
     @property
     def mean_loss(self) -> float:
@@ -151,13 +165,22 @@ def consolidation_cycle(
     nodes_pruned = 0
     chains_compressed = 0
     neurogenesis_ids: list[str] = []
+    removed_edge_ids: list[str] = []
+    removed_node_ids: list[str] = []
+    myelination_new_node_ids: list[str] = []
+    myelination_chain_ids: list[list[str]] = []
+    neurogenesis_node_id: str | None = None
     if run_structural_maintenance:
         prune_result = pruning(graph, step=current_step, config=config)
         edges_pruned = prune_result.removed_edges
         nodes_pruned = prune_result.removed_nodes
+        removed_edge_ids = list(prune_result.removed_edge_ids)
+        removed_node_ids = list(prune_result.removed_node_ids)
 
         myelin_result = myelination(graph, step=current_step, config=config)
         chains_compressed = myelin_result.chains_compressed
+        myelination_new_node_ids = list(myelin_result.new_node_ids)
+        myelination_chain_ids = [list(chain) for chain in myelin_result.compressed_chains]
 
         # Only fire neurogenesis when replay was noisy — matches the
         # whitepaper's "if mean replay error > CONSOLIDATION_ERROR_THRESHOLD".
@@ -173,6 +196,7 @@ def consolidation_cycle(
                 )
                 if new_node is not None:
                     neurogenesis_ids.append(new_node.id)
+                    neurogenesis_node_id = new_node.id
 
         # Finally, let episodic memory drop entries that are old enough
         # and replayed enough.
@@ -185,6 +209,11 @@ def consolidation_cycle(
         nodes_pruned=nodes_pruned,
         chains_compressed=chains_compressed,
         neurogenesis_nodes=neurogenesis_ids,
+        removed_edge_ids=removed_edge_ids,
+        removed_node_ids=removed_node_ids,
+        myelination_new_node_ids=myelination_new_node_ids,
+        myelination_chain_ids=myelination_chain_ids,
+        neurogenesis_node_id=neurogenesis_node_id,
     )
 
 

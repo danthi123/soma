@@ -1275,3 +1275,12 @@ stopped proposing new changes. This is the expected terminal state for
 the autonomous monitoring phase — further progress requires operator-
 scoped design decisions (loss signal MSE→CE, seed topology, or moving
 to Stage 5 multimodal).
+
+### tick 1776175393 — step 775K — no change (stable descent continues)
+
+- **loss_ema_500=0.01639** (best in 6 ticks, -4.9% vs baseline)
+- **curiosity spike**: 0.005 vs ~0.002 prior ticks (+175%) — needs second data point
+- Graph: 34 nodes / 143 edges, 1 synaptogenesis, 0 neuro/prune
+- WM occupancy 0.0, episodic saturated
+- Two recent growth-knob reverts (517448b, 91b6c88) both failed curiosity gate
+- **Decision**: no change — loss improving, curiosity spike unconfirmed, growth levers exhausted within auto-scope

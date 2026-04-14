@@ -171,7 +171,7 @@ def test_save_bundle_then_load_bundle(tmp_path: Path):
     assert (out_dir / "encoder.pt").exists()
 
     soma2 = SOMA(cfg, device=torch.device("cpu"))
-    tok2, enc2 = soma2.load_bundle(str(out_dir))
+    tok2, enc2, _verb = soma2.load_bundle(str(out_dir))
     # vocab size stays the same across round-trip
     assert tok2.get_vocab_size() == tok.get_vocab_size()
 
@@ -250,3 +250,66 @@ def test_load_state_migrates_legacy_format_end_to_end(tmp_path: Path):
     orig = next(iter(soma.graph.state_dict().values()))
     loaded = next(iter(soma2.graph.state_dict().values()))
     assert torch.allclose(orig, loaded)
+
+
+def test_save_bundle_includes_verbalizer_subdir(tmp_path: Path):
+    from soma.io.verbalizer import SomaVerbalizer, VerbalizerSpec
+
+    cfg = _small_cfg()
+    soma = SOMA(cfg, device=torch.device("cpu"))
+    spec = VerbalizerSpec(
+        soma_output_dim=cfg.integrator_output_dim,
+        llm_name="smoke",
+        llm_hidden_dim=64,
+        num_prefix_tokens=4,
+        proj_hidden_dim=32,
+    )
+    verb = SomaVerbalizer(spec)
+
+    out = tmp_path / "bundle"
+    soma.save_bundle(str(out), verbalizer=verb)
+
+    assert (out / "verbalizer").is_dir()
+    assert (out / "verbalizer" / "spec.json").exists()
+    assert (out / "verbalizer" / "weights.pt").exists()
+
+    # Manifest should record the LLM identity for swap-detection
+    manifest = json.loads((out / "manifest.json").read_text())
+    assert manifest["llm_identity"] == "smoke"
+
+
+def test_load_bundle_returns_verbalizer_when_present(tmp_path: Path):
+    from soma.io.verbalizer import SomaVerbalizer, VerbalizerSpec
+
+    cfg = _small_cfg()
+    soma = SOMA(cfg, device=torch.device("cpu"))
+    spec = VerbalizerSpec(
+        soma_output_dim=cfg.integrator_output_dim,
+        llm_name="smoke",
+        llm_hidden_dim=64,
+        num_prefix_tokens=4,
+        proj_hidden_dim=32,
+    )
+    verb = SomaVerbalizer(spec)
+
+    out = tmp_path / "bundle"
+    soma.save_bundle(str(out), verbalizer=verb)
+
+    soma2 = SOMA(cfg, device=torch.device("cpu"))
+    result = soma2.load_bundle(str(out))
+    # load_bundle returned (tokenizer, encoder) before Task 8; now also verbalizer
+    _, _, loaded_verb = result  # 3-tuple now
+    assert loaded_verb is not None
+    assert loaded_verb.spec == spec
+
+
+def test_load_bundle_returns_none_verbalizer_when_absent(tmp_path: Path):
+    cfg = _small_cfg()
+    soma = SOMA(cfg, device=torch.device("cpu"))
+    out = tmp_path / "bundle"
+    soma.save_bundle(str(out))  # no verbalizer
+
+    soma2 = SOMA(cfg, device=torch.device("cpu"))
+    result = soma2.load_bundle(str(out))
+    _, _, loaded_verb = result
+    assert loaded_verb is None

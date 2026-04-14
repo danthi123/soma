@@ -761,6 +761,7 @@ class SOMA:
         tokenizer: Any = None,
         encoder: Any = None,
         decoder: Any = None,
+        verbalizer: Any = None,
         llm_identity: str | None = None,
     ) -> None:
         """Write a directory-shaped brain bundle to ``dir_path``.
@@ -772,9 +773,13 @@ class SOMA:
         its ``vocab_size`` is stamped into the manifest. When an
         ``encoder`` / ``decoder`` is supplied, each is saved alongside
         as ``encoder.pt`` / ``decoder.pt`` with just enough metadata to
-        reconstruct on load. The encoder / decoder arguments are
-        optional so callers that only want to persist the graph +
-        tokenizer don't have to fabricate modules.
+        reconstruct on load. When a ``verbalizer`` is supplied it is
+        written to the ``verbalizer/`` subdir (spec.json + weights.pt)
+        and its ``spec.llm_name`` is stamped into ``manifest.llm_identity``
+        for swap-detection — an explicit ``llm_identity`` argument still
+        wins if both are provided. The encoder / decoder / verbalizer
+        arguments are all optional so callers that only want to persist
+        the graph + tokenizer don't have to fabricate modules.
         """
         from soma.core.brain_bundle import write_manifest
 
@@ -798,6 +803,13 @@ class SOMA:
         if decoder is not None:
             torch.save({"state_dict": decoder.state_dict()}, str(out / "decoder.pt"))
 
+        if verbalizer is not None:
+            verbalizer.save(out / "verbalizer")
+            # Stamp LLM identity from the verbalizer spec unless the caller
+            # passed an explicit llm_identity override.
+            if llm_identity is None:
+                llm_identity = verbalizer.spec.llm_name
+
         vocab_size = tokenizer.get_vocab_size() if tokenizer is not None else self.config.vocab_size
         interface_spec = {
             "sensor_by_modality": dict(self.graph._sensor_by_modality),
@@ -814,20 +826,26 @@ class SOMA:
             interface_spec=interface_spec,
         )
 
-    def load_bundle(self, dir_path: str | Path) -> tuple[Any, Any]:
+    def load_bundle(self, dir_path: str | Path) -> tuple[Any, Any, Any]:
         """Load a directory-shaped brain bundle from ``dir_path``.
 
-        Returns ``(tokenizer, encoder)``; either (or both) may be
-        ``None`` if the corresponding sidecar isn't present. Decoder
-        reconstruction is deferred — callers that need a decoder can
-        load ``decoder.pt`` themselves since its shape is specific to
-        the downstream head. The manifest's ``vocab_size`` is
-        cross-checked against the tokenizer to fail loud on mismatch.
+        Returns ``(tokenizer, encoder, verbalizer)``; any of the three
+        may be ``None`` if the corresponding sidecar isn't present.
+        Decoder reconstruction is deferred — callers that need a
+        decoder can load ``decoder.pt`` themselves since its shape is
+        specific to the downstream head. The manifest's ``vocab_size``
+        is cross-checked against the tokenizer to fail loud on mismatch.
+
+        Note: The return type changed from 2-tuple to 3-tuple in Phase 2
+        Task 8 to surface an optional verbalizer. Callers that previously
+        did ``tok, enc = soma.load_bundle(...)`` must update to
+        ``tok, enc, verb = soma.load_bundle(...)``.
         """
         from tokenizers import Tokenizer
 
         from soma.core.brain_bundle import read_manifest
         from soma.io.text_encoder import TextEncoder
+        from soma.io.verbalizer import SomaVerbalizer
 
         src = Path(dir_path)
         manifest = read_manifest(src)
@@ -835,6 +853,7 @@ class SOMA:
 
         tok: Any = None
         enc: Any = None
+        verb: Any = None
 
         tokenizer_path = src / "tokenizer.json"
         if tokenizer_path.exists():
@@ -856,4 +875,8 @@ class SOMA:
             )
             enc.load_state_dict(blob["state_dict"])
 
-        return tok, enc
+        verbalizer_dir = src / "verbalizer"
+        if (verbalizer_dir / "spec.json").exists():
+            verb = SomaVerbalizer.load(verbalizer_dir)
+
+        return tok, enc, verb

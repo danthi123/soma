@@ -38,7 +38,7 @@ def summarize(name: str, t: torch.Tensor) -> str:
 
 
 def inspect_state(state_path: Path, label: str, *, device: str = "cpu") -> SOMA:
-    print(f"\n{'='*70}\n{label}: {state_path}\n{'='*70}")
+    print(f"\n{'=' * 70}\n{label}: {state_path}\n{'=' * 70}")
     config = SOMAConfig()
     soma = SOMA(config, device=device)
     soma.load_state(state_path)
@@ -54,8 +54,10 @@ def inspect_state(state_path: Path, label: str, *, device: str = "cpu") -> SOMA:
         [float(e.weight.detach().abs().max()) for e in soma.graph.all_edges()]
     )
     n_at_clamp = int((edge_w_max_per >= config.max_edge_weight - 0.01).sum().item())
-    print(f"edges at weight-clamp boundary (|w| >= {config.max_edge_weight - 0.01}): "
-          f"{n_at_clamp}/{n_edges}  ({100.0*n_at_clamp/max(n_edges,1):.1f}%)")
+    print(
+        f"edges at weight-clamp boundary (|w| >= {config.max_edge_weight - 0.01}): "
+        f"{n_at_clamp}/{n_edges}  ({100.0 * n_at_clamp / max(n_edges, 1):.1f}%)"
+    )
 
     gains = torch.tensor([float(n.gain) for n in soma.graph.all_nodes()])
     print(summarize("node.gain", gains))
@@ -109,12 +111,8 @@ def attempt_forward(soma: SOMA, encoder_path: Path, device: str = "cpu") -> None
         print("  !! encoder produced non-finite embeddings — root cause is encoder, not graph")
         return
 
-    sensor_id = next(
-        (n.id for n in soma.graph.all_nodes() if n.kind == "SENSOR"), None
-    )
-    output_id = next(
-        (n.id for n in soma.graph.all_nodes() if n.kind == "OUTPUT"), None
-    )
+    sensor_id = next((n.id for n in soma.graph.all_nodes() if n.kind == "SENSOR"), None)
+    output_id = next((n.id for n in soma.graph.all_nodes() if n.kind == "OUTPUT"), None)
     print(f"sensor={sensor_id}  output={output_id}")
 
     inputs = {sensor_id: embeds[0]}
@@ -171,8 +169,10 @@ def fresh_train_sanity(n_steps: int = 200, device: str = "cpu") -> None:
         f"node activation_ema: max={float(activations.abs().max()):.3e}  "
         f"non_finite={int((~torch.isfinite(activations)).sum())}"
     )
-    print(f"final loss_ema={soma.homeostasis.loss_ema:.4f}  "
-          f"consecutive_skipped={soma._consecutive_skipped_steps}")
+    print(
+        f"final loss_ema={soma.homeostasis.loss_ema:.4f}  "
+        f"consecutive_skipped={soma._consecutive_skipped_steps}"
+    )
     assert n_at_clamp / max(n_edges, 1) < 0.5, (
         f"more than half of edges saturated within {n_steps} steps — fixes failed"
     )

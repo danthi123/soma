@@ -29,9 +29,7 @@ from scripts.approve import (
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Reject a queued SOMA change spec.")
     parser.add_argument("queue_id", help="Queue entry id (or prefix).")
-    parser.add_argument(
-        "--reason", default="rejected by operator", help="Rejection reason."
-    )
+    parser.add_argument("--reason", default="rejected by operator", help="Rejection reason.")
     parser.add_argument(
         "--queue", type=Path, default=DEFAULT_QUEUE, help="Path to approval_queue.jsonl."
     )

@@ -90,9 +90,7 @@ def bucket_by_minute(records: Sequence[dict[str, Any]]) -> list[list[dict[str, A
     return [buckets[k] for k in sorted(buckets.keys())]
 
 
-def service_crashed_after_apply(
-    perm_fail_path: Path, *, ts_applied: float
-) -> bool:
+def service_crashed_after_apply(perm_fail_path: Path, *, ts_applied: float) -> bool:
     """Return True if ``perm_fail_path`` exists and post-dates ``ts_applied``.
 
     train_service writes ``train_permanent_failure.json`` after 3 uncaught
@@ -168,10 +166,9 @@ def check_confirmation(
             loss_within = True
         else:
             avg_loss = sum(losses) / len(losses)
-            loss_within = (
-                not math.isnan(avg_loss)
-                and abs(avg_loss - pre_loss) <= TOLERANCE_PCT * abs(pre_loss or 1.0)
-            )
+            loss_within = not math.isnan(avg_loss) and abs(
+                avg_loss - pre_loss
+            ) <= TOLERANCE_PCT * abs(pre_loss or 1.0)
 
         avg_cur = (sum(curs) / len(curs)) if curs else pre_cur
         curiosity_within = abs(avg_cur - pre_cur) <= TOLERANCE_PCT * abs(pre_cur or 1.0)
@@ -179,9 +176,7 @@ def check_confirmation(
         no_nan_inf = all(not math.isnan(x) and not math.isinf(x) for x in losses)
 
         min_nodes = min(nodes) if nodes else pre_nodes
-        nodes_not_collapsed = (
-            True if pre_nodes == 0 else min_nodes >= int(0.5 * pre_nodes)
-        )
+        nodes_not_collapsed = True if pre_nodes == 0 else min_nodes >= int(0.5 * pre_nodes)
 
         crits = {
             "loss_within_20pct": loss_within,
@@ -226,9 +221,7 @@ def append_change_log_entry(path: Path, entry: dict[str, Any]) -> None:
         fh.write(json.dumps(entry) + "\n")
 
 
-def update_change_log_entry(
-    path: Path, *, change_log_id: str, updates: dict[str, Any]
-) -> None:
+def update_change_log_entry(path: Path, *, change_log_id: str, updates: dict[str, Any]) -> None:
     """Rewrite the single matching entry in-place.
 
     The change log is bounded by tick rate limits, so rewriting the full file
@@ -346,9 +339,7 @@ def main() -> int:
 
     if not change_log.exists():
         return 0
-    lines = [
-        ln for ln in change_log.read_text(encoding="utf-8").splitlines() if ln.strip()
-    ]
+    lines = [ln for ln in change_log.read_text(encoding="utf-8").splitlines() if ln.strip()]
     target = _find_last_in_progress(lines)
     if target is None:
         return 0

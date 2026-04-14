@@ -116,15 +116,9 @@ def check_auto_commits_have_change_log_id(
     """Every ``^auto:`` commit must have a ``Change-log-id:`` trailer OR a
     change_log.jsonl entry referencing its SHA.
     """
-    change_log_shas = {
-        str(e.get("commit_sha"))
-        for e in change_log_entries
-        if e.get("commit_sha")
-    }
+    change_log_shas = {str(e.get("commit_sha")) for e in change_log_entries if e.get("commit_sha")}
     change_log_ids = {
-        str(e.get("change_log_id"))
-        for e in change_log_entries
-        if e.get("change_log_id")
+        str(e.get("change_log_id")) for e in change_log_entries if e.get("change_log_id")
     }
     bad: list[str] = []
     for commit in commits:
@@ -252,9 +246,7 @@ def check_wiki_pushes(
     import urllib.request
 
     since_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(since_ts))
-    params = urllib.parse.urlencode(
-        {"since": since_iso, "path": "conversations", "limit": 50}
-    )
+    params = urllib.parse.urlencode({"since": since_iso, "path": "conversations", "limit": 50})
     url = f"{base_url.rstrip('/')}/api/v1/repos/{repo}/commits?{params}"
     req = urllib.request.Request(url, headers={"Authorization": f"token {token}"})
     try:
@@ -417,9 +409,7 @@ def main(argv: list[str] | None = None) -> int:
         )
     _print_result("wiki-pushes", ok_wiki, wiki_reason or "sufficient")
 
-    all_ok = all(
-        [ok_trailer, ok_carve, ok_device, ok_disk, ok_cf, ok_gate, ok_wiki]
-    )
+    all_ok = all([ok_trailer, ok_carve, ok_device, ok_disk, ok_cf, ok_gate, ok_wiki])
     if not all_ok:
         print("audit_loop: FAIL", file=sys.stderr)
         return 1

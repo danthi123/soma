@@ -1,3 +1,4 @@
+import pytest
 import torch
 from torch import nn
 
@@ -120,8 +121,6 @@ def test_trainer_uses_config_lr():
 def test_trainer_raises_if_chat_head_is_not_frozen():
     """Defensive: if someone hands in a ChatHead whose params got unfrozen,
     the trainer must refuse to start rather than silently train the LLM."""
-    import pytest
-
     cfg = _soma_cfg()
     soma = SOMA(cfg, device=torch.device("cpu"))
     spec = VerbalizerSpec(

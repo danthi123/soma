@@ -1159,3 +1159,4 @@ isolated kernel benchmarks can overstate end-to-end gains by 2-10x when
 the optimized kernel is <20% of total step time. For bigger wins at this
 scale, target the non-execute_graph part of the step (likely
 update_step's Hebbian loop over all edges every step).
+| 1776162075 | 605000 | no_change | loss_ema=0.01640 (−4.9% vs baseline), stable, no intervention needed |

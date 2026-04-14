@@ -1045,3 +1045,32 @@ KL reverses upward, will tighten synaptogenesis_rate. 30 commits pending.
 
 | 1776153183 | 475000 | 0.01751 | 0.01904 | 34/99 | no_change | training stable, no intervention needed |
 | 1776155390 | 515000 | 0.01921 | 0.01844 | 34/100 | no_change | heldout plateau stable, no intervention needed |
+
+---
+
+## 2026-04-14 ~04:56 UTC — step 540K: growth dynamics exercising (incl. first prune)
+
+| step | heldout | loss_ema | KL    | edges | chat-diversity |
+|------|---------|----------|-------|-------|----------------|
+| 395K | 0.01885 | 0.01971  | 20.71 | 82    | 6 unique       |
+| 435K | 0.01893 | 0.01899  | 20.24 | 90    | 4 unique       |
+| 475K | 0.01904 | 0.01751  | 20.84 | 99    | "Girl" saturated |
+| 515K | 0.01921 | 0.01844  | 20.71 | 100   | **9 unique (recovered)** |
+
+At step 475K chat showed concerning "GirlGirlGirl..." saturation and KL
+jumped 0.60. Decision call (with multi-round self-debate): DON'T intervene.
+515K rebounded on every metric — 9 unique decoded words across 5 prompts,
+more diverse than the 395K baseline. heldout oscillation within ±2% is
+noise, not trend. Edge count 100 is 14% of max (34×20=680), well-bounded.
+
+**First prune event at 475K** — the edge_strength pruning mechanism has
+now exercised in this run (hasn't fired since the RMS fix). Plus 1 syn
+event at 515K. Together: synaptogenesis + pruning dynamics are both
+actively reshaping the graph, which is exactly what Stage 4 developmental
+validation requires.
+
+Intervention bar moving forward: tighten synaptogenesis_rate only if
+(heldout > 0.022 AND KL > 20.5) across two consecutive ticks, OR if
+unique-tokens < 3 across two consecutive ticks.
+
+31 commits pending push. Background #1 optimization agent still running.

@@ -1160,3 +1160,4 @@ the optimized kernel is <20% of total step time. For bigger wins at this
 scale, target the non-execute_graph part of the step (likely
 update_step's Hebbian loop over all edges every step).
 | 1776162075 | 605000 | no_change | loss_ema=0.01640 (−4.9% vs baseline), stable, no intervention needed |
+- **tick 1776164323** step=640000 loss_ema=0.01748 heldout=0.02001 nodes=34 edges=126 | class=null — no change; heldout loss drift +3.9% needs confirmation over 2-3 more ticks

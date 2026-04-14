@@ -1219,3 +1219,39 @@ but neither corrupted the other. Growth state intact.
 - **Commit:** 91b6c88 | **Loss:** 0.01661 | **Curiosity:** 0.00170 | **Nodes:** 34 | **Edges:** 133
 - **Rationale:** Zero neurogenesis for 140K+ steps; threshold unreachable during loss plateau. Lowering to 1.05 enables growth when error ratio modestly elevated.
 - **Watchdog criteria:** loss < 0.025, nodes < 50, confirm_window=30min
+
+---
+
+## 2026-04-14 ~08:30 UTC — second tick auto-revert, service churn diagnosed
+
+Between 07:45 and 08:20 UTC, two autonomous tick interventions landed and
+both auto-reverted when criteria failed on 3 consecutive minute-buckets:
+
+1. **517448b → ac8bcf6:** consolidation_error_threshold 0.5→0.05, reverted
+2. **91b6c88 → 2bd5797:** neurogenesis_threshold 1.2→1.05, reverted
+
+Each auto-revert writes `.soma-loop/signals/shutdown`, causing the train
+service to exit cleanly and wait for a restart. Without immediate restart,
+the service stays down. Across this window: pid 94832 → 67136 → 89952 →
+126636, all exited via shutdown signal rather than crashing.
+
+Root cause of the apparent "repeated shutdowns": normal auto-revert
+behavior, not a bug. Each revert correctly signals shutdown expecting
+either the watchdog scheduled task or a manual restart to bring the
+service back. In practice, the gap between revert and next watchdog
+fire left the service down for 10-15 minutes.
+
+Current service pid 27096 at step 695,231, running clean. Config aligned:
+activation_threshold=0.05, synaptogenesis_rate=0.01, use_batched_executor=True
+all preserved; neurogenesis_threshold and consolidation_error_threshold both
+reverted to pre-intervention values.
+
+Tick 1776168714 (step 685K) heldout 0.02011, loss_ema 0.01661, KL 20.71,
+edges 133. No regression.
+
+Not intervening on the auto-revert cadence — operator's safety system is
+working as designed. May want to teach the tick Claude to propose more
+conservative changes that are likelier to survive the verification window,
+but that's a separate refinement for later.
+
+38 commits all pushed.

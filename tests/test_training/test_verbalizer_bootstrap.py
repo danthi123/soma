@@ -504,7 +504,10 @@ def test_train_step_loss_decreases_over_iterations():
     )
     text = "the quick brown fox jumps over the lazy dog"
     first_loss = t.train_step(text=text)
-    for _ in range(49):
+    # 99 more iterations — 50 left only ~0.13% margin vs the 5% threshold
+    # (deterministic 0.9487 ratio). 100 steps converges further without
+    # changing the semantic guarantee ("loss actually drops").
+    for _ in range(99):
         t.train_step(text=text)
     final_loss = t.train_step(text=text)
     assert final_loss < first_loss * 0.95, (

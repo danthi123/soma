@@ -1188,3 +1188,29 @@ Edges 115 → 126 over 65K steps (~0.17/1K), well-bounded. avg_degree 3.7.
 
 35 commits all pushed both remotes.
 - **tick 1776166514** (step 670K) — auto: lower consolidation_error_threshold 0.5→0.05. Loss plateau [0.016,0.019] for 155K steps; re-enable consolidation-triggered neurogenesis. Commit 517448b.
+- **auto-revert** (step ~680K) — criteria failed for 3 consecutive minute-buckets. Revert committed as ac8bcf6. Stability stack working as designed.
+
+---
+
+## 2026-04-14 ~08:00 UTC — GPU overload (unrelated) → clean recovery
+
+Operator reported GPU got overloaded for an unrelated reason. Checked:
+
+- pid 94832 was replaced by 67136 at some point (watchdog spawn), then 67136
+  also exited with `status=shutdown` (clean) at step 682,404
+- `current.pt` intact: step 682,404, use_batched_executor=True,
+  consolidation_error_threshold=0.5 (post-revert)
+- No crash log, no permfail, no stale lock on service dir
+- Only stale `tick.lock` from orphaned tick-preflight pid 62812 (dead), cleared
+
+Restarted service as pid 89952 from step 682,404, advanced 350 steps in
+30s — healthy resume. All config + growth state preserved. The
+shutdown-save + skip-with-escalation + watchdog mechanisms behaved
+exactly as designed under the external GPU load.
+
+Note: while the GPU overload was happening, tick 1776166514's autonomous
+intervention (consolidation_error_threshold 0.5 → 0.05) was auto-reverted
+by the safety system (ac8bcf6). Two independent events happened to coincide
+but neither corrupted the other. Growth state intact.
+
+37 commits pushed both remotes.

@@ -11,6 +11,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from torch import nn
+
 
 @dataclass(frozen=True)
 class VerbalizerSpec:
@@ -32,3 +34,31 @@ class VerbalizerSpec:
             val = getattr(self, name)
             if val <= 0:
                 raise ValueError(f"VerbalizerSpec.{name} must be positive, got {val}")
+
+
+class SomaVerbalizer(nn.Module):
+    """Projects SOMA's OUTPUT-node aggregate into a soft-prompt prefix.
+
+    Training: forward() + LM-loss through a FROZEN LLM backpropagates
+    only into this module.
+
+    Inference: forward() produces ``(B, k, llm_hidden_dim)`` tensors
+    that a caller concatenates ahead of tokenized text via the LLM's
+    ``inputs_embeds`` entrypoint.
+
+    Swap procedure: to pair with a new LLM, construct with a new
+    VerbalizerSpec and retrain. SOMA's graph is untouched.
+    """
+
+    def __init__(self, spec: VerbalizerSpec) -> None:
+        super().__init__()
+        self.spec = spec
+        self.proj = nn.Sequential(
+            nn.Linear(spec.soma_output_dim, spec.proj_hidden_dim),
+            nn.LayerNorm(spec.proj_hidden_dim),
+            nn.GELU(),
+            nn.Linear(
+                spec.proj_hidden_dim,
+                spec.num_prefix_tokens * spec.llm_hidden_dim,
+            ),
+        )

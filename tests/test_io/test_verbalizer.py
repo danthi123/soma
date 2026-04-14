@@ -1,6 +1,6 @@
 import pytest
 
-from soma.io.verbalizer import VerbalizerSpec
+from soma.io.verbalizer import SomaVerbalizer, VerbalizerSpec
 
 
 def test_spec_defaults_and_frozen():
@@ -43,3 +43,34 @@ def test_spec_validates_positive_dims():
             llm_hidden_dim=960,
             num_prefix_tokens=0,
         )
+
+
+def test_verbalizer_constructs_with_expected_param_count():
+    spec = VerbalizerSpec(
+        soma_output_dim=128,
+        llm_name="smoke",
+        llm_hidden_dim=960,
+        num_prefix_tokens=16,
+        proj_hidden_dim=512,
+    )
+    v = SomaVerbalizer(spec)
+    # Check the two linear layers exist and have expected shapes
+    params = dict(v.named_parameters())
+    assert len(params) > 0
+    # Exact names don't matter; count trainable params.
+    total = sum(p.numel() for p in v.parameters() if p.requires_grad)
+    # Rough upper bound: (128*512 + 512) + (512*16*960 + 16*960) ≈ 7.9M
+    assert total < 10_000_000
+    assert total > 5_000_000
+
+
+def test_verbalizer_stores_spec():
+    spec = VerbalizerSpec(
+        soma_output_dim=128,
+        llm_name="smoke",
+        llm_hidden_dim=960,
+        num_prefix_tokens=8,
+    )
+    v = SomaVerbalizer(spec)
+    assert v.spec == spec
+    assert v.spec is spec  # frozen — same instance

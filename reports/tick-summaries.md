@@ -926,4 +926,4 @@ not a monotonic overfit. Decoder outputs still diverse:
 "What light through" -> "What light through redeem"
 ```
 
-Stable-cadence continues. 27 commits pending push.
+Stable-cadence continues. 27 commits pending push.| 1776144292 | 2026-04-14 05:28 UTC | 295000 | no_change | loss_ema=0.0159 heldout=0.0238 nodes=34 edges=64 | graph stagnant 250K steps, operator-scoped growth decision |

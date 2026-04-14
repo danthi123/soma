@@ -1187,3 +1187,4 @@ round self-debate concluded: continue stable cadence. No intervention.
 Edges 115 → 126 over 65K steps (~0.17/1K), well-bounded. avg_degree 3.7.
 
 35 commits all pushed both remotes.
+- **tick 1776166514** (step 670K) — auto: lower consolidation_error_threshold 0.5→0.05. Loss plateau [0.016,0.019] for 155K steps; re-enable consolidation-triggered neurogenesis. Commit 517448b.

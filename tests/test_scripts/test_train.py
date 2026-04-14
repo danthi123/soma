@@ -348,7 +348,9 @@ class TestMainCLI:
                 "64",
             ]
         )
-        first_final = torch.load(str(ckpt_dir / "soma_final.pt"), weights_only=False)
+        from soma.core.brain_bundle import peek_payload
+
+        first_final = peek_payload(torch.load(str(ckpt_dir / "soma_final.pt"), weights_only=False))
         first_step = int(first_final["global_step"])
 
         # Resume: global step must advance past the first run.
@@ -370,6 +372,6 @@ class TestMainCLI:
                 str(ckpt_dir / "soma_final.pt"),
             ]
         )
-        second_final = torch.load(str(ckpt_dir / "soma_final.pt"), weights_only=False)
+        second_final = peek_payload(torch.load(str(ckpt_dir / "soma_final.pt"), weights_only=False))
         second_step = int(second_final["global_step"])
         assert second_step > first_step

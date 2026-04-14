@@ -94,9 +94,7 @@ class FileLock:
                 ):
                     if self.path.exists():
                         try:
-                            existing = json.loads(
-                                self.path.read_text(encoding="utf-8")
-                            )
+                            existing = json.loads(self.path.read_text(encoding="utf-8"))
                         except (json.JSONDecodeError, OSError):
                             existing = None
                         if existing and not _is_lock_stale(existing):

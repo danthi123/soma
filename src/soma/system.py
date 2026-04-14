@@ -16,6 +16,7 @@ pair for checkpointing.
 from __future__ import annotations
 
 import math
+from collections import deque
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -38,6 +39,29 @@ from soma.memory.working_memory import WorkingMemory
 from soma.metacognition.curiosity import CuriosityModule
 from soma.metacognition.development import DevelopmentSchedule
 from soma.metacognition.homeostasis import HomeostaticRegulator
+
+
+def _current_soma_version() -> str:
+    """Best-effort SOMA source version string (git describe) for the bundle manifest.
+
+    Returns ``"unknown"`` if the repo isn't a git checkout or git is missing —
+    never raises. Called once per ``save_state`` so a failed subprocess can't
+    block a checkpoint write.
+    """
+    try:
+        import subprocess
+
+        return (
+            subprocess.check_output(
+                ["git", "describe", "--always", "--dirty"],
+                cwd=str(Path(__file__).resolve().parents[2]),
+                stderr=subprocess.DEVNULL,
+            )
+            .decode()
+            .strip()
+        )
+    except Exception:  # noqa: BLE001 — any failure degrades gracefully
+        return "unknown"
 
 
 class SOMA:
@@ -100,6 +124,13 @@ class SOMA:
         # exceeds config.max_consecutive_skipped_steps so train_service's
         # CrashBackoff can detect a stuck training state.
         self._consecutive_skipped_steps: int = 0
+
+        # Append-only structural-event journal. Every synaptogenesis /
+        # neurogenesis / pruning event gets a dict appended here by
+        # ``record_growth_event``; the bounded deque keeps memory flat
+        # over long runs (oldest events age out once we hit the cap).
+        # Persisted via ``save_state`` / ``load_state``.
+        self.growth_log: deque[dict[str, Any]] = deque(maxlen=10_000)
 
     # ------------------------------------------------------------------
     # Construction
@@ -403,6 +434,21 @@ class SOMA:
         padded[: flat.numel()] = flat
         return padded
 
+    def record_growth_event(self, event_type: str, **fields: Any) -> None:
+        """Append a structural event to ``growth_log``.
+
+        ``step`` is stamped automatically from ``global_step``; extra
+        ``fields`` are stored verbatim (kept JSON-friendly by convention
+        so the journal round-trips through ``torch.save``).
+        """
+        self.growth_log.append(
+            {
+                "step": self.global_step,
+                "event_type": event_type,
+                **fields,
+            }
+        )
+
     def _maybe_grow(
         self,
         activations: dict[str, torch.Tensor],
@@ -416,26 +462,43 @@ class SOMA:
                 self.global_step % config.synaptogenesis_interval == 0
                 and self.homeostasis.allow_synaptogenesis
             ):
-                synaptogenesis(
+                new_edges = synaptogenesis(
                     self.graph,
                     activations,
                     step=self.global_step,
                     config=config,
                     rng=rng,
                 )
+                for edge in new_edges:
+                    self.record_growth_event(
+                        "synaptogenesis",
+                        edge_id=edge.id,
+                        source=edge.source_id,
+                        target=edge.target_id,
+                    )
             if (
                 self.global_step % config.neurogenesis_interval == 0
                 and self.homeostasis.allow_neurogenesis
             ):
-                neurogenesis(
+                new_node = neurogenesis(
                     self.graph,
                     self._recent_errors,
                     step=self.global_step,
                     config=config,
                     rng=rng,
                 )
+                if new_node is not None:
+                    self.record_growth_event(
+                        "neurogenesis",
+                        node_id=new_node.id,
+                        node_type=new_node.node_type.name,
+                    )
             if self.global_step % config.pruning_interval == 0:
-                pruning(self.graph, step=self.global_step, config=config)
+                result = pruning(self.graph, step=self.global_step, config=config)
+                for edge_id in result.removed_edge_ids:
+                    self.record_growth_event("prune_edge", edge_id=edge_id)
+                for node_id in result.removed_node_ids:
+                    self.record_growth_event("prune_node", node_id=node_id)
 
     def _maybe_consolidate(self, *, rng: torch.Generator | None) -> None:
         if (
@@ -443,7 +506,7 @@ class SOMA:
             and self.global_step % self.config.consolidation_interval == 0
             and self.episodic_memory.num_valid > 0
         ):
-            consolidation_cycle(
+            result = consolidation_cycle(
                 self.graph,
                 self.episodic_memory,
                 current_step=self.global_step,
@@ -451,6 +514,29 @@ class SOMA:
                 experience_unpacker=self.experience_unpacker,
                 rng=rng,
             )
+            # Drain structural events from the cycle into the journal so
+            # pruning / myelination / (opt-in) neurogenesis that happens
+            # during artificial sleep shows up in the archaeology trace
+            # the same way online _maybe_grow events do.
+            for edge_id in result.removed_edge_ids:
+                self.record_growth_event("prune_edge", edge_id=edge_id)
+            for node_id in result.removed_node_ids:
+                self.record_growth_event("prune_node", node_id=node_id)
+            for new_node_id, chain_ids in zip(
+                result.myelination_new_node_ids,
+                result.myelination_chain_ids,
+                strict=False,
+            ):
+                self.record_growth_event(
+                    "myelinate",
+                    new_node_id=new_node_id,
+                    chain_node_ids=list(chain_ids),
+                )
+            if result.neurogenesis_node_id is not None:
+                self.record_growth_event(
+                    "neurogenesis",
+                    node_id=result.neurogenesis_node_id,
+                )
 
     # ------------------------------------------------------------------
     # Interactive helpers
@@ -528,8 +614,18 @@ class SOMA:
     # Checkpoint
     # ------------------------------------------------------------------
     def save_state(self, path: str | Path) -> None:
-        """Write a full checkpoint to ``path`` (``torch.save`` format)."""
-        state = {
+        """Write a full checkpoint to ``path`` (``torch.save`` format).
+
+        The file is wrapped in the versioned brain-bundle envelope
+        (``format="soma-brain"``, ``schema_version``, SOMA/torch/tokenizers
+        versions, git sha, timestamp) and CPU-normalized so the same file
+        loads identically on cpu/cuda without a device prefix mismatch.
+        """
+        # Local import avoids any future circular-import issue if
+        # brain_bundle ever needs to reach back into soma.system.
+        from soma.core.brain_bundle import to_cpu_state, wrap_payload
+
+        payload = {
             "global_step": self.global_step,
             "recent_errors": list(self._recent_errors),
             "graph": self.graph.serialize(),
@@ -538,13 +634,36 @@ class SOMA:
             "curiosity_state_dict": self.curiosity.state_dict(),
             "curiosity_histories": self.curiosity.to_dict(),
             "homeostasis": self.homeostasis.state_dict(),
+            "development": self.development.to_dict(),
             "config": self.config.to_dict(),
             "last_curiosity": self.last_curiosity,
+            # Serialize as a plain list — deque reconstituted on load.
+            "growth_log": list(self.growth_log),
         }
-        torch.save(state, str(path))
+        payload = to_cpu_state(payload)
+        wrapped = wrap_payload(payload, soma_version=_current_soma_version())
+        torch.save(wrapped, str(path))
 
     def load_state(self, path: str | Path) -> None:
-        state = torch.load(str(path), weights_only=False)
+        """Load a checkpoint from ``path``.
+
+        Accepts both the v1 envelope (``format="soma-brain"``) and the
+        pre-envelope legacy format (loose dict, schema 0). In the legacy
+        case the payload is upgraded through the migration dispatch to the
+        current schema version.
+        """
+        from soma.core.brain_bundle import migrate_payload, unwrap_payload
+
+        raw = torch.load(str(path), map_location="cpu", weights_only=False)
+        if isinstance(raw, dict) and raw.get("format") == "soma-brain":
+            state, meta = unwrap_payload(raw)
+            from_schema = int(meta["schema_version"])
+        else:
+            # Legacy single-file format — treat the whole blob as payload, schema=0.
+            state = dict(raw)
+            from_schema = 0
+        state, _ = migrate_payload(state, from_schema=from_schema)
+
         self.config = SOMAConfig.from_dict(state["config"])
         self.global_step = int(state["global_step"])
         self._recent_errors = [float(v) for v in state["recent_errors"]]
@@ -559,4 +678,120 @@ class SOMA:
         self.curiosity.load_state_dict(state["curiosity_state_dict"])
         self.curiosity.load_histories(state["curiosity_histories"])
         self.homeostasis.load_state_dict(state["homeostasis"])
+        # ``development`` was added in brain-bundle Task 7. Older checkpoints
+        # omit it — keep the constructor's default schedule in that case so
+        # the migrator doesn't have to invent a payload.
+        if "development" in state:
+            self.development.from_dict(state["development"])
         self.last_curiosity = float(state["last_curiosity"])
+        # ``growth_log`` was added in brain-bundle Task 8. Older
+        # checkpoints omit it — default to an empty journal so pre-Task-8
+        # bundles load without error.
+        self.growth_log = deque(state.get("growth_log", []), maxlen=10_000)
+
+    # ------------------------------------------------------------------
+    # Directory-shaped brain bundle (brain.pt + tokenizer + encoder + manifest)
+    # ------------------------------------------------------------------
+    def save_bundle(
+        self,
+        dir_path: str | Path,
+        *,
+        tokenizer: Any = None,
+        encoder: Any = None,
+        decoder: Any = None,
+        llm_identity: str | None = None,
+    ) -> None:
+        """Write a directory-shaped brain bundle to ``dir_path``.
+
+        The bundle is a folder containing at minimum ``brain.pt`` (the
+        usual versioned envelope from :meth:`save_state`) and
+        ``manifest.json`` (schema + versions + vocab size). When a
+        ``tokenizer`` is supplied it's saved to ``tokenizer.json`` and
+        its ``vocab_size`` is stamped into the manifest. When an
+        ``encoder`` / ``decoder`` is supplied, each is saved alongside
+        as ``encoder.pt`` / ``decoder.pt`` with just enough metadata to
+        reconstruct on load. The encoder / decoder arguments are
+        optional so callers that only want to persist the graph +
+        tokenizer don't have to fabricate modules.
+        """
+        from soma.core.brain_bundle import write_manifest
+
+        out = Path(dir_path)
+        out.mkdir(parents=True, exist_ok=True)
+        self.save_state(str(out / "brain.pt"))
+
+        if tokenizer is not None:
+            tokenizer.save(str(out / "tokenizer.json"))
+
+        if encoder is not None:
+            torch.save(
+                {
+                    "state_dict": encoder.state_dict(),
+                    "embed_dim": encoder.embed_dim,
+                    "max_seq_len": encoder.max_seq_len,
+                },
+                str(out / "encoder.pt"),
+            )
+
+        if decoder is not None:
+            torch.save({"state_dict": decoder.state_dict()}, str(out / "decoder.pt"))
+
+        vocab_size = tokenizer.get_vocab_size() if tokenizer is not None else self.config.vocab_size
+        interface_spec = {
+            "sensor_by_modality": dict(self.graph._sensor_by_modality),
+            "output_by_modality": dict(self.graph._output_by_modality),
+            "sensor_output_dim": self.config.sensor_output_dim,
+            "output_dim": self.config.integrator_output_dim,
+            "text_embed_dim": self.config.text_embed_dim,
+        }
+        write_manifest(
+            out,
+            soma_version=_current_soma_version(),
+            vocab_size=vocab_size,
+            llm_identity=llm_identity,
+            interface_spec=interface_spec,
+        )
+
+    def load_bundle(self, dir_path: str | Path) -> tuple[Any, Any]:
+        """Load a directory-shaped brain bundle from ``dir_path``.
+
+        Returns ``(tokenizer, encoder)``; either (or both) may be
+        ``None`` if the corresponding sidecar isn't present. Decoder
+        reconstruction is deferred — callers that need a decoder can
+        load ``decoder.pt`` themselves since its shape is specific to
+        the downstream head. The manifest's ``vocab_size`` is
+        cross-checked against the tokenizer to fail loud on mismatch.
+        """
+        from tokenizers import Tokenizer
+
+        from soma.core.brain_bundle import read_manifest
+        from soma.io.text_encoder import TextEncoder
+
+        src = Path(dir_path)
+        manifest = read_manifest(src)
+        self.load_state(str(src / "brain.pt"))
+
+        tok: Any = None
+        enc: Any = None
+
+        tokenizer_path = src / "tokenizer.json"
+        if tokenizer_path.exists():
+            tok = Tokenizer.from_file(str(tokenizer_path))
+            if tok.get_vocab_size() != int(manifest["vocab_size"]):
+                raise ValueError(
+                    f"Tokenizer vocab {tok.get_vocab_size()} doesn't match manifest "
+                    f"{manifest['vocab_size']}"
+                )
+
+        encoder_path = src / "encoder.pt"
+        if encoder_path.exists() and tok is not None:
+            blob = torch.load(str(encoder_path), map_location="cpu", weights_only=False)
+            enc = TextEncoder(
+                tok,
+                embed_dim=int(blob["embed_dim"]),
+                max_seq_len=int(blob["max_seq_len"]),
+                device=self.device,
+            )
+            enc.load_state_dict(blob["state_dict"])
+
+        return tok, enc

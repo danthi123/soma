@@ -99,7 +99,10 @@ def load_soma(checkpoint_path: Path) -> SOMA:
     """Load a SOMA instance from a checkpoint, using the config it embeds."""
     if not checkpoint_path.exists():
         raise FileNotFoundError(f"Checkpoint {checkpoint_path} not found")
-    state = torch.load(str(checkpoint_path), weights_only=False)
+    from soma.core.brain_bundle import peek_payload
+
+    raw = torch.load(str(checkpoint_path), map_location="cpu", weights_only=False)
+    state = peek_payload(raw)
     config = SOMAConfig.from_dict(state["config"])
     soma = SOMA(config)
     soma.load_state(checkpoint_path)

@@ -25,12 +25,19 @@ from soma.core.node import Node, NodeType
 
 @dataclass(frozen=True)
 class MyelinationResult:
-    """Summary of one myelination pass."""
+    """Summary of one myelination pass.
+
+    ``new_node_ids[i]`` is the freshly-created merged node that replaced
+    the chain of node IDs in ``compressed_chains[i]``. The two lists are
+    kept parallel so callers (e.g. the growth journal) can attribute each
+    new merged node to the chain it came from.
+    """
 
     chains_detected: int
     chains_compressed: int
     nodes_removed: int
     new_node_ids: list[str]
+    compressed_chains: list[list[str]]
 
 
 def myelination(
@@ -51,6 +58,7 @@ def myelination(
     compressed = 0
     removed = 0
     new_ids: list[str] = []
+    compressed_chains: list[list[str]] = []
     for chain in chains:
         if not _chain_is_ripe(graph, chain, step, config):
             continue
@@ -58,12 +66,14 @@ def myelination(
         compressed += 1
         removed += len(chain)
         new_ids.append(new_node.id)
+        compressed_chains.append(list(chain))
 
     return MyelinationResult(
         chains_detected=len(chains),
         chains_compressed=compressed,
         nodes_removed=removed,
         new_node_ids=new_ids,
+        compressed_chains=compressed_chains,
     )
 
 

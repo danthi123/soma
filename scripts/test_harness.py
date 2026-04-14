@@ -76,9 +76,7 @@ def compute_ema(values: Sequence[float], *, alpha: float = 0.1) -> float:
     return ema
 
 
-def summarize_growth(
-    records: Sequence[dict[str, Any]], *, lookback_steps: int
-) -> dict[str, int]:
+def summarize_growth(records: Sequence[dict[str, Any]], *, lookback_steps: int) -> dict[str, int]:
     """Count neurogenesis / synaptogenesis / pruning events in the last
     ``lookback_steps`` of training.
 
@@ -315,14 +313,10 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="SOMA B-tier test harness.")
     parser.add_argument("--out", type=Path, required=True, help="Report JSON output path.")
     parser.add_argument("--chat-out", type=Path, required=True, help="Chat JSONL output path.")
-    parser.add_argument(
-        "--checkpoint", type=Path, default=Path("checkpoints/current.pt")
-    )
+    parser.add_argument("--checkpoint", type=Path, default=Path("checkpoints/current.pt"))
     parser.add_argument("--corpus", type=Path, default=Path("data/tinyshakespeare.txt"))
     parser.add_argument("--heldout", type=Path, default=Path("data/heldout.txt"))
-    parser.add_argument(
-        "--fixed-prompts", type=Path, default=Path("data/fixed_prompts.txt")
-    )
+    parser.add_argument("--fixed-prompts", type=Path, default=Path("data/fixed_prompts.txt"))
     parser.add_argument(
         "--token-freq",
         type=Path,
@@ -372,7 +366,10 @@ def main(argv: list[str] | None = None) -> int:
 
     # Load the checkpoint first to learn config parameters (notably vocab_size
     # and embed_dim), then rebuild encoder/decoder with matching shapes.
-    state = torch.load(args.checkpoint, map_location="cpu", weights_only=False)
+    from soma.core.brain_bundle import peek_payload
+
+    raw = torch.load(args.checkpoint, map_location="cpu", weights_only=False)
+    state = peek_payload(raw)
     ckpt_config = SOMAConfig.from_dict(state["config"])
     soma = SOMA(ckpt_config, device=device)
     soma.load_state(args.checkpoint)
@@ -425,9 +422,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     heldout_perplexity = (
         math.exp(heldout_loss)
-        if not math.isnan(heldout_loss)
-        and not math.isinf(heldout_loss)
-        and heldout_loss < 700
+        if not math.isnan(heldout_loss) and not math.isinf(heldout_loss) and heldout_loss < 700
         else float("nan")
     )
 
@@ -471,9 +466,7 @@ def main(argv: list[str] | None = None) -> int:
         "ts": datetime.now(UTC).isoformat(),
         "base_commit_sha": _read_base_commit_sha(),
         "global_step": checkpoint_step,
-        "heldout_loss_mean": (
-            float(heldout_loss) if not math.isnan(heldout_loss) else None
-        ),
+        "heldout_loss_mean": (float(heldout_loss) if not math.isnan(heldout_loss) else None),
         "heldout_loss_num_pairs": int(num_pairs),
         "heldout_perplexity": (
             float(heldout_perplexity) if not math.isnan(heldout_perplexity) else None
@@ -491,9 +484,7 @@ def main(argv: list[str] | None = None) -> int:
         },
         "training": {
             "last_loss": last_loss if recent_losses else None,
-            "loss_ema_500": compute_ema(recent_losses[-500:], alpha=0.1)
-            if recent_losses
-            else None,
+            "loss_ema_500": compute_ema(recent_losses[-500:], alpha=0.1) if recent_losses else None,
             "curiosity_ema_500": compute_ema(recent_curs[-500:], alpha=0.1)
             if recent_curs
             else None,

@@ -100,7 +100,14 @@ def build_arg_parser() -> argparse.ArgumentParser:
 def load_soma(checkpoint_path: Path, device: torch.device | str | None = None) -> SOMA:
     if not checkpoint_path.exists():
         raise FileNotFoundError(f"Checkpoint {checkpoint_path} not found")
-    state = torch.load(str(checkpoint_path), weights_only=False)
+    # Always map to CPU first — SOMA.load_state re-applies the requested
+    # device once the graph is rebuilt. Peek at the config so a matching
+    # empty SOMA can be constructed; peek_payload handles both envelope
+    # and legacy layouts.
+    from soma.core.brain_bundle import peek_payload
+
+    raw = torch.load(str(checkpoint_path), map_location="cpu", weights_only=False)
+    state = peek_payload(raw)
     config = SOMAConfig.from_dict(state["config"])
     soma = SOMA(config, device=device)
     soma.load_state(checkpoint_path)

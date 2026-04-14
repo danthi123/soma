@@ -35,9 +35,7 @@ from scripts.lock import is_pid_alive
 def atomic_write_json(path: Path, data: dict[str, Any]) -> None:
     """Write JSON to path atomically via tmp + rename."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    fd, tmp_name = tempfile.mkstemp(
-        dir=str(path.parent), prefix=path.name + ".", suffix=".tmp"
-    )
+    fd, tmp_name = tempfile.mkstemp(dir=str(path.parent), prefix=path.name + ".", suffix=".tmp")
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as fh:
             json.dump(data, fh)
@@ -145,7 +143,10 @@ class LoadResult:
 def _default_torch_loader(path: Path) -> object:
     import torch
 
-    return torch.load(path, map_location="cpu")
+    # Envelope bundles are pickled dicts (not pure tensors), so weights_only
+    # must be False. The actual SOMA state is re-loaded by soma.load_state;
+    # this call only exists to validate the file via load_checkpoint_chain.
+    return torch.load(path, map_location="cpu", weights_only=False)
 
 
 def load_checkpoint_chain(
@@ -220,9 +221,7 @@ _STEP_CKPT_SUFFIX = ".pt"
 
 def _parse_step(path: Path) -> int:
     """Return the step number embedded in ``step_NNNNNNNN.pt``, or -1."""
-    if not path.name.startswith(_STEP_CKPT_PREFIX) or not path.name.endswith(
-        _STEP_CKPT_SUFFIX
-    ):
+    if not path.name.startswith(_STEP_CKPT_PREFIX) or not path.name.endswith(_STEP_CKPT_SUFFIX):
         return -1
     middle = path.stem[len(_STEP_CKPT_PREFIX) :]
     try:
@@ -372,9 +371,7 @@ def _iter_sample_pairs(feeder: Any, first_out: str) -> Any:
             if sample.target.numel() == 0:
                 continue
             target_len = sample.target.shape[0]
-            lengths = {
-                m: t.shape[0] for m, t in sample.inputs.items() if t.numel() > 0
-            }
+            lengths = {m: t.shape[0] for m, t in sample.inputs.items() if t.numel() > 0}
             if not lengths:
                 continue
             for t in range(target_len):
@@ -515,10 +512,7 @@ def run_training_loop(
             last_metrics_step = soma.global_step
 
         # ---- Periodic checkpoint ----
-        if (
-            soma.global_step > 0
-            and soma.global_step % int(config.checkpoint_interval) == 0
-        ):
+        if soma.global_step > 0 and soma.global_step % int(config.checkpoint_interval) == 0:
             try:
                 _save_checkpoint(
                     soma,
@@ -545,9 +539,7 @@ def run_training_loop(
             return 0
 
 
-def _build_corpus_blocks(
-    lines: list[str], encoder: Any, *, target_block_tokens: int
-) -> list[str]:
+def _build_corpus_blocks(lines: list[str], encoder: Any, *, target_block_tokens: int) -> list[str]:
     """Group adjacent corpus lines into blocks of ~``target_block_tokens`` tokens.
 
     The feeder requires each text to be at least ``2 * chunk_size`` tokens to
@@ -706,6 +698,7 @@ def main(argv: list[str] | None = None) -> int:
         if encoder_side.exists() and not fresh_init:
             try:
                 import torch
+
                 encoder.load_state_dict(
                     torch.load(encoder_side, map_location=device, weights_only=True)
                 )

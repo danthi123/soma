@@ -95,9 +95,7 @@ def seed_fixed_prompts(path: Path, *, force: bool) -> None:
     path.write_text("\n".join(FIXED_PROMPTS) + "\n", encoding="utf-8")
 
 
-def build_heldout_split(
-    corpus: Path, out: Path, *, ratio: float = 0.1, seed: int = 42
-) -> None:
+def build_heldout_split(corpus: Path, out: Path, *, ratio: float = 0.1, seed: int = 42) -> None:
     """Deterministic ratio% split of corpus lines into out."""
     out.parent.mkdir(parents=True, exist_ok=True)
     lines = [line for line in corpus.read_text(encoding="utf-8").splitlines() if line.strip()]

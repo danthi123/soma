@@ -47,9 +47,7 @@ def mark_approved(
     return updated
 
 
-def mark_stale(
-    entry: dict[str, Any], *, reason: str, ts: str | None = None
-) -> dict[str, Any]:
+def mark_stale(entry: dict[str, Any], *, reason: str, ts: str | None = None) -> dict[str, Any]:
     updated = dict(entry)
     updated["queue_status"] = "stale"
     updated["rejected_reason"] = reason
@@ -57,9 +55,7 @@ def mark_stale(
     return updated
 
 
-def mark_rejected(
-    entry: dict[str, Any], *, reason: str, ts: str | None = None
-) -> dict[str, Any]:
+def mark_rejected(entry: dict[str, Any], *, reason: str, ts: str | None = None) -> dict[str, Any]:
     updated = dict(entry)
     updated["queue_status"] = "rejected"
     updated["rejected_reason"] = reason
@@ -108,8 +104,7 @@ def format_list_table(entries: list[dict[str, Any]]) -> str:
         return "approval queue empty"
 
     header = (
-        f"{'ID':<8} {'CLASS':<14} {'QUEUE_STATUS':<12} "
-        f"{'AGE':<20} {'BASE_SHA':<10} DESCRIPTION"
+        f"{'ID':<8} {'CLASS':<14} {'QUEUE_STATUS':<12} {'AGE':<20} {'BASE_SHA':<10} DESCRIPTION"
     )
     rows = [header, "-" * min(120, len(header))]
     for entry in entries:
@@ -142,9 +137,7 @@ def _git_head_sha() -> str | None:
 # ---- CLI -----------------------------------------------------------------
 
 
-def _find_entry(
-    entries: list[dict[str, Any]], queue_id: str
-) -> tuple[int, dict[str, Any]] | None:
+def _find_entry(entries: list[dict[str, Any]], queue_id: str) -> tuple[int, dict[str, Any]] | None:
     for idx, entry in enumerate(entries):
         eid = str(entry.get("queue_id", ""))
         if eid == queue_id or eid.startswith(queue_id):
@@ -190,9 +183,7 @@ def main(argv: list[str] | None = None) -> int:
     if head is not None and base and base != head:
         entries[idx] = mark_stale(entry, reason=f"base_commit_sha drifted (HEAD={head[:8]})")
         write_queue(args.queue, entries)
-        print(
-            f"approve: {entry.get('queue_id')} -> stale (HEAD moved to {head[:8]})"
-        )
+        print(f"approve: {entry.get('queue_id')} -> stale (HEAD moved to {head[:8]})")
         return 0
 
     entries[idx] = mark_approved(entry)

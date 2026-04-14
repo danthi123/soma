@@ -222,8 +222,11 @@ class SOMAConfig:
     def from_yaml(cls, path: str | Path) -> SOMAConfig:
         """Load a config from a YAML file.
 
-        Only keys that match dataclass field names are accepted; unknown
-        keys raise ``ValueError`` to catch typos early.
+        Delegates to :meth:`from_dict`. Unknown keys are dropped with a
+        ``UserWarning`` instead of raising, so older or newer checkpoints/YAMLs
+        that include fields this SOMA version doesn't know about can still load.
+        Typos in known fields are still enforced by :class:`SOMAConfig`'s
+        dataclass __init__.
         """
         path = Path(path)
         with path.open("r", encoding="utf-8") as fh:
@@ -234,12 +237,24 @@ class SOMAConfig:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> SOMAConfig:
-        """Build a config from a dict, rejecting unknown keys."""
+        """Build a config from a dict, dropping unknown keys with a warning.
+
+        Tolerates unknown keys (e.g., a config field that an older/newer SOMA
+        version doesn't recognize) so that checkpoints load across versions.
+        Emits ``UserWarning`` naming the dropped keys.
+        """
+        import warnings
+
         known = {f.name for f in fields(cls)}
-        unknown = set(data) - known
+        unknown = [k for k in data if k not in known]
         if unknown:
-            raise ValueError(f"Unknown SOMAConfig fields: {sorted(unknown)}")
-        return cls(**data)
+            warnings.warn(
+                f"Dropping unknown SOMAConfig fields (likely from an older/newer "
+                f"checkpoint): {sorted(unknown)}",
+                stacklevel=2,
+            )
+        filtered = {k: v for k, v in data.items() if k in known}
+        return cls(**filtered)
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize to a plain dict (YAML-friendly)."""

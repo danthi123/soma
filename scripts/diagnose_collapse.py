@@ -75,17 +75,20 @@ def main(argv: list[str] | None = None) -> int:
 
     device = torch.device(args.device)
 
-    state = torch.load(args.checkpoint, map_location="cpu", weights_only=False)
+    from soma.core.brain_bundle import peek_payload
+
+    raw = torch.load(args.checkpoint, map_location="cpu", weights_only=False)
+    state = peek_payload(raw)
     cfg = SOMAConfig.from_dict(state["config"])
     soma = SOMA(cfg, device=device)
     soma.load_state(args.checkpoint)
-    print(f"[checkpoint] step={soma.global_step} nodes={soma.graph.num_nodes} "
-          f"edges={soma.graph.num_edges}")
+    print(
+        f"[checkpoint] step={soma.global_step} nodes={soma.graph.num_nodes} "
+        f"edges={soma.graph.num_edges}"
+    )
 
     corpus_lines = [
-        ln.strip()
-        for ln in args.corpus.read_text(encoding="utf-8").splitlines()
-        if ln.strip()
+        ln.strip() for ln in args.corpus.read_text(encoding="utf-8").splitlines() if ln.strip()
     ]
     tokenizer = train_bpe_tokenizer(corpus_lines, vocab_size=cfg.vocab_size)
     encoder = TextEncoder(
@@ -171,7 +174,7 @@ def main(argv: list[str] | None = None) -> int:
         ("encoder input embedding", first_input_embeds),
         ("SENSOR node activation", sensor_activations),
         ("OUTPUT node activation", output_activations),
-        ("decoder logits",         decoder_logits),
+        ("decoder logits", decoder_logits),
     ]
     for name, stack in stages:
         if not stack:
@@ -198,8 +201,10 @@ def main(argv: list[str] | None = None) -> int:
         for i, v in zip(zero_top5_idx.tolist(), zero_top5_val.tolist(), strict=False)
     )
     print(f"\n  decoder(zero_vec) top5      : {zero_top5}")
-    print(f"  decoder(zero_vec) argmax    : id={int(zero_logits.argmax())} "
-          f"text={ascii(tokenizer.decode([int(zero_logits.argmax())]))}")
+    print(
+        f"  decoder(zero_vec) argmax    : id={int(zero_logits.argmax())} "
+        f"text={ascii(tokenizer.decode([int(zero_logits.argmax())]))}"
+    )
 
     return 0
 

@@ -446,3 +446,121 @@ def test_consolidation_myelination_events_logged() -> None:
     assert ev["new_node_id"] not in all_line_ids
     # Event must carry the standard step stamp.
     assert ev["step"] == soma.global_step
+
+
+def test_prune_edge_event_carries_source_target_age_strength() -> None:
+    """Archaeology requirement: ``prune_edge`` must record enough context
+    that future analysis can answer "what was this edge and why was it
+    pruned?" without the edge itself (which is gone from the graph)."""
+    cfg = _small_cfg(
+        synaptogenesis_interval=10**9,
+        neurogenesis_interval=10**9,
+        pruning_interval=1,
+        pruning_grace_period=1,
+        edge_strength_threshold=1.0,
+        inactivity_threshold=1,
+    )
+    soma = SOMA(cfg, device=torch.device("cpu"))
+    a = Node(
+        node_type=NodeType.ASSOCIATOR,
+        input_dim=cfg.associator_input_dim,
+        hidden_dim=cfg.associator_hidden_dim,
+        output_dim=cfg.associator_output_dim,
+        creation_step=0,
+        config=cfg,
+    )
+    b = Node(
+        node_type=NodeType.ASSOCIATOR,
+        input_dim=cfg.associator_input_dim,
+        hidden_dim=cfg.associator_hidden_dim,
+        output_dim=cfg.associator_output_dim,
+        creation_step=0,
+        config=cfg,
+    )
+    soma.graph.add_node(a)
+    soma.graph.add_node(b)
+    stale_edge = Edge(
+        source_id=a.id,
+        target_id=b.id,
+        source_output_dim=a.output_dim,
+        target_input_dim=b.input_dim,
+        creation_step=5,  # so age = 100 - 5 = 95
+        initial_weight=0.0,
+    )
+    soma.graph.add_edge(stale_edge)
+    soma.global_step = 100
+    soma._maybe_grow(activations={}, loss_value=None, rng=None)
+
+    prune_events = [
+        ev
+        for ev in soma.growth_log
+        if ev["event_type"] == "prune_edge" and ev["edge_id"] == stale_edge.id
+    ]
+    assert len(prune_events) == 1
+    ev = prune_events[0]
+    assert ev["source"] == a.id
+    assert ev["target"] == b.id
+    assert ev["age"] == 95
+    # Edge strength is an EMA seeded from initial_weight; field must be float.
+    assert isinstance(ev["final_strength"], float)
+
+
+def test_prune_node_event_carries_node_type() -> None:
+    """``prune_node`` must record node_type so later analysis can
+    distinguish "lost an associator" from "lost a sensor" (only associators
+    are ever pruned, but the event shape should be uniform across types)."""
+    cfg = _small_cfg(
+        synaptogenesis_interval=10**9,
+        neurogenesis_interval=10**9,
+        pruning_interval=1,
+        pruning_grace_period=1,
+        edge_strength_threshold=1.0,
+        inactivity_threshold=1,
+    )
+    soma = SOMA(cfg, device=torch.device("cpu"))
+    # A stranded ASSOCIATOR with no incoming/outgoing edges — pruning removes it.
+    isolated = Node(
+        node_type=NodeType.ASSOCIATOR,
+        input_dim=cfg.associator_input_dim,
+        hidden_dim=cfg.associator_hidden_dim,
+        output_dim=cfg.associator_output_dim,
+        creation_step=0,
+        config=cfg,
+    )
+    soma.graph.add_node(isolated)
+    soma.global_step = 100
+    soma._maybe_grow(activations={}, loss_value=None, rng=None)
+
+    prune_node_events = [
+        ev
+        for ev in soma.growth_log
+        if ev["event_type"] == "prune_node" and ev["node_id"] == isolated.id
+    ]
+    if prune_node_events:
+        ev = prune_node_events[0]
+        assert ev["node_type"] == "ASSOCIATOR"
+
+
+def test_neurogenesis_event_carries_trigger_ratio() -> None:
+    """The ratio that triggered the neurogenesis should appear on the
+    event, so an operator reading the journal can see WHY it fired."""
+    cfg = _small_cfg(
+        synaptogenesis_interval=10**9,
+        neurogenesis_interval=1,
+        neurogenesis_threshold=1.5,
+        pruning_interval=10**9,
+    )
+    soma = SOMA(cfg, device=torch.device("cpu"))
+    soma.global_step = 1
+    # Baseline ~1.0, recent ~10.0 → ratio ≈ (5*10 + 95*1) / 100 / 1.0 = 1.45? Let me
+    # be safe and push recent higher.
+    soma._recent_errors = [1.0] * 90 + [20.0] * 10
+
+    before = len(soma.growth_log)
+    soma._maybe_grow(activations={}, loss_value=None, rng=None)
+    events = [ev for ev in list(soma.growth_log)[before:] if ev["event_type"] == "neurogenesis"]
+    if events:
+        ev = events[0]
+        assert "trigger_ratio" in ev
+        assert isinstance(ev["trigger_ratio"], float)
+        assert ev["trigger_ratio"] > cfg.neurogenesis_threshold

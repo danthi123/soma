@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import math
 from collections import deque
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -62,6 +62,52 @@ def _current_soma_version() -> str:
         )
     except Exception:  # noqa: BLE001 — any failure degrades gracefully
         return "unknown"
+
+
+def _snapshot_edges(graph: Graph, *, step: int) -> dict[str, dict[str, Any]]:
+    """Capture per-edge context for attribution on prune events.
+
+    Called BEFORE pruning runs since the edge objects are gone from the
+    graph by the time we'd want to read their ``source_id`` / ``strength``
+    / ``creation_step``. Returns ``{edge_id: {source, target, age, final_strength}}``.
+    """
+    return {
+        e.id: {
+            "source": e.source_id,
+            "target": e.target_id,
+            "age": int(step - e.creation_step),
+            "final_strength": float(e.strength),
+        }
+        for e in graph.all_edges()
+    }
+
+
+def _snapshot_nodes(graph: Graph) -> dict[str, dict[str, Any]]:
+    """Capture per-node context for attribution on prune events.
+
+    Returns ``{node_id: {node_type}}`` — small today, extensible without
+    breaking downstream event consumers.
+    """
+    return {n.id: {"node_type": n.node_type.name} for n in graph.all_nodes()}
+
+
+def _neurogenesis_trigger_ratio(recent_errors: Sequence[float]) -> float:
+    """Recompute the recent/baseline error ratio that triggered a neurogenesis.
+
+    Mirrors the computation inside ``neurogenesis()`` using the default
+    windows (100 / 1000) so the ratio stamped on the event matches the
+    trigger condition. Returns 0.0 if the baseline is empty or non-positive
+    (shouldn't happen at emission time, but defensive).
+    """
+    recent = list(recent_errors)[-100:]
+    baseline = list(recent_errors)[-1000:]
+    if not recent or not baseline:
+        return 0.0
+    recent_mean = sum(recent) / len(recent)
+    baseline_mean = sum(baseline) / len(baseline)
+    if baseline_mean <= 0.0:
+        return 0.0
+    return recent_mean / baseline_mean
 
 
 class SOMA:
@@ -488,17 +534,28 @@ class SOMA:
                     rng=rng,
                 )
                 if new_node is not None:
+                    ratio = _neurogenesis_trigger_ratio(self._recent_errors)
                     self.record_growth_event(
                         "neurogenesis",
                         node_id=new_node.id,
                         node_type=new_node.node_type.name,
+                        trigger_ratio=ratio,
                     )
             if self.global_step % config.pruning_interval == 0:
+                # Snapshot edge/node metadata BEFORE pruning so we can attach
+                # source/target/age/final_strength to prune events — these
+                # fields are irretrievable once the edge is gone from the graph.
+                edge_ctx = _snapshot_edges(self.graph, step=self.global_step)
+                node_ctx = _snapshot_nodes(self.graph)
                 result = pruning(self.graph, step=self.global_step, config=config)
                 for edge_id in result.removed_edge_ids:
-                    self.record_growth_event("prune_edge", edge_id=edge_id)
+                    self.record_growth_event(
+                        "prune_edge", edge_id=edge_id, **edge_ctx.get(edge_id, {})
+                    )
                 for node_id in result.removed_node_ids:
-                    self.record_growth_event("prune_node", node_id=node_id)
+                    self.record_growth_event(
+                        "prune_node", node_id=node_id, **node_ctx.get(node_id, {})
+                    )
 
     def _maybe_consolidate(self, *, rng: torch.Generator | None) -> None:
         if (
@@ -506,6 +563,11 @@ class SOMA:
             and self.global_step % self.config.consolidation_interval == 0
             and self.episodic_memory.num_valid > 0
         ):
+            # Snapshot edge/node context before consolidation so prune events
+            # during the cycle carry source/target/age the same way online
+            # _maybe_grow events do.
+            edge_ctx = _snapshot_edges(self.graph, step=self.global_step)
+            node_ctx = _snapshot_nodes(self.graph)
             result = consolidation_cycle(
                 self.graph,
                 self.episodic_memory,
@@ -519,9 +581,9 @@ class SOMA:
             # during artificial sleep shows up in the archaeology trace
             # the same way online _maybe_grow events do.
             for edge_id in result.removed_edge_ids:
-                self.record_growth_event("prune_edge", edge_id=edge_id)
+                self.record_growth_event("prune_edge", edge_id=edge_id, **edge_ctx.get(edge_id, {}))
             for node_id in result.removed_node_ids:
-                self.record_growth_event("prune_node", node_id=node_id)
+                self.record_growth_event("prune_node", node_id=node_id, **node_ctx.get(node_id, {}))
             for new_node_id, chain_ids in zip(
                 result.myelination_new_node_ids,
                 result.myelination_chain_ids,

@@ -210,3 +210,43 @@ def test_interface_spec_in_manifest(tmp_path: Path):
     assert spec["output_dim"] == cfg.integrator_output_dim
     assert spec["sensor_output_dim"] == cfg.sensor_output_dim
     assert spec["text_embed_dim"] == cfg.text_embed_dim
+
+
+def test_load_state_migrates_legacy_format_end_to_end(tmp_path: Path):
+    """Protects the production migration path.
+
+    ``SOMA.save_state`` has wrapped payloads in the envelope since Task 4,
+    but any checkpoint written before the envelope landed (or hand-patched
+    legacy file) must still be loadable by a current SOMA. This is the
+    end-to-end variant of ``test_migrate_legacy_schema_zero_wraps_as_payload``
+    in Task 2 — it exercises the full ``SOMA.load_state`` path (not just
+    the ``migrate_payload`` helper) so the legacy checkpoint we actually
+    ran through ``scripts/migrate_legacy_checkpoint.py`` is covered in CI.
+    """
+    cfg = _small_cfg()
+    soma = SOMA(cfg, device=torch.device("cpu"))
+    save_path = tmp_path / "legacy.pt"
+    # Write a v1 bundle, then strip the envelope to simulate a pre-envelope
+    # legacy single-file checkpoint (as the live ~900K step brain was
+    # before the one-shot migrator ran at Phase 1 merge time).
+    soma.save_state(str(save_path))
+    raw = torch.load(str(save_path), map_location="cpu", weights_only=False)
+    assert raw["format"] == "soma-brain"
+    legacy_state = raw["payload"]  # bare payload dict, no envelope
+    torch.save(legacy_state, str(save_path))
+
+    # Fresh SOMA, load the legacy-format file: migrator should fire, warn,
+    # and the loaded state must match.
+    soma2 = SOMA(cfg, device=torch.device("cpu"))
+    import warnings as _warnings
+
+    with _warnings.catch_warnings(record=True) as caught:
+        _warnings.simplefilter("always")
+        soma2.load_state(str(save_path))
+    assert any("pre-v1" in str(w.message) for w in caught), (
+        "expected v0→v1 UserWarning from migrator"
+    )
+    assert soma2.global_step == soma.global_step
+    orig = next(iter(soma.graph.state_dict().values()))
+    loaded = next(iter(soma2.graph.state_dict().values()))
+    assert torch.allclose(orig, loaded)

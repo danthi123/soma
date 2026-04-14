@@ -78,6 +78,9 @@ def migrate_payload(payload: dict[str, Any], *, from_schema: int) -> tuple[dict[
             f"Checkpoint schema v{from_schema} is newer than this SOMA "
             f"(supports up to v{SCHEMA_VERSION}). Upgrade SOMA to load."
         )
+    # Defensive shallow copy: isolate the caller's dict from mutating migrators.
+    # Matches the convention in wrap_payload/unwrap_payload.
+    payload = dict(payload)
     current = from_schema
     while current < SCHEMA_VERSION:
         step = _MIGRATORS.get((current, current + 1))

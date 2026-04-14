@@ -900,3 +900,30 @@ materialized.
 Operator paused the service for gaming at step 233,069. Heartbeat healthy,
 no crash indicators. Will resume monitoring once the loop is unpaused.
 | 1776142118 | 245000 | 0.01434 | 0.02373 | 20.71 | no_change | overfitting plateau; interventions need operator scope |
+
+---
+
+## 2026-04-14 ~00:53 UTC — resumed from gaming, trajectory extended
+
+Service resumed, step 279,588 in heartbeat. Tick 1776142118 at step 245K
+landed during gaming (harness eval only, safe during pause):
+
+| step | loss_ema | heldout | gap    |
+|------|----------|---------|--------|
+| 45K  | 0.0150   | 0.0228  | 0.0078 |
+| 95K  | 0.0154   | 0.0235  | 0.0081 |
+| 145K | 0.0140   | 0.0237  | 0.0097 |
+| 200K | 0.0156   | 0.0237  | 0.0081 |
+| 245K | 0.0143   | 0.0237  | 0.0094 |
+
+Heldout pinned at 0.0237 for 100K+ steps — the 34-node / 64-edge graph
+has fully fit what it can fit on this corpus. Gap oscillates 0.008-0.010,
+not a monotonic overfit. Decoder outputs still diverse:
+
+```
+"The king said,"  -> "The king said, heavier heavier"  (dense output vs 145K's single "heavier")
+"O Romeo, Romeo," -> "O Romeo, Romeo,,"
+"What light through" -> "What light through redeem"
+```
+
+Stable-cadence continues. 27 commits pending push.

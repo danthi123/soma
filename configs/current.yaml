@@ -68,7 +68,7 @@ gain_min: 0.1
 gain_max: 10.0
 
 # Consolidation
-consolidation_error_threshold: 0.5
+consolidation_error_threshold: 0.05
 
 # Sequence Processing
 max_output_tokens: 128

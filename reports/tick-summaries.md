@@ -1302,3 +1302,5 @@ to Stage 5 multimodal).
 | 1776188713 | 935000 | 0.0157 | 20.71 | 34/150 | no_change | stable plateau, growth-config reverts block proposals |
 - **tick 1776190930** (step 960K): no-change. loss_ema=0.01585 kl=20.71 nodes=34 edges=150. Plateau continues; recent growth-config reverts block similar proposals.
 - **tick 1776195366** step=1010000 loss_ema=0.01647 heldout=0.02040 kl=20.71 nodes=34 edges=159 | outcome=no_change | stable plateau, no safe auto-scope intervention
+
+| 1776197585 | 1035000 | 0.01571 | 20.71 | 34/156 | no_change | plateau; growth levers exhausted |

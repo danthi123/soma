@@ -83,3 +83,14 @@ At max scale (50K nodes, 500K edges): ~6-8 GB of 24 GB. Substantial headroom.
 - Edge weights are clamped to [-5.0, 5.0]
 - Max one consolidation cycle per `consolidation_interval` steps
 - Graph must remain executable (no orphaned subgraphs blocking I/O path)
+
+## Execution Paths
+
+Two `execute_graph` implementations exist:
+
+- **Sequential (`execute_graph`)**: one node at a time; reference behavior.
+- **Batched (`execute_graph_batched`)**: same-shape nodes in each wave share one stacked matmul. 3-5x faster on CUDA, identical outputs (atol=1e-5).
+
+`SOMAConfig.use_batched_executor=True` (default) selects the batched path.
+Flip to `False` to fall back to sequential if a bug ever surfaces — no
+weight or data migration needed.

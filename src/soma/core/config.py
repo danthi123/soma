@@ -111,6 +111,15 @@ class SOMAConfig:
     # Random seed applied during system construction (None = nondeterministic).
     seed: int | None = None
 
+    # --- Execution path --------------------------------------------------
+    # When True (default), ``SOMA.step`` and ``consolidation_cycle`` use the
+    # wave-batched :func:`soma.core.execution.execute_graph_batched`; when
+    # False they fall back to the sequential :func:`execute_graph`. Flip to
+    # False to A/B test or to recover if the batched path ever misbehaves.
+    # Both paths are proven per-step equivalent in
+    # ``tests/test_core/test_execution_parity.py``.
+    use_batched_executor: bool = True
+
     def __post_init__(self) -> None:
         self._validate()
 

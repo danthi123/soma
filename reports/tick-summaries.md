@@ -802,3 +802,23 @@ reference. Heldout 0.0228 vs the degenerate 0.0193 pre-fix — higher
 number, genuine signal, model actually predicting.
 
 Service pid 38468 at step 54,614 in heartbeat. 24 commits pending push.
+
+---
+
+## 2026-04-13 ~19:49 EDT — step 95K: confidence rising on first-token lookup
+
+Running diagnose_collapse directly against current.pt at step 95K:
+
+| metric (across 5 prompts)        | step 5K | step 95K |
+|----------------------------------|---------|----------|
+| OUTPUT activation pairwise L2    | 0.28–0.35 | 0.39–0.49 |
+| decoder logits pairwise L2       | 2.51–3.19 | 3.48–4.43 |
+| unique decoded tokens            | 5 / 5   | 5 / 5    |
+| logit for 'The' on 'The quick brown' | +0.20 | **+0.28** |
+| logit for 'Shall' on 'Shall I compare thee' | +0.19 | **+0.24** |
+| edge \|w\| median                | 0.103   | 0.122    |
+| edge strength EMA mean           | 0.011   | 0.013    |
+
+First-token correct-answer confidence is rising monotonically, edge weights
+drifting up under Hebbian (still far below the 5.0 clamp), zero dead edges.
+No STOP / permfail. Next finalized tick imminent (step ~100K).

@@ -835,3 +835,35 @@ loss_ema=0.0140 (-18.9% vs baseline), heldout=0.0237 (+22.9% vs baseline), KL=20
 Graph static 34n/64e, zero growth, wm_occupancy=0.0, episodic saturated.
 Training loss improving; heldout gap widening — monitoring for overfitting signal.
 No auto-intervention; recommend operator review if heldout continues rising next tick.
+
+---
+
+## 2026-04-13 ~20:31 EDT — step 185K: overfitting signal confirmed, still not collapsed
+
+diagnose_collapse at step 185K still shows 5 unique tokens, OUTPUT variance
+0.40-0.50, decoder logits variance 3.56-4.53. Not a regression.
+
+The tick Claude correctly flagged the emerging overfit pattern at 145K:
+
+| step | loss_ema | heldout | gap    |
+|------|----------|---------|--------|
+| 45K  | 0.0150   | 0.0228  | 0.0078 |
+| 95K  | 0.0154   | 0.0235  | 0.0081 |
+| 145K | 0.0140   | 0.0237  | 0.0097 |
+| 185K | —        | —       | pending|
+
+Training loss drifting down, heldout drifting up — textbook overfit on
+a capacity-limited model (34 nodes / 64 edges, zero growth events across
+185K steps). The RMS-gated synaptogenesis never fires because
+coactivation products with RMS-magnitudes ~0.5-1.0 and locality bonus
+well under 1.0, scaled by config.synaptogenesis_rate=0.005, rarely clear
+the random draw. This is the "growth concern" flagged at the 85K/270K
+GUE-era check re-emerging now with a functional decoder.
+
+Not intervening yet — the trend is early and the model still produces
+sensible first-token lookups. If the gap doubles by 300K, the next
+autonomous step would be to lower activation_threshold (currently 0.1)
+or raise synaptogenesis_rate back to 0.01 so the graph can actually
+grow capacity. Flagging for the next check.
+
+25 commits pending push.

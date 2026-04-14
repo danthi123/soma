@@ -403,19 +403,23 @@ def _record_batched_activations(
 
     Must match :meth:`Node._record_activation` exactly: append magnitude
     to ring buffer, EMA-update ``activation_ema`` with 0.99/0.01 blend,
-    and bump ``last_active_step`` iff magnitude > threshold.
+    bump ``last_active_step`` iff magnitude > threshold, and stash the
+    detached activation tensor on ``last_activation`` so non-executor
+    consumers (e.g., ``SOMA.chat``) can read it.
 
     Processes nodes in list order so sequential-vs-batched ordering of
     host-side state updates is identical.
     """
     # Compute per-row L2 norms in one shot, then pull to host for the
     # Python-float state that Node holds.
-    mags = outputs.detach().norm(dim=-1).tolist()
-    for node, mag in zip(nodes, mags, strict=True):
+    detached = outputs.detach()
+    mags = detached.norm(dim=-1).tolist()
+    for node, mag, row in zip(nodes, mags, detached, strict=True):
         node.activation_history.append(mag)
         node.activation_ema = 0.99 * node.activation_ema + 0.01 * mag
         if mag > node._activation_threshold:
             node.last_active_step = current_step
+        node.last_activation = row
 
 
 def _aggregate_bucket_inputs(

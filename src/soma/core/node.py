@@ -152,6 +152,17 @@ class Node(nn.Module):
         self.last_active_step: int = creation_step
         self.maturity: float = maturity
 
+        # Most recent output tensor produced by this node (or ``None`` before
+        # the first forward pass). Read by downstream consumers that need the
+        # actual activation vector, not just its magnitude — e.g.,
+        # ``SOMA.chat`` aggregating OUTPUT-node state into a soft prompt.
+        # Kept as a plain attribute (not a buffer) because it is not part of
+        # the node's persistent state — checkpoints restore activations by
+        # replaying, not by storing per-step tensors. Per-node cost is a
+        # single detached tensor; at scale only OUTPUT nodes (a handful) are
+        # actually read, so total footprint is trivial.
+        self.last_activation: torch.Tensor | None = None
+
         # Homeostatic parameters.
         self.target_activation: float = (
             target_activation if target_activation is not None else config.default_target_activation
@@ -387,3 +398,8 @@ class Node(nn.Module):
         self.activation_ema = 0.99 * self.activation_ema + 0.01 * magnitude
         if magnitude > self._activation_threshold:
             self.last_active_step = current_step
+        # Detach the tensor we stash so downstream readers can't
+        # accidentally route gradients through stale state; the live
+        # forward-pass tensor is still returned from ``forward`` for the
+        # executor to route into subsequent waves.
+        self.last_activation = activation.detach()

@@ -1,12 +1,19 @@
+from typing import Any
+
 import pytest
 import torch
 from torch import nn
 
 from soma.core.config import SOMAConfig
 from soma.io.chat_head import ChatHead
+from soma.io.text_encoder import TextEncoder, train_bpe_tokenizer
 from soma.io.verbalizer import SomaVerbalizer, VerbalizerSpec
 from soma.system import SOMA
-from soma.training.verbalizer_bootstrap import VerbalizerTrainer, compute_lm_loss
+from soma.training.verbalizer_bootstrap import (
+    VerbalizerTrainer,
+    compute_lm_loss,
+    text_to_state,
+)
 
 
 # Reuse the Phase 3 mock shape — thinnest possible HF-like surface.
@@ -202,3 +209,170 @@ def test_compute_lm_loss_masks_prefix_positions():
         f"k=4 vs k=0 loss differ by {abs(loss_k4.item() - loss_k0.item()):.3f} — "
         "prefix positions may not be masked with -100"
     )
+
+
+# ---------------------------------------------------------------------------
+# T4: text_to_state — tokenize + embed + soma.step (no-grad) + collapse
+# ---------------------------------------------------------------------------
+
+
+# Shared tokenizer for the T4 tests. Trained once over a tiny corpus; the
+# tokenizer is deterministic so re-use across tests is safe and fast.
+_T4_CORPUS: tuple[str, ...] = (
+    "hello world",
+    "the quick brown fox jumps over the lazy dog",
+    "foo bar baz qux quux",
+    "soma learns to speak by listening",
+    "tokens become embeddings which become activations",
+) * 4
+
+
+@pytest.fixture(scope="module")
+def _t4_tokenizer() -> Any:
+    return train_bpe_tokenizer(list(_T4_CORPUS), vocab_size=128)
+
+
+def _build_text_io(cfg: SOMAConfig, tokenizer: Any) -> tuple[Any, TextEncoder]:
+    """Build a (tokenizer, encoder) pair sized for the tiny test SOMA.
+
+    The encoder's ``embed_dim`` must equal ``cfg.sensor_output_dim`` so the
+    per-token embedding flows directly into the text sensor node (the text
+    sensor has ``input_dim=cfg.sensor_output_dim``). ``cfg.text_embed_dim``
+    is set equal to ``sensor_output_dim`` in ``_soma_cfg`` above.
+    """
+    encoder = TextEncoder(
+        tokenizer,
+        embed_dim=cfg.text_embed_dim,
+        max_seq_len=cfg.max_input_tokens,
+    )
+    return tokenizer, encoder
+
+
+def test_text_to_state_returns_pooled_tensor(_t4_tokenizer: Any) -> None:
+    cfg = _soma_cfg()
+    soma = SOMA(cfg, device=torch.device("cpu"))
+    tokenizer, encoder = _build_text_io(cfg, _t4_tokenizer)
+    # Use sensor_output_dim: OUTPUT nodes in the tiny test SOMA are sized to
+    # sensor_output_dim (see _initialize_seed_graph in system.py), so that's
+    # the dim SomaAggregator.collapse will see from last_activation.
+    state = text_to_state(
+        text="hello world",
+        soma=soma,
+        tokenizer=tokenizer,
+        encoder=encoder,
+        soma_output_dim=cfg.sensor_output_dim,
+    )
+    assert state.shape == (1, cfg.sensor_output_dim)
+
+
+def test_text_to_state_deterministic_on_same_input(_t4_tokenizer: Any) -> None:
+    """Two fresh SOMAs (same seed) + same text yield the same pooled state.
+
+    We build two independent SOMAs (rather than calling text_to_state twice
+    on the same SOMA) because soma.step mutates internal state (global_step,
+    working memory, homeostasis, last_activation on every node) every call.
+    Two consecutive invocations on one SOMA would see different working-memory
+    / global_step contexts and therefore different outputs — that's a property
+    of SOMA's statefulness, not a bug in text_to_state.
+    """
+    tokenizer = _t4_tokenizer
+    cfg_a = _soma_cfg()
+    soma_a = SOMA(cfg_a, device=torch.device("cpu"))
+    _, encoder_a = _build_text_io(cfg_a, tokenizer)
+    cfg_b = _soma_cfg()
+    soma_b = SOMA(cfg_b, device=torch.device("cpu"))
+    _, encoder_b = _build_text_io(cfg_b, tokenizer)
+
+    s1 = text_to_state(
+        text="foo",
+        soma=soma_a,
+        tokenizer=tokenizer,
+        encoder=encoder_a,
+        soma_output_dim=cfg_a.sensor_output_dim,
+    )
+    s2 = text_to_state(
+        text="foo",
+        soma=soma_b,
+        tokenizer=tokenizer,
+        encoder=encoder_b,
+        soma_output_dim=cfg_b.sensor_output_dim,
+    )
+    assert torch.allclose(s1, s2)
+
+
+def test_text_to_state_does_not_train_soma(_t4_tokenizer: Any) -> None:
+    """The load-bearing invariant: no SOMA learnable parameter drifts.
+
+    Snapshots every node parameter before the call, runs the helper on a
+    non-trivial input, then re-checks each snapshot. Any drift proves either
+    the no_grad wrapper is missing or eval_mode is leaking into the growth /
+    update_step path.
+    """
+    cfg = _soma_cfg()
+    soma = SOMA(cfg, device=torch.device("cpu"))
+    tokenizer, encoder = _build_text_io(cfg, _t4_tokenizer)
+
+    # Snapshot the full set of node parameters, keyed by (node_id, param_name).
+    before: dict[tuple[str, str], torch.Tensor] = {}
+    for node_id, node in soma.graph.nodes.items():
+        for pname, p in node.named_parameters():
+            before[(node_id, pname)] = p.detach().clone()
+
+    _ = text_to_state(
+        text="hello world, this is a somewhat longer input",
+        soma=soma,
+        tokenizer=tokenizer,
+        encoder=encoder,
+        soma_output_dim=cfg.sensor_output_dim,
+    )
+
+    for node_id, node in soma.graph.nodes.items():
+        for pname, p in node.named_parameters():
+            key = (node_id, pname)
+            if key not in before:
+                # Node was added mid-call (shouldn't happen with eval_mode,
+                # but guard anyway — any new node is a failure).
+                pytest.fail(f"Unexpected new node parameter {key} — growth fired under no_grad?")
+            assert torch.allclose(before[key], p.detach()), (
+                f"SOMA parameter {key} drifted during text_to_state — "
+                "no_grad wrapper or eval_mode missing?"
+            )
+
+
+def test_text_to_state_empty_string_returns_zero_vector(_t4_tokenizer: Any) -> None:
+    """Empty text → zero SOMA steps → SomaAggregator.collapse returns zeros.
+
+    TextEncoder.encode("") returns [], so no token is ever fed to SOMA.
+    OUTPUT-node last_activation stays None, _current_output_activations
+    returns {}, and SomaAggregator.collapse falls back to a zero vector.
+    """
+    cfg = _soma_cfg()
+    soma = SOMA(cfg, device=torch.device("cpu"))
+    tokenizer, encoder = _build_text_io(cfg, _t4_tokenizer)
+    state = text_to_state(
+        text="",
+        soma=soma,
+        tokenizer=tokenizer,
+        encoder=encoder,
+        soma_output_dim=cfg.sensor_output_dim,
+    )
+    assert state.shape == (1, cfg.sensor_output_dim)
+    assert torch.all(state == 0)
+
+
+def test_text_to_state_returns_detached_tensor(_t4_tokenizer: Any) -> None:
+    """Returned tensor must not carry a grad_fn — verbalizer path grafts
+    its own autograd subgraph on top; a stray SOMA grad_fn would chain
+    gradients back into SOMA's (frozen) parameters on ``.backward()``."""
+    cfg = _soma_cfg()
+    soma = SOMA(cfg, device=torch.device("cpu"))
+    tokenizer, encoder = _build_text_io(cfg, _t4_tokenizer)
+    state = text_to_state(
+        text="hello world",
+        soma=soma,
+        tokenizer=tokenizer,
+        encoder=encoder,
+        soma_output_dim=cfg.sensor_output_dim,
+    )
+    assert not state.requires_grad
+    assert state.grad_fn is None

@@ -1293,3 +1293,5 @@ to Stage 5 multimodal).
 - WM occupancy 0.0, episodic saturated (both persistent)
 - Two recent growth-knob reverts still in effect — no new config changes viable within auto-scope
 - **Decision**: no change — steady 6-tick loss decline (0.01769→0.01572), system in healthy equilibrium
+
+| 1776179815 | 835000 | 0.01543 | 0.02026 | null (no change) | stable plateau; growth interventions blocked by watchdog curiosity band |

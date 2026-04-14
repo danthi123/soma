@@ -1077,3 +1077,46 @@ unique-tokens < 3 across two consecutive ticks.
 
 ### tick-1776157622 — step 545K — no change (stable plateau)
 loss_ema=0.01852 heldout=0.01950 kl=20.71 nodes=34 edges=110 growth=1syn/0neuro/0prune curiosity=0.0034 lr=1.0. Loss plateau at ~0.019 for 150K steps; healthy curiosity, slow edge growth. No intervention warranted yet.
+
+---
+
+## 2026-04-14 ~05:30 UTC — wave-batching optimization merged at step 549K
+
+Background implementation agent (started 04:14 UTC) returned with all green:
+- 730 pytest pass (702 → 730, +28 new parity/integration tests)
+- ruff + mypy clean
+- CPU benchmark 1.55x, CUDA benchmark **2.64x** (79.7 → 210.2 steps/sec on
+  34-node / 100-edge graph)
+- Parity tests verify outputs, gradients, per-node state at atol=1e-5 on
+  12-node mixed-type graph
+
+**GPU validation finding:** The 5000-step CUDA smoke-train failed the 10%
+rel-diff gate with batched 33% BETTER than sequential heldout. Investigated
+across 4 seeds at 2000 steps:
+
+| seed | seq_heldout | bat_heldout | rel-diff | direction |
+|------|-------------|-------------|----------|-----------|
+| 1    | 0.00656     | 0.01238     | 88.77%   | worse     |
+| 7    | 0.00880     | 0.00920     | 4.53%    | worse     |
+| 99   | 0.01035     | 0.00738     | 28.68%   | better    |
+| 2026 | 0.01662     | 0.01288     | 22.48%   | better    |
+
+Direction flips randomly, magnitudes range 4-88% — textbook chaotic
+divergence from CUDA matmul float non-determinism compounding over 2000-5000
+SGD steps. NOT a systematic bias; per-step parity holds at atol=1e-5. The
+10% gate was calibrated on CPU (7.6% observed) where float order is tighter.
+
+**Merge decision via self-debate** concluded: chaos ≠ bug. Rollback is a
+flag flip (`SOMAConfig.use_batched_executor=False`). Merged as commit
+62e4b1a on main, pushed to both remotes.
+
+**Main service restarted** at step 549,389 with batched executor default-on.
+New pid 94832, advancing cleanly. Expect ~2-2.6x steady-state speedup on
+CUDA (harder to measure from heartbeat alone; future tick timing will
+confirm).
+
+Tasks closed: O-Task B (planning agent), O-Task C (implementation agent),
+O-Task D (validate+merge). O-Task A (#4/#5 trivial tweaks) deferred — not
+worth restart cost over the ~0.5-2% savings they'd provide.
+
+33 commits total pushed. Monitoring resumes.

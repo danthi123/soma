@@ -60,7 +60,12 @@ class ChatHead:
         max_new_tokens: int = 64,
         **kw: Any,
     ) -> str:
-        """Convenience: generate + decode the first batch row as a string."""
+        """Convenience: generate + decode the first batch row as a string.
+
+        If the caller passes a batch with B>1, only row 0 is decoded and
+        returned; use :meth:`generate` directly and decode each row yourself
+        for multi-sample output.
+        """
         ids = self.generate(
             inputs_embeds=inputs_embeds,
             attention_mask=attention_mask,

@@ -88,3 +88,6 @@ def test_chat_head_generate_decodes_to_text():
         max_new_tokens=5,
     )
     assert isinstance(text, str)
+    # Mock tokenizer decodes one char per token id. 5 tokens → 5 chars.
+    # Proves the decode path actually ran rather than returning "".
+    assert len(text) == 5

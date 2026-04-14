@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 import pytest
@@ -173,3 +174,39 @@ def test_save_bundle_then_load_bundle(tmp_path: Path):
     tok2, enc2 = soma2.load_bundle(str(out_dir))
     # vocab size stays the same across round-trip
     assert tok2.get_vocab_size() == tok.get_vocab_size()
+
+
+def test_interface_spec_in_manifest(tmp_path: Path):
+    cfg = SOMAConfig(
+        sensor_output_dim=8,
+        associator_input_dim=8,
+        associator_hidden_dim=16,
+        associator_output_dim=8,
+        integrator_input_dim=16,
+        integrator_hidden_dim=16,
+        integrator_output_dim=16,
+        position_dim=4,
+        wm_slots=2,
+        wm_dim=8,
+        episodic_capacity=4,
+        key_dim=8,
+        value_dim=8,
+        vocab_size=16,
+        text_embed_dim=8,
+        max_nodes=32,
+        initial_associator_count=2,
+        initial_integrator_count=1,
+        max_input_tokens=8,
+        max_output_tokens=4,
+        seed=0,
+    )
+    soma = SOMA(cfg, device=torch.device("cpu"))
+    out_dir = tmp_path / "bundle"
+    soma.save_bundle(str(out_dir))
+    manifest = json.loads((out_dir / "manifest.json").read_text())
+    spec = manifest["interface_spec"]
+    assert spec["sensor_by_modality"]["text"]  # UUID string
+    assert spec["output_by_modality"]["text"]
+    assert spec["output_dim"] == cfg.integrator_output_dim
+    assert spec["sensor_output_dim"] == cfg.sensor_output_dim
+    assert spec["text_embed_dim"] == cfg.text_embed_dim

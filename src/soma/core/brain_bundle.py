@@ -125,6 +125,7 @@ def write_manifest(
     soma_version: str,
     vocab_size: int,
     llm_identity: str | None = None,
+    interface_spec: dict[str, Any] | None = None,
 ) -> None:
     """Write ``manifest.json`` alongside the other bundle files.
 
@@ -133,7 +134,9 @@ def write_manifest(
     brain bundle without having to load ``brain.pt`` first. ``vocab_size``
     is cross-checked against the tokenizer on load so swapping in a
     mismatched tokenizer fails loudly rather than silently corrupting
-    embeddings.
+    embeddings. ``interface_spec`` records the text-aligned sensor /
+    output node UUIDs and their dims so a future head-swap tool can find
+    the I/O boundary without heuristics.
     """
     manifest: dict[str, Any] = {
         "format": "soma-brain-bundle",
@@ -141,6 +144,7 @@ def write_manifest(
         "soma_version": soma_version,
         "vocab_size": int(vocab_size),
         "llm_identity": llm_identity,
+        "interface_spec": dict(interface_spec) if interface_spec else {},
         "created_at": datetime.now(UTC).isoformat(),
         "torch_version": torch.__version__,
         "tokenizers_version": tokenizers.__version__,

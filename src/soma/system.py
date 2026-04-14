@@ -737,11 +737,19 @@ class SOMA:
             torch.save({"state_dict": decoder.state_dict()}, str(out / "decoder.pt"))
 
         vocab_size = tokenizer.get_vocab_size() if tokenizer is not None else self.config.vocab_size
+        interface_spec = {
+            "sensor_by_modality": dict(self.graph._sensor_by_modality),
+            "output_by_modality": dict(self.graph._output_by_modality),
+            "sensor_output_dim": self.config.sensor_output_dim,
+            "output_dim": self.config.integrator_output_dim,
+            "text_embed_dim": self.config.text_embed_dim,
+        }
         write_manifest(
             out,
             soma_version=_current_soma_version(),
             vocab_size=vocab_size,
             llm_identity=llm_identity,
+            interface_spec=interface_spec,
         )
 
     def load_bundle(self, dir_path: str | Path) -> tuple[Any, Any]:

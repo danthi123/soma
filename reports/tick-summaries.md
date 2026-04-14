@@ -1121,3 +1121,41 @@ worth restart cost over the ~0.5-2% savings they'd provide.
 
 33 commits total pushed. Monitoring resumes.
 | 1776159845 | 2026-04-14T09:47:12Z | 575000 | no_change | loss_ema=0.01716 heldout=0.01959 kl=20.71 nodes=34 edges=115 | Mild heldout drift (+3.9%), training loss at best value; waiting for stronger signal |
+
+---
+
+## 2026-04-14 ~06:20 UTC — wave-batching post-merge: correct but ~zero wall-clock gain
+
+One tick + 50 min of heartbeat data under the batched executor (pid 94832):
+
+| period                    | steps   | duration | rate      |
+|---------------------------|---------|----------|-----------|
+| pre-merge (01:55→05:30)   | 253,389 | 215 min  | **70.7K/hr** |
+| post-merge (05:30→06:20)  | 59,233  | 50 min   | **71.0K/hr** |
+
+**Zero measurable wall-clock speedup** despite the isolated `execute_graph`
+CUDA benchmark showing 2.64x (79.7 → 210.2 steps/sec). Isolation benchmark
+doesn't include loss.backward / Hebbian updates / homeostasis / growth
+gating / episodic encode / heartbeat writes / metrics log — these are
+unchanged and evidently dominate per-step time at current scale (34 nodes).
+
+**Ran self-debate:**
+- Correctness holds (per-step parity atol=1e-5, tests pass, training stable)
+- At current graph scale, execute_graph isn't the bottleneck
+- At larger scale (Stage 5 multimodal, more nodes per wave), benefit will
+  materialize — the optimization is dormant-but-correct insurance
+- Keeping merged is strictly better than reverting; rollback is a flag flip
+
+**First post-merge tick (575K) is healthy:**
+- heldout 0.01959 (+0.05% from pre-merge 0.01950 — within chaos band)
+- loss_ema 0.01716 (slightly better than pre-merge 0.01852 by 7%)
+- KL 20.71 (unchanged)
+- edges 115 (still growing linearly, +5 in 30K steps)
+- Chat output: 11+ unique tokens across 5 prompts (more diverse than
+  pre-merge peak of 9)
+
+**No intervention needed.** Lesson for future optimization decisions:
+isolated kernel benchmarks can overstate end-to-end gains by 2-10x when
+the optimized kernel is <20% of total step time. For bigger wins at this
+scale, target the non-execute_graph part of the step (likely
+update_step's Hebbian loop over all edges every step).

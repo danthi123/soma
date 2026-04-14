@@ -16,6 +16,7 @@ pair for checkpointing.
 from __future__ import annotations
 
 import math
+from collections import deque
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -123,6 +124,13 @@ class SOMA:
         # exceeds config.max_consecutive_skipped_steps so train_service's
         # CrashBackoff can detect a stuck training state.
         self._consecutive_skipped_steps: int = 0
+
+        # Append-only structural-event journal. Every synaptogenesis /
+        # neurogenesis / pruning event gets a dict appended here by
+        # ``record_growth_event``; the bounded deque keeps memory flat
+        # over long runs (oldest events age out once we hit the cap).
+        # Persisted via ``save_state`` / ``load_state``.
+        self.growth_log: deque[dict[str, Any]] = deque(maxlen=10_000)
 
     # ------------------------------------------------------------------
     # Construction
@@ -426,6 +434,21 @@ class SOMA:
         padded[: flat.numel()] = flat
         return padded
 
+    def record_growth_event(self, event_type: str, **fields: Any) -> None:
+        """Append a structural event to ``growth_log``.
+
+        ``step`` is stamped automatically from ``global_step``; extra
+        ``fields`` are stored verbatim (kept JSON-friendly by convention
+        so the journal round-trips through ``torch.save``).
+        """
+        self.growth_log.append(
+            {
+                "step": self.global_step,
+                "event_type": event_type,
+                **fields,
+            }
+        )
+
     def _maybe_grow(
         self,
         activations: dict[str, torch.Tensor],
@@ -439,26 +462,43 @@ class SOMA:
                 self.global_step % config.synaptogenesis_interval == 0
                 and self.homeostasis.allow_synaptogenesis
             ):
-                synaptogenesis(
+                new_edges = synaptogenesis(
                     self.graph,
                     activations,
                     step=self.global_step,
                     config=config,
                     rng=rng,
                 )
+                for edge in new_edges:
+                    self.record_growth_event(
+                        "synaptogenesis",
+                        edge_id=edge.id,
+                        source=edge.source_id,
+                        target=edge.target_id,
+                    )
             if (
                 self.global_step % config.neurogenesis_interval == 0
                 and self.homeostasis.allow_neurogenesis
             ):
-                neurogenesis(
+                new_node = neurogenesis(
                     self.graph,
                     self._recent_errors,
                     step=self.global_step,
                     config=config,
                     rng=rng,
                 )
+                if new_node is not None:
+                    self.record_growth_event(
+                        "neurogenesis",
+                        node_id=new_node.id,
+                        node_type=new_node.node_type.name,
+                    )
             if self.global_step % config.pruning_interval == 0:
-                pruning(self.graph, step=self.global_step, config=config)
+                result = pruning(self.graph, step=self.global_step, config=config)
+                for edge_id in result.removed_edge_ids:
+                    self.record_growth_event("prune_edge", id=edge_id)
+                for node_id in result.removed_node_ids:
+                    self.record_growth_event("prune_node", id=node_id)
 
     def _maybe_consolidate(self, *, rng: torch.Generator | None) -> None:
         if (
@@ -574,6 +614,8 @@ class SOMA:
             "development": self.development.to_dict(),
             "config": self.config.to_dict(),
             "last_curiosity": self.last_curiosity,
+            # Serialize as a plain list — deque reconstituted on load.
+            "growth_log": list(self.growth_log),
         }
         payload = to_cpu_state(payload)
         wrapped = wrap_payload(payload, soma_version=_current_soma_version())
@@ -619,3 +661,7 @@ class SOMA:
         if "development" in state:
             self.development.from_dict(state["development"])
         self.last_curiosity = float(state["last_curiosity"])
+        # ``growth_log`` was added in brain-bundle Task 8. Older
+        # checkpoints omit it — default to an empty journal so pre-Task-8
+        # bundles load without error.
+        self.growth_log = deque(state.get("growth_log", []), maxlen=10_000)

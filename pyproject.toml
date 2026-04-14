@@ -41,6 +41,11 @@ ui = [
     "matplotlib>=3.7.0",
     "networkx>=3.1",
 ]
+dev-chat = [
+    "transformers>=4.40",
+    "accelerate>=0.30",
+    "safetensors>=0.4",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -75,5 +80,8 @@ module = [
     "matplotlib", "matplotlib.*",
     "torchaudio", "torchaudio.*",
     "dearpygui", "dearpygui.*",
+    "transformers", "transformers.*",
+    "accelerate", "accelerate.*",
+    "safetensors", "safetensors.*",
 ]
 ignore_missing_imports = true

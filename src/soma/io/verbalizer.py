@@ -10,7 +10,9 @@ when the transformer is swapped, without touching the SOMA brain.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import cast
 
+import torch
 from torch import nn
 
 
@@ -62,3 +64,34 @@ class SomaVerbalizer(nn.Module):
                 spec.num_prefix_tokens * spec.llm_hidden_dim,
             ),
         )
+
+    def forward(self, soma_state: torch.Tensor) -> torch.Tensor:
+        """Project a SOMA OUTPUT aggregate into a soft-prompt prefix.
+
+        Args:
+            soma_state: ``(B, soma_output_dim)`` or ``(soma_output_dim,)``
+                aggregated OUTPUT-node activations from SOMA. A 1-D tensor
+                is treated as a single unbatched example.
+
+        Returns:
+            ``(B, num_prefix_tokens, llm_hidden_dim)`` soft prefix embeddings.
+
+        Raises:
+            ValueError: if the last dimension does not match
+                ``spec.soma_output_dim``.
+        """
+        if soma_state.ndim == 1:
+            soma_state = soma_state.unsqueeze(0)
+        if soma_state.shape[-1] != self.spec.soma_output_dim:
+            raise ValueError(
+                f"SomaVerbalizer expects last dim "
+                f"{self.spec.soma_output_dim} (soma_output_dim), "
+                f"got {soma_state.shape[-1]}"
+            )
+        flat = self.proj(soma_state)  # (B, k*D)
+        prefix = flat.view(
+            soma_state.shape[0],
+            self.spec.num_prefix_tokens,
+            self.spec.llm_hidden_dim,
+        )
+        return cast(torch.Tensor, prefix)

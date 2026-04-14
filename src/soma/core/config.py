@@ -222,8 +222,11 @@ class SOMAConfig:
     def from_yaml(cls, path: str | Path) -> SOMAConfig:
         """Load a config from a YAML file.
 
-        Only keys that match dataclass field names are accepted; unknown
-        keys raise ``ValueError`` to catch typos early.
+        Delegates to :meth:`from_dict`. Unknown keys are dropped with a
+        ``UserWarning`` instead of raising, so older or newer checkpoints/YAMLs
+        that include fields this SOMA version doesn't know about can still load.
+        Typos in known fields are still enforced by :class:`SOMAConfig`'s
+        dataclass __init__.
         """
         path = Path(path)
         with path.open("r", encoding="utf-8") as fh:

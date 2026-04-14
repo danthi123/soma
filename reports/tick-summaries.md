@@ -1214,3 +1214,8 @@ by the safety system (ac8bcf6). Two independent events happened to coincide
 but neither corrupted the other. Growth state intact.
 
 37 commits pushed both remotes.
+
+### tick 1776168714 — step 685K — config: lower neurogenesis_threshold 1.2→1.05
+- **Commit:** 91b6c88 | **Loss:** 0.01661 | **Curiosity:** 0.00170 | **Nodes:** 34 | **Edges:** 133
+- **Rationale:** Zero neurogenesis for 140K+ steps; threshold unreachable during loss plateau. Lowering to 1.05 enables growth when error ratio modestly elevated.
+- **Watchdog criteria:** loss < 0.025, nodes < 50, confirm_window=30min

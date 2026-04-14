@@ -1298,3 +1298,4 @@ to Stage 5 multimodal).
 | 1776182037 | 2026-04-14T15:56:40Z | 865000 | 0.01589 | 20.71 | 34/138 | no_change | — | stable but structurally frozen; growth changes blocked by watchdog curiosity tolerance |
 
 - **tick 1776184285** (step 890K): no-op. loss_ema=0.01529, heldout=0.02030, kl=20.71, nodes=34, edges=140. Stable plateau; two recent growth-config reverts (consolidation_error_threshold, neurogenesis_threshold) block similar proposals. Deeper issues (frozen KL, empty WM) need carveout paths.
+| 1776186504 | 915000 | 0.0167 | 20.71 | 34/143 | no_change | stable plateau, KL stuck, WM=0 |

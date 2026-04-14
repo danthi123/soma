@@ -217,3 +217,75 @@ def test_soma_chat_falls_back_when_no_chat_head():
     # should still be right.
     assert stub_decoder.last_activations is not None
     assert stub_decoder.last_activations.shape == (1, cfg.integrator_output_dim)
+
+
+class _TiedCausalLM(nn.Module):
+    """Mock HF causal LM with tied input/output embeddings.
+
+    Mirrors SmolLM2 / Qwen2.5-small / Phi-3.5: ``lm_head.weight`` IS the
+    same tensor as ``embed.weight`` (shared data_ptr). A careless
+    in-place op in ChatHead.generate would silently corrupt the shared
+    weight; this test catches that regression.
+    """
+
+    def __init__(self, vocab: int = 32, d_model: int = 16) -> None:
+        super().__init__()
+        self.vocab = vocab
+        self.d_model = d_model
+        self.embed = nn.Embedding(vocab, d_model)
+        self.lm_head = nn.Linear(d_model, vocab, bias=False)
+        # Tie: share the weight tensor by identity, not by copy.
+        self.lm_head.weight = self.embed.weight
+        self.config = type(
+            "Cfg",
+            (),
+            {
+                "hidden_size": d_model,
+                "vocab_size": vocab,
+                "tie_word_embeddings": True,
+            },
+        )()
+
+    def get_input_embeddings(self) -> nn.Embedding:
+        return self.embed
+
+    def forward(self, *, inputs_embeds, attention_mask=None, position_ids=None):
+        return self.lm_head(inputs_embeds)
+
+    @torch.no_grad()
+    def generate(self, *, inputs_embeds, attention_mask=None, max_new_tokens=4, **kw):
+        embeds = inputs_embeds
+        gens = []
+        for _ in range(max_new_tokens):
+            logits = self.forward(inputs_embeds=embeds)
+            next_id = logits[:, -1, :].argmax(dim=-1)
+            gens.append(next_id)
+            embeds = torch.cat([embeds, self.embed(next_id).unsqueeze(1)], dim=1)
+        return torch.stack(gens, dim=1)
+
+
+def test_chat_head_works_with_tied_embeddings():
+    """Sanity: ChatHead.generate does not corrupt tied input/output embeddings.
+
+    Regression guard. If an in-place op ever creeps into the inputs_embeds
+    path, the shared weight matrix would drift and every subsequent call
+    would produce different logits. The assertions verify (a) the shared
+    tensor stays pointer-identical, and (b) its values are bit-exact
+    before and after generation.
+    """
+    model = _TiedCausalLM()
+    embed_before = model.embed.weight.data.clone()
+    # Pointer-identity check: sanity that the tie is actually set up.
+    assert model.lm_head.weight.data_ptr() == model.embed.weight.data_ptr()
+
+    head = ChatHead(model=model, tokenizer=_TinyTokenizer())
+    _ = head.generate(
+        inputs_embeds=torch.randn(1, 4, 16),
+        attention_mask=torch.ones(1, 4, dtype=torch.long),
+        max_new_tokens=3,
+    )
+
+    # Weight values unchanged.
+    assert torch.equal(model.embed.weight.data, embed_before)
+    # Pointer identity still intact (no shadow-copy assignment happened).
+    assert model.lm_head.weight.data_ptr() == model.embed.weight.data_ptr()

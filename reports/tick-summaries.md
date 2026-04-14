@@ -822,3 +822,10 @@ Running diagnose_collapse directly against current.pt at step 95K:
 First-token correct-answer confidence is rising monotonically, edge weights
 drifting up under Hebbian (still far below the 5.0 clamp), zero dead edges.
 No STOP / permfail. Next finalized tick imminent (step ~100K).
+
+### tick 1776126539 — step 95K — no change
+
+loss_ema=0.0154 (-10.5% vs baseline), heldout=0.0235, KL=20.71 (improving from 23.03).
+Graph static at 34n/64e, zero growth events, wm_occupancy=0.0, episodic saturated.
+Training stable post-NaN-crisis; structural concerns (empty WM, frozen growth) flagged
+for operator review — both require carveout-path changes. No auto-intervention warranted.

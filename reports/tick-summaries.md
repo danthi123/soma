@@ -928,3 +928,40 @@ not a monotonic overfit. Decoder outputs still diverse:
 
 Stable-cadence continues. 27 commits pending push.| 1776144292 | 2026-04-14 05:28 UTC | 295000 | no_change | loss_ema=0.0159 heldout=0.0238 nodes=34 edges=64 | graph stagnant 250K steps, operator-scoped growth decision |
 - **tick 1776146522** (step 350K): class=null — no in-scope change. heldout_loss=0.0238 (+23.5% vs baseline), loss_ema=0.0139, graph frozen 34/64, wm=0.0. Overfitting continues; all fixes require carveout paths.
+
+---
+
+## 2026-04-14 ~02:14 UTC — autonomous growth enable at step 365K
+
+Pattern now unambiguous: heldout frozen at 0.0237-0.0238 across **all 5
+post-fix ticks from 145K to 350K** (200K+ steps). Loss_ema oscillating
+0.014-0.016 but heldout won't move. Seed topology is capacity-saturated.
+
+Per operator authorization (memory/feedback_autonomy_scope.md) for
+autonomous learning/arch fixes when training is blocked:
+
+**Config change:**
+- `synaptogenesis_rate`: 0.005 → **0.01** (restored to pre-recovery value)
+- `activation_threshold`: 0.1 → **0.05** (halved — RMS activations typical
+  0.5 on associators, 1.0 on sensors, so 0.05 admits more coactivation pairs)
+
+Patched in BOTH `configs/current.yaml` AND the config-dict embedded in
+`checkpoints/current.pt` (`SOMA.load_state` overrides yaml with the
+checkpoint's frozen config, so yaml-only edits would be discarded).
+
+Service restarted fresh at step 365,369, pid 127076, status=running.
+At synaptogenesis_interval=100 steps, first growth event expected
+within a few hundred steps of restart if the new thresholds are
+permissive enough.
+
+**Monitoring plan:** watch for
+- first non-zero syn count in growth_last_1k_steps
+- heldout unstick from 0.0238
+- no NaN / permfail / consecutive-skip escalation
+- decoder tokens remain diverse (>= 3 unique)
+
+If growth fires but heldout doesn't improve, the next lever is
+loss-signal design (MSE-on-embeddings → CE-on-logits).
+If growth doesn't fire even now, the gating logic itself needs debug.
+
+28 commits pending push.

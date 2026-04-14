@@ -39,8 +39,8 @@ consolidation_lr_ratio: 0.1
 maturity_increment: 0.0001
 
 # Growth Thresholds
-activation_threshold: 0.1
-synaptogenesis_rate: 0.005
+activation_threshold: 0.05
+synaptogenesis_rate: 0.01
 neurogenesis_threshold: 1.2
 edge_strength_threshold: 0.001
 inactivity_threshold: 5000

@@ -1120,3 +1120,4 @@ O-Task D (validate+merge). O-Task A (#4/#5 trivial tweaks) deferred — not
 worth restart cost over the ~0.5-2% savings they'd provide.
 
 33 commits total pushed. Monitoring resumes.
+| 1776159845 | 2026-04-14T09:47:12Z | 575000 | no_change | loss_ema=0.01716 heldout=0.01959 kl=20.71 nodes=34 edges=115 | Mild heldout drift (+3.9%), training loss at best value; waiting for stronger signal |

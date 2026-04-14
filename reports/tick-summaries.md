@@ -1256,3 +1256,4 @@ but that's a separate refinement for later.
 
 38 commits all pushed.
 | 1776170933 | 710K | 0.0201 | 20.710 | 34/137 | null | no change — stable plateau, growth levers exhausted in auto scope |
+| 1776173148 | 2026-04-14T13:28:54Z | 745000 | no_change | loss_ema=0.01686 curiosity=0.00182 nodes=34 edges=140 | plateau stable, neurogenesis levers exhausted in auto scope |

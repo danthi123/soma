@@ -877,3 +877,25 @@ grow capacity. Flagging for the next check.
 - **KL:** 20.71 (plateau since step 45K)
 - **Decision:** no change. Overfit mild in absolute terms (perplexity 1.024).
   Impactful interventions all touch carveout paths. Collecting more data.
+
+---
+
+## 2026-04-14 ~ early UTC — overfit gap reversal, operator paused for gaming
+
+Revisiting the gap trajectory with tick 1776130966 included:
+
+| step | loss_ema | heldout | gap    |
+|------|----------|---------|--------|
+| 45K  | 0.0150   | 0.0228  | 0.0078 |
+| 95K  | 0.0154   | 0.0235  | 0.0081 |
+| 145K | 0.0140   | 0.0237  | 0.0097 |
+| 200K | 0.0156   | 0.0237  | 0.0081 |
+
+The gap widened to 0.0097 at 145K then *narrowed back to 0.0081* at 200K,
+matching the 95K value. The 145K bump wasn't the start of a monotonic
+overfit — it was a transient dip in loss_ema that has since reverted.
+No autonomous growth-enable needed; the trend I flagged at 185K hasn't
+materialized.
+
+Operator paused the service for gaming at step 233,069. Heartbeat healthy,
+no crash indicators. Will resume monitoring once the loop is unpaused.

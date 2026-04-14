@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 import torch
 from torch import nn
@@ -148,3 +150,33 @@ def test_final_layer_bias_is_zero_at_init():
     final = linears[-1]
     assert final.bias is not None
     assert torch.all(final.bias == 0.0)
+
+
+def test_save_load_round_trip(tmp_path: Path):
+    spec = VerbalizerSpec(
+        soma_output_dim=128,
+        llm_name="smoke",
+        llm_hidden_dim=960,
+        num_prefix_tokens=8,
+        proj_hidden_dim=256,
+    )
+    v = SomaVerbalizer(spec)
+    # Nudge weights off init to prove round-trip
+    with torch.no_grad():
+        for p in v.parameters():
+            p.add_(torch.randn_like(p) * 0.01)
+    out = tmp_path / "verbalizer"
+    v.save(out)
+    assert (out / "spec.json").exists()
+    assert (out / "weights.pt").exists()
+
+    v2 = SomaVerbalizer.load(out)
+    assert v2.spec == spec
+    for (n1, p1), (n2, p2) in zip(v.named_parameters(), v2.named_parameters(), strict=True):
+        assert n1 == n2
+        assert torch.allclose(p1, p2)
+
+
+def test_load_rejects_wrong_directory(tmp_path: Path):
+    with pytest.raises(FileNotFoundError):
+        SomaVerbalizer.load(tmp_path / "does-not-exist")

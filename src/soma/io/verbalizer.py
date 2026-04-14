@@ -9,7 +9,9 @@ when the transformer is swapped, without touching the SOMA brain.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import json
+from dataclasses import asdict, dataclass
+from pathlib import Path
 from typing import cast
 
 import torch
@@ -101,3 +103,22 @@ class SomaVerbalizer(nn.Module):
             self.spec.llm_hidden_dim,
         )
         return cast(torch.Tensor, prefix)
+
+    def save(self, path: Path | str) -> None:
+        """Save verbalizer as a directory: spec.json + weights.pt."""
+        p = Path(path)
+        p.mkdir(parents=True, exist_ok=True)
+        (p / "spec.json").write_text(json.dumps(asdict(self.spec), indent=2))
+        torch.save(self.state_dict(), str(p / "weights.pt"))
+
+    @classmethod
+    def load(cls, path: Path | str) -> SomaVerbalizer:
+        p = Path(path)
+        spec_path = p / "spec.json"
+        weights_path = p / "weights.pt"
+        if not spec_path.exists() or not weights_path.exists():
+            raise FileNotFoundError(f"No verbalizer bundle at {p}")
+        spec = VerbalizerSpec(**json.loads(spec_path.read_text()))
+        v = cls(spec)
+        v.load_state_dict(torch.load(str(weights_path), map_location="cpu"))
+        return v

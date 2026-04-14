@@ -122,3 +122,27 @@ class SomaVerbalizer(nn.Module):
         v = cls(spec)
         v.load_state_dict(torch.load(str(weights_path), map_location="cpu"))
         return v
+
+
+class SomaAggregator:
+    """Collapses per-OUTPUT-node activations into a canonical (1, D) vector.
+
+    SOMA produces one activation per OUTPUT node at each step; the verbalizer
+    consumes a single D-dim vector. Mean pooling is the v1 strategy — simple,
+    order-invariant, and graceful when node count changes via growth.
+    """
+
+    @staticmethod
+    def collapse(activations: dict[str, torch.Tensor], *, soma_output_dim: int) -> torch.Tensor:
+        if not activations:
+            return torch.zeros(1, soma_output_dim)
+        stacked = []
+        for node_id, act in activations.items():
+            if act.shape[-1] != soma_output_dim:
+                raise ValueError(
+                    f"SomaAggregator expected dim {soma_output_dim}, "
+                    f"got {act.shape[-1]} for node {node_id}"
+                )
+            stacked.append(act.view(-1))
+        mean = torch.stack(stacked, dim=0).mean(dim=0)
+        return mean.unsqueeze(0)

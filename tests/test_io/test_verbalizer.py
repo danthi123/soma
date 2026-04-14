@@ -4,7 +4,7 @@ import pytest
 import torch
 from torch import nn
 
-from soma.io.verbalizer import SomaVerbalizer, VerbalizerSpec
+from soma.io.verbalizer import SomaAggregator, SomaVerbalizer, VerbalizerSpec
 
 
 def test_spec_defaults_and_frozen():
@@ -180,3 +180,28 @@ def test_save_load_round_trip(tmp_path: Path):
 def test_load_rejects_wrong_directory(tmp_path: Path):
     with pytest.raises(FileNotFoundError):
         SomaVerbalizer.load(tmp_path / "does-not-exist")
+
+
+def test_aggregator_mean_pools_output_activations():
+    # 3 output nodes, each with 128-dim activation
+    acts = {
+        "node_a": torch.ones(128) * 1.0,
+        "node_b": torch.ones(128) * 2.0,
+        "node_c": torch.ones(128) * 3.0,
+    }
+    pooled = SomaAggregator.collapse(acts, soma_output_dim=128)
+    # Mean should be 2.0 (entry-wise)
+    assert pooled.shape == (1, 128)
+    assert torch.allclose(pooled, torch.ones(1, 128) * 2.0)
+
+
+def test_aggregator_handles_no_output_nodes():
+    pooled = SomaAggregator.collapse({}, soma_output_dim=128)
+    assert pooled.shape == (1, 128)
+    assert torch.all(pooled == 0.0)  # zero vector when nothing is active
+
+
+def test_aggregator_rejects_wrong_dim():
+    acts = {"a": torch.ones(64)}
+    with pytest.raises(ValueError, match="expected dim"):
+        SomaAggregator.collapse(acts, soma_output_dim=128)

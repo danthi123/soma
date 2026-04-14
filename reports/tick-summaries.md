@@ -965,3 +965,12 @@ loss-signal design (MSE-on-embeddings → CE-on-logits).
 If growth doesn't fire even now, the gating logic itself needs debug.
 
 28 commits pending push.
+
+### tick 1776148732 — step 395K — no change
+
+- **heldout_loss=0.0189** (baseline 0.0193, -2.1%) | **loss_ema_500=0.0197** (+41% vs prev tick)
+- **edges 64→77** (+13 new edges from growth enablement at 365K) | nodes=34 unchanged
+- **curiosity=0.00146** (down from ~0.005 range) | lr_multiplier=1.0
+- health: `episodic_saturated` (persistent) | wm_occupancy=0.0
+- **outcome: no change** — loss bump is expected transient from new edges; heldout still below baseline
+- next: monitor 1–2 more ticks; intervene if loss_ema_500 doesn't recover toward 0.014–0.016

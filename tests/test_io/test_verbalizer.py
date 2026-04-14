@@ -1,5 +1,6 @@
 import pytest
 import torch
+from torch import nn
 
 from soma.io.verbalizer import SomaVerbalizer, VerbalizerSpec
 
@@ -114,3 +115,36 @@ def test_forward_rejects_wrong_last_dim():
     x = torch.randn(2, 64)  # wrong last dim
     with pytest.raises(ValueError, match="soma_output_dim"):
         v(x)
+
+
+def test_untrained_verbalizer_emits_near_null_prefix():
+    """Safety property: an untrained projector should not actively corrupt LLM
+    generation. Near-zero init on the final layer means the prefix is
+    essentially empty tokens, so the LLM behaves ~vanilla."""
+    spec = VerbalizerSpec(
+        soma_output_dim=128,
+        llm_name="smoke",
+        llm_hidden_dim=960,
+        num_prefix_tokens=16,
+    )
+    v = SomaVerbalizer(spec)
+    x = torch.randn(1, 128) * 10.0  # even with large input, output should be tiny
+    y = v(x)
+    # Final prefix should be much smaller than ~1 (the typical hidden-state
+    # magnitude). Use 0.1 as a generous upper bound.
+    assert y.abs().max().item() < 0.1, f"near-null init violated: max={y.abs().max().item()}"
+
+
+def test_final_layer_bias_is_zero_at_init():
+    spec = VerbalizerSpec(
+        soma_output_dim=128,
+        llm_name="smoke",
+        llm_hidden_dim=512,
+        num_prefix_tokens=4,
+    )
+    v = SomaVerbalizer(spec)
+    # Find the final Linear
+    linears = [m for m in v.proj if isinstance(m, nn.Linear)]
+    final = linears[-1]
+    assert final.bias is not None
+    assert torch.all(final.bias == 0.0)

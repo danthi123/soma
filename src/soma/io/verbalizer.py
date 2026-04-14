@@ -64,6 +64,12 @@ class SomaVerbalizer(nn.Module):
                 spec.num_prefix_tokens * spec.llm_hidden_dim,
             ),
         )
+        # Near-zero init on the final layer: an untrained projector should
+        # emit a near-null prefix so the frozen LLM behaves ~vanilla until
+        # the verbalizer is trained on paired SOMA/text data.
+        _final = [m for m in self.proj if isinstance(m, nn.Linear)][-1]
+        nn.init.normal_(_final.weight, std=1e-3)
+        nn.init.zeros_(_final.bias)
 
     def forward(self, soma_state: torch.Tensor) -> torch.Tensor:
         """Project a SOMA OUTPUT aggregate into a soft-prompt prefix.

@@ -107,8 +107,7 @@ def test_full_parity_forward_outputs(config: SOMAConfig) -> None:
     assert set(act_seq) == set(act_bat)
     for nid in act_seq:
         assert torch.allclose(act_seq[nid], act_bat[nid], atol=1e-5, rtol=1e-5), (
-            f"activation[{nid[:8]}] max diff = "
-            f"{(act_seq[nid] - act_bat[nid]).abs().max().item()}"
+            f"activation[{nid[:8]}] max diff = {(act_seq[nid] - act_bat[nid]).abs().max().item()}"
         )
 
 
@@ -157,10 +156,7 @@ def test_full_parity_gradients(config: SOMAConfig) -> None:
                     atol=1e-5,
                     rtol=1e-5,
                 )
-            if (
-                e1.projection.bias is not None
-                and e1.projection.bias.grad is not None
-            ):
+            if e1.projection.bias is not None and e1.projection.bias.grad is not None:
                 assert e2.projection.bias is not None
                 assert e2.projection.bias.grad is not None
                 assert torch.allclose(
@@ -182,9 +178,9 @@ def test_full_parity_per_node_state(config: SOMAConfig) -> None:
         assert n1.last_active_step == n2.last_active_step, (
             f"{nid[:8]}: last_active_step {n1.last_active_step} != {n2.last_active_step}"
         )
-        assert n1.activation_ema == pytest.approx(
-            n2.activation_ema, rel=1e-6, abs=1e-9
-        ), f"{nid[:8]}: ema {n1.activation_ema} != {n2.activation_ema}"
+        assert n1.activation_ema == pytest.approx(n2.activation_ema, rel=1e-6, abs=1e-9), (
+            f"{nid[:8]}: ema {n1.activation_ema} != {n2.activation_ema}"
+        )
         assert n1.activation_history.to_list() == pytest.approx(
             n2.activation_history.to_list(), rel=1e-6, abs=1e-9
         )

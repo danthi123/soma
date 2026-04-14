@@ -688,3 +688,102 @@ class SOMA:
         # checkpoints omit it — default to an empty journal so pre-Task-8
         # bundles load without error.
         self.growth_log = deque(state.get("growth_log", []), maxlen=10_000)
+
+    # ------------------------------------------------------------------
+    # Directory-shaped brain bundle (brain.pt + tokenizer + encoder + manifest)
+    # ------------------------------------------------------------------
+    def save_bundle(
+        self,
+        dir_path: str | Path,
+        *,
+        tokenizer: Any = None,
+        encoder: Any = None,
+        decoder: Any = None,
+        llm_identity: str | None = None,
+    ) -> None:
+        """Write a directory-shaped brain bundle to ``dir_path``.
+
+        The bundle is a folder containing at minimum ``brain.pt`` (the
+        usual versioned envelope from :meth:`save_state`) and
+        ``manifest.json`` (schema + versions + vocab size). When a
+        ``tokenizer`` is supplied it's saved to ``tokenizer.json`` and
+        its ``vocab_size`` is stamped into the manifest. When an
+        ``encoder`` / ``decoder`` is supplied, each is saved alongside
+        as ``encoder.pt`` / ``decoder.pt`` with just enough metadata to
+        reconstruct on load. The encoder / decoder arguments are
+        optional so callers that only want to persist the graph +
+        tokenizer don't have to fabricate modules.
+        """
+        from soma.core.brain_bundle import write_manifest
+
+        out = Path(dir_path)
+        out.mkdir(parents=True, exist_ok=True)
+        self.save_state(str(out / "brain.pt"))
+
+        if tokenizer is not None:
+            tokenizer.save(str(out / "tokenizer.json"))
+
+        if encoder is not None:
+            torch.save(
+                {
+                    "state_dict": encoder.state_dict(),
+                    "embed_dim": encoder.embed_dim,
+                    "max_seq_len": encoder.max_seq_len,
+                },
+                str(out / "encoder.pt"),
+            )
+
+        if decoder is not None:
+            torch.save({"state_dict": decoder.state_dict()}, str(out / "decoder.pt"))
+
+        vocab_size = tokenizer.get_vocab_size() if tokenizer is not None else self.config.vocab_size
+        write_manifest(
+            out,
+            soma_version=_current_soma_version(),
+            vocab_size=vocab_size,
+            llm_identity=llm_identity,
+        )
+
+    def load_bundle(self, dir_path: str | Path) -> tuple[Any, Any]:
+        """Load a directory-shaped brain bundle from ``dir_path``.
+
+        Returns ``(tokenizer, encoder)``; either (or both) may be
+        ``None`` if the corresponding sidecar isn't present. Decoder
+        reconstruction is deferred — callers that need a decoder can
+        load ``decoder.pt`` themselves since its shape is specific to
+        the downstream head. The manifest's ``vocab_size`` is
+        cross-checked against the tokenizer to fail loud on mismatch.
+        """
+        from tokenizers import Tokenizer
+
+        from soma.core.brain_bundle import read_manifest
+        from soma.io.text_encoder import TextEncoder
+
+        src = Path(dir_path)
+        manifest = read_manifest(src)
+        self.load_state(str(src / "brain.pt"))
+
+        tok: Any = None
+        enc: Any = None
+
+        tokenizer_path = src / "tokenizer.json"
+        if tokenizer_path.exists():
+            tok = Tokenizer.from_file(str(tokenizer_path))
+            if tok.get_vocab_size() != int(manifest["vocab_size"]):
+                raise ValueError(
+                    f"Tokenizer vocab {tok.get_vocab_size()} doesn't match manifest "
+                    f"{manifest['vocab_size']}"
+                )
+
+        encoder_path = src / "encoder.pt"
+        if encoder_path.exists() and tok is not None:
+            blob = torch.load(str(encoder_path), map_location="cpu", weights_only=False)
+            enc = TextEncoder(
+                tok,
+                embed_dim=int(blob["embed_dim"]),
+                max_seq_len=int(blob["max_seq_len"]),
+                device=self.device,
+            )
+            enc.load_state_dict(blob["state_dict"])
+
+        return tok, enc

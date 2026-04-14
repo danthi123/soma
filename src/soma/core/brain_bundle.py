@@ -7,9 +7,11 @@ raw state. This lets future SOMA versions detect and migrate old brains.
 
 from __future__ import annotations
 
+import json
 import warnings
 from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 import tokenizers
@@ -112,3 +114,43 @@ def peek_payload(raw: Any) -> dict[str, Any]:
     if isinstance(raw, dict):
         return raw
     raise TypeError(f"Expected a dict-shaped checkpoint; got {type(raw).__name__}")
+
+
+# ---------------------------------------------------------------------------
+# Directory-shaped brain bundle (manifest.json + brain.pt + sidecars)
+# ---------------------------------------------------------------------------
+def write_manifest(
+    out_dir: Path,
+    *,
+    soma_version: str,
+    vocab_size: int,
+    llm_identity: str | None = None,
+) -> None:
+    """Write ``manifest.json`` alongside the other bundle files.
+
+    The manifest captures enough information for a future SOMA version
+    (or sibling tool) to detect, validate, and migrate a directory-shaped
+    brain bundle without having to load ``brain.pt`` first. ``vocab_size``
+    is cross-checked against the tokenizer on load so swapping in a
+    mismatched tokenizer fails loudly rather than silently corrupting
+    embeddings.
+    """
+    manifest: dict[str, Any] = {
+        "format": "soma-brain-bundle",
+        "schema_version": SCHEMA_VERSION,
+        "soma_version": soma_version,
+        "vocab_size": int(vocab_size),
+        "llm_identity": llm_identity,
+        "created_at": datetime.now(UTC).isoformat(),
+        "torch_version": torch.__version__,
+        "tokenizers_version": tokenizers.__version__,
+    }
+    (out_dir / "manifest.json").write_text(json.dumps(manifest, indent=2))
+
+
+def read_manifest(out_dir: Path) -> dict[str, Any]:
+    """Load and return the bundle manifest as a plain dict."""
+    data = json.loads((out_dir / "manifest.json").read_text())
+    if not isinstance(data, dict):
+        raise ValueError(f"manifest.json must deserialize to a dict, got {type(data).__name__}")
+    return dict(data)

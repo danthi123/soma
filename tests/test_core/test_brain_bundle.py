@@ -129,3 +129,47 @@ def test_saved_file_is_wrapped_bundle(tmp_path: Path):
     assert raw["schema_version"] == 1
     assert "payload" in raw
     assert "global_step" in raw["payload"]
+
+
+def test_save_bundle_then_load_bundle(tmp_path: Path):
+    from soma.io.text_encoder import TextEncoder, train_bpe_tokenizer
+
+    cfg = SOMAConfig(
+        sensor_output_dim=8,
+        associator_input_dim=8,
+        associator_hidden_dim=16,
+        associator_output_dim=8,
+        integrator_input_dim=16,
+        integrator_hidden_dim=16,
+        integrator_output_dim=16,
+        position_dim=4,
+        wm_slots=2,
+        wm_dim=8,
+        episodic_capacity=4,
+        key_dim=8,
+        value_dim=8,
+        vocab_size=32,
+        text_embed_dim=8,
+        max_nodes=32,
+        initial_associator_count=2,
+        initial_integrator_count=1,
+        max_input_tokens=8,
+        max_output_tokens=4,
+        seed=0,
+    )
+    soma = SOMA(cfg, device=torch.device("cpu"))
+    tok = train_bpe_tokenizer(["hello world"], vocab_size=32)
+    enc = TextEncoder(tok, embed_dim=8, max_seq_len=8, device=torch.device("cpu"))
+
+    out_dir = tmp_path / "brain-bundle"
+    soma.save_bundle(str(out_dir), tokenizer=tok, encoder=enc)
+
+    assert (out_dir / "manifest.json").exists()
+    assert (out_dir / "brain.pt").exists()
+    assert (out_dir / "tokenizer.json").exists()
+    assert (out_dir / "encoder.pt").exists()
+
+    soma2 = SOMA(cfg, device=torch.device("cpu"))
+    tok2, enc2 = soma2.load_bundle(str(out_dir))
+    # vocab size stays the same across round-trip
+    assert tok2.get_vocab_size() == tok.get_vocab_size()

@@ -8,6 +8,8 @@ contract — enforced at trainer init).
 
 from __future__ import annotations
 
+import logging
+import math
 from collections.abc import Iterable
 from pathlib import Path
 from typing import Any, cast
@@ -15,6 +17,8 @@ from typing import Any, cast
 import torch
 
 from soma.core.config import SOMAConfig
+
+_log = logging.getLogger(__name__)
 
 
 class VerbalizerTrainer:
@@ -88,9 +92,25 @@ class VerbalizerTrainer:
             prefix=prefix,
             token_ids=token_ids,
         )
+
+        loss_value = float(loss.item())
+        # Skip backward + optim.step on non-finite loss so a single
+        # degenerate sample (NaN/inf SOMA state, exploding logits, etc.)
+        # cannot corrupt Adam's running moments and silently poison every
+        # subsequent update. Caller still sees the NaN in returned losses
+        # and can react (skip-ahead, lower LR, dump checkpoint, etc.).
+        if not math.isfinite(loss_value):
+            _log.warning(
+                "verbalizer train_step skipped: non-finite loss %r on "
+                "text=%r — no backward/optim.step performed.",
+                loss_value,
+                text[:60],
+            )
+            return loss_value
+
         loss.backward()  # type: ignore[no-untyped-call]
         self.optim.step()
-        return float(loss.item())
+        return loss_value
 
     def train(
         self,

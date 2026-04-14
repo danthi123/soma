@@ -675,3 +675,38 @@ def test_eval_lm_loss_handles_empty_texts():
     t = _fresh_trainer()
     val = t.eval_lm_loss(texts=[])
     assert val == 0.0
+
+
+# ---------------------------------------------------------------------------
+# Polish: train_step skips backward+optim when loss is non-finite (NaN/inf).
+# Surfaced by the T9 SmolLM2 smoke test, which observed NaN training losses
+# from late steps. Without this guard, a NaN gradient would corrupt Adam's
+# running moments and silently poison every subsequent update.
+# ---------------------------------------------------------------------------
+
+
+def test_train_step_skips_when_loss_is_non_finite(monkeypatch: pytest.MonkeyPatch):
+    """If compute_lm_loss returns NaN, train_step must NOT call optim.step
+    or backward — return the NaN as-is so callers can react."""
+    t = _fresh_trainer()
+
+    # Snapshot verbalizer params before the call.
+    before = [p.detach().clone() for p in t.verbalizer.parameters()]
+
+    # Replace the module-level compute_lm_loss with a NaN-returning stub.
+    from soma.training import verbalizer_bootstrap as vb
+
+    def _nan_loss(*, chat_head, prefix, token_ids):  # noqa: ARG001
+        # Return a NaN scalar that has a real grad-fn (would-be-trainable)
+        # so the test catches the "skip backward" guard, not "no graph".
+        return (prefix.sum() * 0) + float("nan")
+
+    monkeypatch.setattr(vb, "compute_lm_loss", _nan_loss)
+
+    loss_value = t.train_step(text="hello")
+    assert loss_value != loss_value, "expected NaN return"  # noqa: PLR0124
+
+    # Verbalizer params must NOT have moved (no optim.step performed).
+    after = [p.detach().clone() for p in t.verbalizer.parameters()]
+    for b, a in zip(before, after, strict=True):
+        assert torch.equal(b, a), "verbalizer drifted on NaN loss — guard not effective"

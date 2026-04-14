@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 import torch
 
@@ -8,6 +10,8 @@ from soma.core.brain_bundle import (
     unwrap_payload,
     wrap_payload,
 )
+from soma.core.config import SOMAConfig
+from soma.system import SOMA
 
 
 def test_wrap_adds_schema_version_and_metadata():
@@ -72,3 +76,56 @@ def test_to_cpu_normalizes_nested_tensor_state():
     assert normalized["list"][0].device.type == "cpu"
     assert normalized["scalar"] == 42
     assert normalized["string"] == "hello"
+
+
+def _small_cfg() -> SOMAConfig:
+    return SOMAConfig(
+        sensor_output_dim=8,
+        associator_input_dim=8,
+        associator_hidden_dim=16,
+        associator_output_dim=8,
+        integrator_input_dim=16,
+        integrator_hidden_dim=16,
+        integrator_output_dim=16,
+        position_dim=4,
+        wm_slots=2,
+        wm_dim=8,
+        episodic_capacity=4,
+        key_dim=8,
+        value_dim=8,
+        vocab_size=16,
+        text_embed_dim=8,
+        max_nodes=32,
+        initial_associator_count=2,
+        initial_integrator_count=1,
+        max_input_tokens=8,
+        max_output_tokens=4,
+        seed=0,
+    )
+
+
+def test_save_then_load_round_trip_cpu(tmp_path: Path):
+    cfg = _small_cfg()
+    soma = SOMA(cfg, device=torch.device("cpu"))
+    save_path = tmp_path / "brain.pt"
+    soma.save_state(str(save_path))
+
+    # New instance, same config, fresh weights -> load should overwrite.
+    soma2 = SOMA(cfg, device=torch.device("cpu"))
+    soma2.load_state(str(save_path))
+    # Pick one nn.Parameter and compare.
+    orig = next(iter(soma.graph.state_dict().values()))
+    loaded = next(iter(soma2.graph.state_dict().values()))
+    assert torch.allclose(orig, loaded)
+
+
+def test_saved_file_is_wrapped_bundle(tmp_path: Path):
+    cfg = _small_cfg()
+    soma = SOMA(cfg, device=torch.device("cpu"))
+    save_path = tmp_path / "brain.pt"
+    soma.save_state(str(save_path))
+    raw = torch.load(str(save_path), map_location="cpu", weights_only=False)
+    assert raw["format"] == "soma-brain"
+    assert raw["schema_version"] == 1
+    assert "payload" in raw
+    assert "global_step" in raw["payload"]

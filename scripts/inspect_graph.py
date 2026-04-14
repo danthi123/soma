@@ -22,7 +22,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--checkpoint", type=Path, default=Path("checkpoints/current.pt"))
     args = parser.parse_args(argv)
 
-    state = torch.load(args.checkpoint, map_location="cpu", weights_only=False)
+    from soma.core.brain_bundle import peek_payload
+
+    raw = torch.load(args.checkpoint, map_location="cpu", weights_only=False)
+    state = peek_payload(raw)
     cfg = SOMAConfig.from_dict(state["config"])
     soma = SOMA(cfg, device="cpu")
     soma.load_state(args.checkpoint)
@@ -43,7 +46,7 @@ def main(argv: list[str] | None = None) -> int:
         mats = [n.maturity for n in lst]
         print(
             f"  {t.value:12s} count={len(lst):3d}  "
-            f"gain min={min(gains):.3f} max={max(gains):.3f} mean={sum(gains)/len(gains):.3f}  "
+            f"gain min={min(gains):.3f} max={max(gains):.3f} mean={sum(gains) / len(gains):.3f}  "
             f"act_ema min={min(acts):.3f} max={max(acts):.3f}  "
             f"maturity min={min(mats):.3f} max={max(mats):.3f}"
         )
@@ -53,19 +56,21 @@ def main(argv: list[str] | None = None) -> int:
         sorted_w = sorted(weights)
         print(f"\n[edges] weight |w| distribution (N={len(weights)}):")
         print(f"  min        : {sorted_w[0]:.6e}")
-        print(f"  p10        : {sorted_w[max(0, len(sorted_w)//10)]:.6e}")
-        print(f"  median     : {sorted_w[len(sorted_w)//2]:.6e}")
-        print(f"  p90        : {sorted_w[min(len(sorted_w)-1, 9*len(sorted_w)//10)]:.6e}")
+        print(f"  p10        : {sorted_w[max(0, len(sorted_w) // 10)]:.6e}")
+        print(f"  median     : {sorted_w[len(sorted_w) // 2]:.6e}")
+        print(f"  p90        : {sorted_w[min(len(sorted_w) - 1, 9 * len(sorted_w) // 10)]:.6e}")
         print(f"  max        : {sorted_w[-1]:.6e}")
         below_1e3 = sum(1 for w in weights if w < 1e-3)
         below_1e6 = sum(1 for w in weights if w < 1e-6)
-        print(f"  |w| < 1e-3 : {below_1e3}/{len(weights)} ({100*below_1e3/len(weights):.1f}%)")
-        print(f"  |w| < 1e-6 : {below_1e6}/{len(weights)} ({100*below_1e6/len(weights):.1f}%)")
+        print(f"  |w| < 1e-3 : {below_1e3}/{len(weights)} ({100 * below_1e3 / len(weights):.1f}%)")
+        print(f"  |w| < 1e-6 : {below_1e6}/{len(weights)} ({100 * below_1e6 / len(weights):.1f}%)")
 
     strengths = [float(e.strength) for e in g.all_edges()]
     if strengths:
-        print(f"\n[edges] strength EMA: min={min(strengths):.4f} max={max(strengths):.4f} "
-              f"mean={sum(strengths)/len(strengths):.4f}")
+        print(
+            f"\n[edges] strength EMA: min={min(strengths):.4f} max={max(strengths):.4f} "
+            f"mean={sum(strengths) / len(strengths):.4f}"
+        )
 
     # Now pipe a known nonzero signal through the graph and capture the
     # activation of every node, so we can see where magnitude dies.
@@ -86,7 +91,7 @@ def main(argv: list[str] | None = None) -> int:
         if norms:
             print(
                 f"  {t.value:12s} activation norms: min={min(norms):.4f} "
-                f"max={max(norms):.4f} mean={sum(norms)/len(norms):.4f}"
+                f"max={max(norms):.4f} mean={sum(norms) / len(norms):.4f}"
             )
 
     # Output node bias magnitude — if input-to-output path is dead, the

@@ -40,6 +40,29 @@ from soma.metacognition.development import DevelopmentSchedule
 from soma.metacognition.homeostasis import HomeostaticRegulator
 
 
+def _current_soma_version() -> str:
+    """Best-effort SOMA source version string (git describe) for the bundle manifest.
+
+    Returns ``"unknown"`` if the repo isn't a git checkout or git is missing —
+    never raises. Called once per ``save_state`` so a failed subprocess can't
+    block a checkpoint write.
+    """
+    try:
+        import subprocess
+
+        return (
+            subprocess.check_output(
+                ["git", "describe", "--always", "--dirty"],
+                cwd=str(Path(__file__).resolve().parents[2]),
+                stderr=subprocess.DEVNULL,
+            )
+            .decode()
+            .strip()
+        )
+    except Exception:  # noqa: BLE001 — any failure degrades gracefully
+        return "unknown"
+
+
 class SOMA:
     """Integrated SOMA system — main class.
 
@@ -528,8 +551,18 @@ class SOMA:
     # Checkpoint
     # ------------------------------------------------------------------
     def save_state(self, path: str | Path) -> None:
-        """Write a full checkpoint to ``path`` (``torch.save`` format)."""
-        state = {
+        """Write a full checkpoint to ``path`` (``torch.save`` format).
+
+        The file is wrapped in the versioned brain-bundle envelope
+        (``format="soma-brain"``, ``schema_version``, SOMA/torch/tokenizers
+        versions, git sha, timestamp) and CPU-normalized so the same file
+        loads identically on cpu/cuda without a device prefix mismatch.
+        """
+        # Local import avoids any future circular-import issue if
+        # brain_bundle ever needs to reach back into soma.system.
+        from soma.core.brain_bundle import to_cpu_state, wrap_payload
+
+        payload = {
             "global_step": self.global_step,
             "recent_errors": list(self._recent_errors),
             "graph": self.graph.serialize(),
@@ -541,10 +574,30 @@ class SOMA:
             "config": self.config.to_dict(),
             "last_curiosity": self.last_curiosity,
         }
-        torch.save(state, str(path))
+        payload = to_cpu_state(payload)
+        wrapped = wrap_payload(payload, soma_version=_current_soma_version())
+        torch.save(wrapped, str(path))
 
     def load_state(self, path: str | Path) -> None:
-        state = torch.load(str(path), weights_only=False)
+        """Load a checkpoint from ``path``.
+
+        Accepts both the v1 envelope (``format="soma-brain"``) and the
+        pre-envelope legacy format (loose dict, schema 0). In the legacy
+        case the payload is upgraded through the migration dispatch to the
+        current schema version.
+        """
+        from soma.core.brain_bundle import migrate_payload, unwrap_payload
+
+        raw = torch.load(str(path), map_location="cpu", weights_only=False)
+        if isinstance(raw, dict) and raw.get("format") == "soma-brain":
+            state, meta = unwrap_payload(raw)
+            from_schema = int(meta["schema_version"])
+        else:
+            # Legacy single-file format — treat the whole blob as payload, schema=0.
+            state = dict(raw)
+            from_schema = 0
+        state, _ = migrate_payload(state, from_schema=from_schema)
+
         self.config = SOMAConfig.from_dict(state["config"])
         self.global_step = int(state["global_step"])
         self._recent_errors = [float(v) for v in state["recent_errors"]]

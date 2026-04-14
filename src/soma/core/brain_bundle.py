@@ -96,3 +96,19 @@ def to_cpu_state(obj: Any) -> Any:
         t = type(obj)
         return t(to_cpu_state(v) for v in obj)
     return obj
+
+
+def peek_payload(raw: Any) -> dict[str, Any]:
+    """Return the SOMA payload regardless of envelope vs legacy layout.
+
+    If ``raw`` is a v1 brain bundle (``format="soma-brain"``), return
+    its ``payload`` dict. Otherwise assume the pre-envelope legacy format
+    and return the dict as-is. Used by script call sites that need to
+    peek at ``state["config"]`` / ``state["global_step"]`` before handing
+    the file to ``SOMA.load_state``.
+    """
+    if isinstance(raw, dict) and raw.get("format") == "soma-brain":
+        return dict(raw.get("payload", {}))
+    if isinstance(raw, dict):
+        return raw
+    raise TypeError(f"Expected a dict-shaped checkpoint; got {type(raw).__name__}")

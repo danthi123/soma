@@ -243,7 +243,7 @@ class SOMAConfig:
         import warnings
 
         known = {f.name for f in fields(cls)}
-        unknown = [k for k in data.keys() if k not in known]
+        unknown = [k for k in data if k not in known]
         if unknown:
             warnings.warn(
                 f"Dropping unknown SOMAConfig fields (likely from an older/newer "

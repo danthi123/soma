@@ -26,7 +26,7 @@ from torch.nn import functional as F  # noqa: N812
 from soma.consolidation.cycle import ExperienceUnpacker, consolidation_cycle
 from soma.core.config import SOMAConfig
 from soma.core.edge import Edge
-from soma.core.execution import execute_graph
+from soma.core.execution import execute_graph, execute_graph_batched
 from soma.core.graph import Graph
 from soma.core.learning import update_step
 from soma.core.node import Node, NodeType
@@ -201,9 +201,8 @@ class SOMA:
         structure). ``global_step`` still advances so downstream
         metrics stay monotonic.
         """
-        outputs, activations = execute_graph(
-            self.graph, inputs=inputs, current_step=self.global_step
-        )
+        exec_fn = execute_graph_batched if self.config.use_batched_executor else execute_graph
+        outputs, activations = exec_fn(self.graph, inputs=inputs, current_step=self.global_step)
 
         context_tensor = next(iter(outputs.values())) if outputs else None
         self._update_working_memory(context_tensor)

@@ -35,6 +35,14 @@ class TestDefaults:
         a.input_modalities.append("image")
         assert b.input_modalities == ["text"]
 
+    def test_use_batched_executor_default_on(self) -> None:
+        cfg = SOMAConfig()
+        assert cfg.use_batched_executor is True
+
+    def test_use_batched_executor_can_be_disabled(self) -> None:
+        cfg = SOMAConfig(use_batched_executor=False)
+        assert cfg.use_batched_executor is False
+
 
 class TestFromDict:
     def test_override_subset(self) -> None:

@@ -22,7 +22,7 @@ import torch
 from torch.nn import functional as F  # noqa: N812
 
 from soma.core.config import SOMAConfig
-from soma.core.execution import execute_graph
+from soma.core.execution import execute_graph, execute_graph_batched
 from soma.core.graph import Graph
 from soma.growth.myelination import myelination
 from soma.growth.neurogenesis import neurogenesis
@@ -117,13 +117,14 @@ def consolidation_cycle(
 
     consolidation_lr = config.base_lr * config.consolidation_lr_ratio
     replay_losses: list[float] = []
+    exec_fn = execute_graph_batched if config.use_batched_executor else execute_graph
 
     # Replay is *not* supposed to look like a normal forward pass for
     # pruning — we don't want it to keep edges alive that would otherwise
     # be eligible for removal.
     for experience in replay_batch:
         inputs, targets = experience_unpacker(experience)
-        outputs, activations = execute_graph(
+        outputs, activations = exec_fn(
             graph,
             inputs=inputs,
             current_step=current_step,

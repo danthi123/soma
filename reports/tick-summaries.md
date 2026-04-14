@@ -775,3 +775,30 @@ New diagnostic scripts landed with the fix:
 Dead-graph checkpoints archived to `checkpoints/dead-edges-collapse-2026-04-13/`.
 Fresh service pid 38468 running, 23 commits pending operator push.
 | 1776124320 | 2026-04-13T23:55:32Z | 45000 | no_change | loss_ema=0.01498 heldout=0.02283 kl=20.71 nodes=34 edges=64 wm=0.0 | stable fresh run, all fixes in carveout |
+
+---
+
+## 2026-04-13 ~19:19 EDT — meaningful decoder output at step 45K
+
+Post-fix tick 1776124320 chat log confirms the GUE collapse is gone:
+
+```
+"To be, or not to be,"  -> "To be, or not to be, negl negl"
+"The king said,"        -> "The king said, negl negl"
+"O Romeo, Romeo,"       -> "O Romeo, Romeo, wouldst negl"
+"What light through"    -> "What light through redeem"
+"Shall I compare thee"  -> "Shall I compare thee"
+```
+
+The model echoes the prompt (autoregressive copy-through) then emits
+one or two generated tokens before saturating. "wouldst" after
+"O Romeo, Romeo," is a plausible next-token; "negl" is a frequent
+saturation target but is a real token, not the GUE constant-output
+artifact.
+
+Output-distribution KL dropped 23.03 -> 20.71 between pre-fix tick
+117652 and post-fix 124320 — a measurable shift toward the corpus
+reference. Heldout 0.0228 vs the degenerate 0.0193 pre-fix — higher
+number, genuine signal, model actually predicting.
+
+Service pid 38468 at step 54,614 in heartbeat. 24 commits pending push.

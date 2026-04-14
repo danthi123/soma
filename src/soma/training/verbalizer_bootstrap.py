@@ -29,11 +29,19 @@ class VerbalizerTrainer:
         verbalizer: Any,
         chat_head: Any,
         config: SOMAConfig,
+        tokenizer: Any,
+        encoder: Any,
     ) -> None:
         self.soma = soma
         self.verbalizer = verbalizer
         self.chat_head = chat_head
         self.config = config
+        # Tokenizer + encoder are plumbed here (rather than pulled off the
+        # SOMA instance) because SOMA itself has no default .tokenizer /
+        # .text_encoder attributes. Storing them underscore-prefixed to
+        # signal "internal plumbing, not user-facing trainer surface".
+        self._tokenizer = tokenizer
+        self._encoder = encoder
 
         # Sanity: ChatHead must already be frozen (Phase 3 invariant).
         if any(p.requires_grad for p in self.chat_head.model.parameters()):
@@ -50,6 +58,37 @@ class VerbalizerTrainer:
             self.verbalizer.parameters(),
             lr=config.verbalizer_lr,
         )
+
+    def train_step(self, *, text: str) -> float:
+        """One forward + backward + optim.step. Returns scalar loss as float.
+
+        Gradient flows only through the verbalizer's two Linear layers.
+        SOMA is wrapped in ``torch.no_grad`` inside ``text_to_state`` (T4);
+        ChatHead is frozen via the invariant enforced at ``__init__`` (T2).
+        """
+        self.verbalizer.train()
+        self.optim.zero_grad()
+
+        state = text_to_state(
+            text=text,
+            soma=self.soma,
+            tokenizer=self._tokenizer,
+            encoder=self._encoder,
+            soma_output_dim=self.verbalizer.spec.soma_output_dim,
+        )
+        prefix = self.verbalizer(state)
+
+        tok_out = self.chat_head.tokenizer(text, return_tensors="pt")
+        token_ids = tok_out["input_ids"]
+
+        loss = compute_lm_loss(
+            chat_head=self.chat_head,
+            prefix=prefix,
+            token_ids=token_ids,
+        )
+        loss.backward()  # type: ignore[no-untyped-call]
+        self.optim.step()
+        return float(loss.item())
 
 
 def compute_lm_loss(

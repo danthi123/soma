@@ -1,3 +1,4 @@
+from dataclasses import replace
 from typing import Any
 
 import pytest
@@ -18,6 +19,18 @@ from soma.training.verbalizer_bootstrap import (
 
 # Reuse the Phase 3 mock shape — thinnest possible HF-like surface.
 class _TinyCausalLM(nn.Module):
+    """Mock HF causal LM with minimal causal mixing so the prefix actually
+    conditions later-position predictions.
+
+    Without any cross-position mixing, the verbalizer prefix could only
+    affect the prediction at position k-1 (first real token). Learning
+    would plateau at the uniform-distribution log-loss minus 1/T, which
+    makes the end-to-end gradient test artificially capped. A single
+    causal-mean-pool layer before lm_head gives every token position
+    access to the prefix signal, matching the qualitative behavior of
+    a real transformer's causal attention.
+    """
+
     def __init__(self, vocab: int = 32, d_model: int = 16) -> None:
         super().__init__()
         self.embed = nn.Embedding(vocab, d_model)
@@ -27,8 +40,18 @@ class _TinyCausalLM(nn.Module):
     def get_input_embeddings(self) -> nn.Embedding:
         return self.embed
 
+    def _causal_mean_pool(self, x: torch.Tensor) -> torch.Tensor:
+        # x: (B, T, d). Return y where y[:, t] = mean(x[:, :t+1]).
+        # This is the simplest causal aggregator — zero parameters, but
+        # each position sees all prior (including prefix) positions, so
+        # the verbalizer prefix conditions every prediction downstream.
+        cumsum = torch.cumsum(x, dim=1)
+        lengths = torch.arange(1, x.shape[1] + 1, device=x.device).view(1, -1, 1)
+        return cumsum / lengths
+
     def forward(self, *, inputs_embeds, attention_mask=None, labels=None, **_):
-        logits = self.lm_head(inputs_embeds)
+        mixed = self._causal_mean_pool(inputs_embeds)
+        logits = self.lm_head(mixed)
         if labels is None:
             return type("Out", (), {"logits": logits, "loss": None})()
         shift_logits = logits[:, :-1, :].contiguous()
@@ -76,11 +99,27 @@ def _soma_cfg() -> SOMAConfig:
     )
 
 
+# Module-scoped BPE tokenizer cached for reuse across _fresh_trainer calls.
+# Training a tokenizer is the slowest per-test cost; building it once at
+# module import keeps the full suite fast.
+_BOOTSTRAP_CORPUS: tuple[str, ...] = (
+    "hello world",
+    "the quick brown fox jumps over the lazy dog",
+    "foo bar baz qux quux",
+    "soma learns to speak by listening",
+    "tokens become embeddings which become activations",
+) * 4
+_shared_bpe_tokenizer: Any = train_bpe_tokenizer(list(_BOOTSTRAP_CORPUS), vocab_size=128)
+
+
 def _fresh_trainer() -> VerbalizerTrainer:
     cfg = _soma_cfg()
     soma = SOMA(cfg, device=torch.device("cpu"))
+    # OUTPUT nodes in the seed graph are sized to sensor_output_dim (see
+    # SOMA._initialize_seed_graph), so that's the dim the collapsed state
+    # carries into the verbalizer — NOT integrator_output_dim.
     spec = VerbalizerSpec(
-        soma_output_dim=cfg.integrator_output_dim,
+        soma_output_dim=cfg.sensor_output_dim,
         llm_name="mock",
         llm_hidden_dim=16,
         num_prefix_tokens=4,
@@ -91,11 +130,18 @@ def _fresh_trainer() -> VerbalizerTrainer:
         model=_TinyCausalLM(vocab=32, d_model=16),
         tokenizer=_TinyTokenizer(),
     )
+    encoder = TextEncoder(
+        _shared_bpe_tokenizer,
+        embed_dim=cfg.text_embed_dim,
+        max_seq_len=cfg.max_input_tokens,
+    )
     return VerbalizerTrainer(
         soma=soma,
         verbalizer=verbalizer,
         chat_head=chat_head,
         config=cfg,
+        tokenizer=_shared_bpe_tokenizer,
+        encoder=encoder,
     )
 
 
@@ -131,7 +177,7 @@ def test_trainer_raises_if_chat_head_is_not_frozen():
     cfg = _soma_cfg()
     soma = SOMA(cfg, device=torch.device("cpu"))
     spec = VerbalizerSpec(
-        soma_output_dim=cfg.integrator_output_dim,
+        soma_output_dim=cfg.sensor_output_dim,
         llm_name="mock",
         llm_hidden_dim=16,
         num_prefix_tokens=4,
@@ -141,6 +187,11 @@ def test_trainer_raises_if_chat_head_is_not_frozen():
     chat_head = ChatHead(
         model=_TinyCausalLM(vocab=32, d_model=16),
         tokenizer=_TinyTokenizer(),
+    )
+    encoder = TextEncoder(
+        _shared_bpe_tokenizer,
+        embed_dim=cfg.text_embed_dim,
+        max_seq_len=cfg.max_input_tokens,
     )
     # Poison: unfreeze the model after ChatHead init.
     for p in chat_head.model.parameters():
@@ -152,6 +203,8 @@ def test_trainer_raises_if_chat_head_is_not_frozen():
             verbalizer=verbalizer,
             chat_head=chat_head,
             config=cfg,
+            tokenizer=_shared_bpe_tokenizer,
+            encoder=encoder,
         )
 
 
@@ -376,3 +429,84 @@ def test_text_to_state_returns_detached_tensor(_t4_tokenizer: Any) -> None:
     )
     assert not state.requires_grad
     assert state.grad_fn is None
+
+
+# ---------------------------------------------------------------------------
+# T5: train_step — full forward + backward + optim.step through the verbalizer
+# ---------------------------------------------------------------------------
+
+
+def test_train_step_returns_float_loss():
+    t = _fresh_trainer()
+    loss = t.train_step(text="hello")
+    assert isinstance(loss, float)
+    assert loss > 0
+
+
+def test_train_step_updates_verbalizer_weights():
+    t = _fresh_trainer()
+    before = [p.detach().clone() for p in t.verbalizer.parameters()]
+    _ = t.train_step(text="hello world, this is a test sample")
+    after = [p.detach().clone() for p in t.verbalizer.parameters()]
+    assert any(not torch.allclose(b, a) for b, a in zip(before, after, strict=True)), (
+        "no verbalizer param moved after train_step"
+    )
+
+
+def test_train_step_leaves_chat_head_bit_exact():
+    t = _fresh_trainer()
+    before = [p.detach().clone() for p in t.chat_head.model.parameters()]
+    _ = t.train_step(text="hello world")
+    after = [p.detach().clone() for p in t.chat_head.model.parameters()]
+    for b, a in zip(before, after, strict=True):
+        assert torch.equal(b, a), "ChatHead param drifted — LLM not frozen"
+
+
+def test_train_step_loss_decreases_over_iterations():
+    """Load-bearing: 50 steps on the same sample should reduce loss.
+
+    Proves the whole gradient chain (text → SOMA state → verbalizer prefix
+    → LLM loss → backward → optim.step) actually wires together end-to-end.
+
+    Uses an elevated ``verbalizer_lr`` (0.01) to converge in 50 steps for
+    test speed. The production default (1e-4) is tuned for a 360M-param
+    LLM where tiny per-step updates compound over thousands of samples;
+    on the 32-vocab x 16-d mock here the signal is too small per step for
+    that LR to move the needle in 50 iterations. The end-to-end gradient
+    chain is what's load-bearing, not the specific LR.
+    """
+    cfg = replace(_soma_cfg(), verbalizer_lr=0.01)
+    soma = SOMA(cfg, device=torch.device("cpu"))
+    spec = VerbalizerSpec(
+        soma_output_dim=cfg.sensor_output_dim,
+        llm_name="mock",
+        llm_hidden_dim=16,
+        num_prefix_tokens=4,
+        proj_hidden_dim=16,
+    )
+    verbalizer = SomaVerbalizer(spec)
+    chat_head = ChatHead(
+        model=_TinyCausalLM(vocab=32, d_model=16),
+        tokenizer=_TinyTokenizer(),
+    )
+    encoder = TextEncoder(
+        _shared_bpe_tokenizer,
+        embed_dim=cfg.text_embed_dim,
+        max_seq_len=cfg.max_input_tokens,
+    )
+    t = VerbalizerTrainer(
+        soma=soma,
+        verbalizer=verbalizer,
+        chat_head=chat_head,
+        config=cfg,
+        tokenizer=_shared_bpe_tokenizer,
+        encoder=encoder,
+    )
+    text = "the quick brown fox jumps over the lazy dog"
+    first_loss = t.train_step(text=text)
+    for _ in range(49):
+        t.train_step(text=text)
+    final_loss = t.train_step(text=text)
+    assert final_loss < first_loss * 0.95, (
+        f"final_loss={final_loss:.4f} not sufficiently below first_loss={first_loss:.4f}"
+    )

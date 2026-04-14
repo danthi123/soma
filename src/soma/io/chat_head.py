@@ -73,3 +73,30 @@ class ChatHead:
             **kw,
         )
         return cast(str, self.tokenizer.decode(ids[0], skip_special_tokens=True))
+
+
+def build_position_ids(*, num_prefix: int, num_tokens: int, batch_size: int) -> torch.Tensor:
+    """Produce [0..k+T-1] positions per batch row for prefix+tokens layout.
+
+    Prefix occupies positions 0..k-1; user tokens occupy k..k+T-1.
+    RoPE-friendly: the usual contiguous arange the LLM expects.
+    """
+    seq_len = num_prefix + num_tokens
+    return torch.arange(seq_len).unsqueeze(0).expand(batch_size, -1)
+
+
+def build_attention_mask(*, num_prefix: int, num_tokens: int, batch_size: int) -> torch.Tensor:
+    """All-ones attention mask; assumes no padding in the token section."""
+    seq_len = num_prefix + num_tokens
+    return torch.ones(batch_size, seq_len, dtype=torch.long)
+
+
+def build_attention_mask_from_pad(*, num_prefix: int, pad_mask: torch.Tensor) -> torch.Tensor:
+    """Prepend prefix-ones to a tokenizer-produced pad mask.
+
+    ``pad_mask`` must be a (B, T) int64/bool tensor where 1 = real token,
+    0 = pad. The returned (B, k+T) mask keeps padding zeros in-place.
+    """
+    batch_size = pad_mask.shape[0]
+    prefix = torch.ones(batch_size, num_prefix, dtype=pad_mask.dtype, device=pad_mask.device)
+    return torch.cat([prefix, pad_mask], dim=1)

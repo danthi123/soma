@@ -1,7 +1,12 @@
 import torch
 from torch import nn
 
-from soma.io.chat_head import ChatHead
+from soma.io.chat_head import (
+    ChatHead,
+    build_attention_mask,
+    build_attention_mask_from_pad,
+    build_position_ids,
+)
 
 
 class _TinyCausalLM(nn.Module):
@@ -91,3 +96,24 @@ def test_chat_head_generate_decodes_to_text():
     # Mock tokenizer decodes one char per token id. 5 tokens → 5 chars.
     # Proves the decode path actually ran rather than returning "".
     assert len(text) == 5
+
+
+def test_position_ids_cover_prefix_plus_tokens():
+    ids = build_position_ids(num_prefix=4, num_tokens=7, batch_size=2)
+    assert ids.shape == (2, 11)
+    assert torch.all(ids[0] == torch.arange(11))
+    assert torch.all(ids[1] == torch.arange(11))
+
+
+def test_attention_mask_ones_for_prefix_and_tokens():
+    mask = build_attention_mask(num_prefix=4, num_tokens=7, batch_size=1)
+    assert mask.shape == (1, 11)
+    assert torch.all(mask == 1)
+
+
+def test_attention_mask_zero_for_padded_tokens():
+    pad_mask = torch.tensor([[1, 1, 1, 0, 0]])  # 3 real + 2 pad
+    mask = build_attention_mask_from_pad(num_prefix=4, pad_mask=pad_mask)
+    assert mask.shape == (1, 9)
+    assert torch.all(mask[0, :4] == 1)
+    assert torch.all(mask[0, 4:] == pad_mask[0])

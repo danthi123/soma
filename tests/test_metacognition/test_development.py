@@ -154,3 +154,47 @@ class TestDevelopmentSchedule:
         sched = DevelopmentSchedule()
         with pytest.raises(ValueError, match="step"):
             sched.get_plasticity_multiplier(step=-1, node_type=NodeType.SENSOR)
+
+
+def test_development_schedule_round_trip() -> None:
+    """to_dict / from_dict preserves every CriticalPeriod field exactly.
+
+    Guards against silent drift if ``_default_periods()`` is edited after a
+    checkpoint is written: the saved schedule must be restored verbatim.
+    """
+    orig = DevelopmentSchedule()
+    d = orig.to_dict()
+    loaded = DevelopmentSchedule()
+    loaded.from_dict(d)
+    assert len(loaded.periods) == len(orig.periods)
+    for a, b in zip(orig.periods, loaded.periods, strict=True):
+        assert a.name == b.name
+        assert a.start_step == b.start_step
+        assert a.peak_step == b.peak_step
+        assert a.end_step == b.end_step
+        assert a.affected_node_types == b.affected_node_types
+        assert a.plasticity_multiplier == b.plasticity_multiplier
+        assert a.synaptogenesis_multiplier == b.synaptogenesis_multiplier
+
+
+def test_development_schedule_round_trip_custom_periods() -> None:
+    """Round-trip preserves custom (non-default) periods too."""
+    custom = (
+        CriticalPeriod(
+            name="custom_a",
+            start_step=10,
+            peak_step=20,
+            end_step=30,
+            affected_node_types=(NodeType.ASSOCIATOR, NodeType.INTEGRATOR),
+            plasticity_multiplier=4.0,
+            synaptogenesis_multiplier=2.5,
+        ),
+    )
+    orig = DevelopmentSchedule(periods=custom)
+    loaded = DevelopmentSchedule()
+    loaded.from_dict(orig.to_dict())
+    assert loaded.periods == orig.periods
+    # Ensure functional equivalence: multipliers match at mid-window.
+    assert loaded.get_plasticity_multiplier(
+        step=20, node_type=NodeType.ASSOCIATOR
+    ) == orig.get_plasticity_multiplier(step=20, node_type=NodeType.ASSOCIATOR)

@@ -17,6 +17,7 @@ step and node type.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 from soma.core.node import NodeType
 
@@ -128,6 +129,48 @@ class DevelopmentSchedule:
     def active_periods(self, step: int) -> list[CriticalPeriod]:
         """Return all periods that overlap ``step`` for any node type."""
         return [p for p in self.periods if p.start_step <= step <= p.end_step]
+
+    # ------------------------------------------------------------------
+    # Serialization
+    # ------------------------------------------------------------------
+    def to_dict(self) -> list[dict[str, Any]]:
+        """Serialize ``self.periods`` to a list of plain dicts.
+
+        ``NodeType`` enums are emitted as their string ``.value`` so the
+        payload is JSON-safe and survives torch.save + migrator round-trips
+        without depending on enum identity being preserved.
+        """
+        return [
+            {
+                "name": p.name,
+                "start_step": p.start_step,
+                "peak_step": p.peak_step,
+                "end_step": p.end_step,
+                "affected_node_types": [nt.value for nt in p.affected_node_types],
+                "plasticity_multiplier": p.plasticity_multiplier,
+                "synaptogenesis_multiplier": p.synaptogenesis_multiplier,
+            }
+            for p in self.periods
+        ]
+
+    def from_dict(self, data: list[dict[str, Any]]) -> None:
+        """Replace ``self.periods`` from a list produced by :meth:`to_dict`.
+
+        Rebuilds each ``CriticalPeriod`` (re-running ``__post_init__``
+        validation) and restores the tuple shape.
+        """
+        self.periods = tuple(
+            CriticalPeriod(
+                name=str(p["name"]),
+                start_step=int(p["start_step"]),
+                peak_step=int(p["peak_step"]),
+                end_step=int(p["end_step"]),
+                affected_node_types=tuple(NodeType(v) for v in p["affected_node_types"]),
+                plasticity_multiplier=float(p["plasticity_multiplier"]),
+                synaptogenesis_multiplier=float(p["synaptogenesis_multiplier"]),
+            )
+            for p in data
+        )
 
     # ------------------------------------------------------------------
     # Internal

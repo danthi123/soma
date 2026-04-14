@@ -571,6 +571,7 @@ class SOMA:
             "curiosity_state_dict": self.curiosity.state_dict(),
             "curiosity_histories": self.curiosity.to_dict(),
             "homeostasis": self.homeostasis.state_dict(),
+            "development": self.development.to_dict(),
             "config": self.config.to_dict(),
             "last_curiosity": self.last_curiosity,
         }
@@ -612,4 +613,9 @@ class SOMA:
         self.curiosity.load_state_dict(state["curiosity_state_dict"])
         self.curiosity.load_histories(state["curiosity_histories"])
         self.homeostasis.load_state_dict(state["homeostasis"])
+        # ``development`` was added in brain-bundle Task 7. Older checkpoints
+        # omit it — keep the constructor's default schedule in that case so
+        # the migrator doesn't have to invent a payload.
+        if "development" in state:
+            self.development.from_dict(state["development"])
         self.last_curiosity = float(state["last_curiosity"])

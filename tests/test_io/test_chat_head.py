@@ -66,3 +66,25 @@ def test_chat_head_stores_model_and_tokenizer():
 def test_chat_head_exposes_hidden_size():
     head = ChatHead(model=_TinyCausalLM(d_model=16), tokenizer=_TinyTokenizer())
     assert head.hidden_size == 16
+
+
+def test_chat_head_generate_takes_inputs_embeds():
+    head = ChatHead(model=_TinyCausalLM(), tokenizer=_TinyTokenizer())
+    inputs_embeds = torch.randn(1, 5, 16)
+    attention_mask = torch.ones(1, 5, dtype=torch.long)
+    out = head.generate(
+        inputs_embeds=inputs_embeds,
+        attention_mask=attention_mask,
+        max_new_tokens=3,
+    )
+    assert out.shape == (1, 3)
+
+
+def test_chat_head_generate_decodes_to_text():
+    head = ChatHead(model=_TinyCausalLM(), tokenizer=_TinyTokenizer())
+    text = head.generate_text(
+        inputs_embeds=torch.randn(1, 4, 16),
+        attention_mask=torch.ones(1, 4, dtype=torch.long),
+        max_new_tokens=5,
+    )
+    assert isinstance(text, str)

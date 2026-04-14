@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import warnings
 from pathlib import Path
 
 import pytest
@@ -52,9 +53,17 @@ class TestFromDict:
         # Unchanged fields keep defaults.
         assert config.hebbian_lr == pytest.approx(0.0001)
 
-    def test_rejects_unknown_keys(self) -> None:
-        with pytest.raises(ValueError, match="Unknown SOMAConfig fields"):
-            SOMAConfig.from_dict({"this_is_not_a_real_field": 1})
+    def test_drops_unknown_keys_with_warning(self) -> None:
+        """Unknown keys (e.g. from older/newer checkpoints) warn, not crash."""
+        d = SOMAConfig().to_dict()
+        d["totally_new_field_from_future"] = 42
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            cfg = SOMAConfig.from_dict(d)
+        # Sanity: still constructs.
+        assert cfg.seed == SOMAConfig().seed
+        # Warning was emitted naming the bad key.
+        assert any("totally_new_field_from_future" in str(msg.message) for msg in w)
 
     def test_accepts_empty_dict(self) -> None:
         config = SOMAConfig.from_dict({})

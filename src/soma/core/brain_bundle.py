@@ -7,7 +7,8 @@ raw state. This lets future SOMA versions detect and migrate old brains.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+import warnings
+from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
 from typing import Any
 
@@ -40,3 +41,46 @@ def unwrap_payload(wrapped: Mapping[str, Any]) -> tuple[dict[str, Any], dict[str
         raise ValueError("Not a SOMA brain bundle (missing 'format' tag)")
     meta = {k: v for k, v in wrapped.items() if k != "payload"}
     return dict(wrapped["payload"]), meta
+
+
+class MigrationError(RuntimeError):
+    pass
+
+
+Migrator = Callable[[dict[str, Any]], dict[str, Any]]
+
+_MIGRATORS: dict[tuple[int, int], Migrator] = {}
+
+
+def register_migrator(from_schema: int, to_schema: int) -> Callable[[Migrator], Migrator]:
+    def deco(fn: Migrator) -> Migrator:
+        _MIGRATORS[(from_schema, to_schema)] = fn
+        return fn
+
+    return deco
+
+
+@register_migrator(0, 1)
+def _migrate_0_to_1(payload: dict[str, Any]) -> dict[str, Any]:
+    warnings.warn(
+        "Loading pre-v1 SOMA checkpoint. Upgrading in place to schema v1. "
+        "Re-save to persist the upgrade.",
+        stacklevel=2,
+    )
+    return payload  # No structural change in 0→1; just gain the envelope.
+
+
+def migrate_payload(payload: dict[str, Any], *, from_schema: int) -> tuple[dict[str, Any], int]:
+    if from_schema > SCHEMA_VERSION:
+        raise MigrationError(
+            f"Checkpoint schema v{from_schema} is newer than this SOMA "
+            f"(supports up to v{SCHEMA_VERSION}). Upgrade SOMA to load."
+        )
+    current = from_schema
+    while current < SCHEMA_VERSION:
+        step = _MIGRATORS.get((current, current + 1))
+        if step is None:
+            raise MigrationError(f"No migrator from schema v{current} to v{current + 1}")
+        payload = step(payload)
+        current += 1
+    return payload, current

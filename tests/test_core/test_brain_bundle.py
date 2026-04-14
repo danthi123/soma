@@ -1,4 +1,12 @@
-from soma.core.brain_bundle import SCHEMA_VERSION, unwrap_payload, wrap_payload
+import pytest
+
+from soma.core.brain_bundle import (
+    SCHEMA_VERSION,
+    MigrationError,
+    migrate_payload,
+    unwrap_payload,
+    wrap_payload,
+)
 
 
 def test_wrap_adds_schema_version_and_metadata():
@@ -20,3 +28,27 @@ def test_unwrap_returns_payload_and_metadata():
     assert payload == {"x": 1}
     assert meta["schema_version"] == SCHEMA_VERSION
     assert meta["soma_version"] == "0.1.0"
+
+
+def test_migrate_identity_for_current_version():
+    payload = {"x": 1}
+    wrapped = wrap_payload(payload, soma_version="0.1.0")
+    migrated, final_version = migrate_payload(wrapped["payload"], from_schema=SCHEMA_VERSION)
+    assert migrated == payload
+    assert final_version == SCHEMA_VERSION
+
+
+def test_migrate_rejects_unknown_future_version():
+    with pytest.raises(MigrationError):
+        migrate_payload({}, from_schema=99)
+
+
+def test_migrate_legacy_schema_zero_wraps_as_payload():
+    """A pre-versioned checkpoint (old single-file format) enters the migrator
+    with from_schema=0 — identity-wrap, warn, upgrade to v1."""
+    legacy = {"global_step": 100, "graph": {}, "config": {}}
+    migrated, final_version = migrate_payload(legacy, from_schema=0)
+    assert final_version == SCHEMA_VERSION
+    # Assert nothing is lost
+    for key in legacy:
+        assert key in migrated

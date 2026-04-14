@@ -205,3 +205,35 @@ def test_aggregator_rejects_wrong_dim():
     acts = {"a": torch.ones(64)}
     with pytest.raises(ValueError, match="expected dim"):
         SomaAggregator.collapse(acts, soma_output_dim=128)
+
+
+class _StubTextDecoder:
+    """Stub mirroring the subset of TextDecoder the fallback calls."""
+
+    def __init__(self) -> None:
+        self.calls: list[torch.Tensor] = []
+
+    def decode_sequence(self, activations: torch.Tensor) -> str:
+        self.calls.append(activations)
+        return f"stub-decoded:shape={tuple(activations.shape)}"
+
+
+class _StubSOMA:
+    def __init__(self) -> None:
+        self.text_decoder = _StubTextDecoder()
+
+
+def test_fallback_text_delegates_to_soma_text_decoder():
+    spec = VerbalizerSpec(
+        soma_output_dim=128,
+        llm_name="smoke",
+        llm_hidden_dim=960,
+        num_prefix_tokens=8,
+    )
+    v = SomaVerbalizer(spec)
+    soma = _StubSOMA()
+    acts = torch.randn(4, 128)
+    out = v.fallback_text(soma, acts)
+    assert out.startswith("stub-decoded:")
+    assert len(soma.text_decoder.calls) == 1
+    assert soma.text_decoder.calls[0] is acts  # no copy

@@ -12,7 +12,7 @@ from __future__ import annotations
 import json
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 import torch
 from torch import nn
@@ -103,6 +103,15 @@ class SomaVerbalizer(nn.Module):
             self.spec.llm_hidden_dim,
         )
         return cast(torch.Tensor, prefix)
+
+    def fallback_text(self, soma: Any, activations: torch.Tensor) -> str:
+        """Delegate to ``soma.text_decoder.decode_sequence``.
+
+        Used when no LLM is loaded (embedded, offline, debug). The verbalizer
+        does NOT duplicate TextDecoder logic — it just routes through so
+        callers have one consistent "give me text" API.
+        """
+        return cast(str, soma.text_decoder.decode_sequence(activations))
 
     def save(self, path: Path | str) -> None:
         """Save verbalizer as a directory: spec.json + weights.pt."""

@@ -1257,3 +1257,21 @@ but that's a separate refinement for later.
 38 commits all pushed.
 | 1776170933 | 710K | 0.0201 | 20.710 | 34/137 | null | no change — stable plateau, growth levers exhausted in auto scope |
 | 1776173148 | 2026-04-14T13:28:54Z | 745000 | no_change | loss_ema=0.01686 curiosity=0.00182 nodes=34 edges=140 | plateau stable, neurogenesis levers exhausted in auto scope |
+
+---
+
+## 2026-04-14 ~09:29 UTC — step 748K: service held an hour, no auto-reverts
+
+pid 27096 survived the full hour uninterrupted. No new auto-landed config
+changes — ticks have settled into `no_change` outcomes. Heldout pinned at
+0.020 (dead flat since the merge), edges 133 → 140 (+7 across 60K steps,
+linear growth held), loss_ema 0.0168-0.0174. Decoder vocabulary still
+slowly broadening ("whiles", "deed", "language", "aspect" new this hour).
+
+35 commits pushed. Tick Claude has correctly identified that the autonomous
+growth-pathway levers it can reach (consolidation_error_threshold,
+neurogenesis_threshold) aren't sufficient to break the plateau and has
+stopped proposing new changes. This is the expected terminal state for
+the autonomous monitoring phase — further progress requires operator-
+scoped design decisions (loss signal MSE→CE, seed topology, or moving
+to Stage 5 multimodal).

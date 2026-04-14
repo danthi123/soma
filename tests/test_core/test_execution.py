@@ -576,3 +576,168 @@ class TestBatchedExecutorScaffold:
         assert set(out_seq.keys()) == set(out_bat.keys())
         for k in out_seq:
             assert torch.allclose(out_seq[k], out_bat[k], atol=1e-5, rtol=1e-5)
+
+
+class TestBatchedExecutorParity:
+    @staticmethod
+    def _make_graph(config: SOMAConfig, seed: int = 0) -> Graph:
+        torch.manual_seed(seed)
+        g = Graph()
+        dim = config.sensor_output_dim
+        s = Node(NodeType.SENSOR, dim, dim * 2, dim, 0, config)
+        a1 = Node(NodeType.ASSOCIATOR, dim, dim * 2, dim, 0, config)
+        a2 = Node(NodeType.ASSOCIATOR, dim, dim * 2, dim, 0, config)
+        a3 = Node(NodeType.ASSOCIATOR, dim, dim * 2, dim, 0, config)
+        # Different-shape integrator to force a second bucket in its wave.
+        integ = Node(NodeType.INTEGRATOR, dim, dim * 4, dim * 2, 0, config)
+        out = Node(NodeType.OUTPUT, dim, dim * 2, dim, 0, config)
+        g.add_node(s, modality="text")
+        for n in (a1, a2, a3, integ):
+            g.add_node(n)
+        g.add_node(out, modality="text")
+        edges = [
+            (s, a1), (s, a2), (s, a3),
+            (s, integ),
+            (a1, out), (a2, out), (a3, out),
+        ]
+        for src, tgt in edges:
+            g.add_edge(
+                Edge(
+                    source_id=src.id,
+                    target_id=tgt.id,
+                    source_output_dim=src.output_dim,
+                    target_input_dim=tgt.input_dim,
+                    creation_step=0,
+                    initial_weight=0.5,
+                )
+            )
+        return g
+
+    def test_batched_body_not_delegating(self) -> None:
+        """Ensure the batched executor has a real body, not just a delegate.
+
+        This is the concrete RED for Task 7 — it fails while
+        execute_graph_batched is still a one-line wrapper around
+        execute_graph and passes once we wire the real wave-by-wave
+        implementation.
+        """
+        import inspect
+        from soma.core import execution
+
+        src = inspect.getsource(execution.execute_graph_batched)
+        assert "compute_wave_layers" in src, (
+            "execute_graph_batched still delegates; Task 7 must replace the body"
+        )
+
+    def test_batched_equals_sequential_outputs(self, config: SOMAConfig) -> None:
+        g1 = self._make_graph(config, seed=123)
+        g2 = copy.deepcopy(g1)
+        data = torch.randn(config.sensor_output_dim)
+        seq_out, seq_act = execute_graph(
+            g1, inputs={"text": data}, current_step=1
+        )
+        bat_out, bat_act = execute_graph_batched(
+            g2, inputs={"text": data}, current_step=1
+        )
+        assert set(seq_out.keys()) == set(bat_out.keys())
+        for k in seq_out:
+            assert torch.allclose(seq_out[k], bat_out[k], atol=1e-5, rtol=1e-5), (
+                f"Output {k!r} diverges: max diff "
+                f"{(seq_out[k] - bat_out[k]).abs().max().item()}"
+            )
+        assert set(seq_act.keys()) == set(bat_act.keys())
+
+    def test_batched_equals_sequential_gradients(self, config: SOMAConfig) -> None:
+        g1 = self._make_graph(config, seed=7)
+        g2 = copy.deepcopy(g1)
+        data = torch.randn(config.sensor_output_dim)
+        out_seq, _ = execute_graph(g1, inputs={"text": data}, current_step=1)
+        out_bat, _ = execute_graph_batched(g2, inputs={"text": data}, current_step=1)
+        out_seq["text"].sum().backward()
+        out_bat["text"].sum().backward()
+        for nid in g1.nodes:
+            n1 = g1.nodes[nid]
+            n2 = g2.nodes[nid]
+            if n1.node_type is NodeType.SENSOR:
+                continue
+            for pname in (
+                "linear1.weight",
+                "linear1.bias",
+                "linear2.weight",
+                "linear2.bias",
+            ):
+                p1 = dict(n1.named_parameters())[pname].grad
+                p2 = dict(n2.named_parameters())[pname].grad
+                if p1 is None and p2 is None:
+                    continue
+                assert p1 is not None and p2 is not None, (
+                    f"grad presence mismatch on {nid[:8]}.{pname}"
+                )
+                assert torch.allclose(p1, p2, atol=1e-5, rtol=1e-5), (
+                    f"Gradient diverges on {nid[:8]}.{pname}: "
+                    f"max diff {(p1 - p2).abs().max().item()}"
+                )
+
+    def test_batched_preserves_per_node_state(self, config: SOMAConfig) -> None:
+        g1 = self._make_graph(config, seed=11)
+        g2 = copy.deepcopy(g1)
+        data = torch.randn(config.sensor_output_dim)
+        execute_graph(g1, inputs={"text": data}, current_step=42)
+        execute_graph_batched(g2, inputs={"text": data}, current_step=42)
+        for nid in g1.nodes:
+            n1 = g1.nodes[nid]
+            n2 = g2.nodes[nid]
+            assert n1.last_active_step == n2.last_active_step
+            assert n1.activation_ema == pytest.approx(
+                n2.activation_ema, rel=1e-6, abs=1e-9
+            )
+            assert n1.activation_history.to_list() == pytest.approx(
+                n2.activation_history.to_list(), rel=1e-6, abs=1e-9
+            )
+
+    def test_batched_handles_back_edges(self, config: SOMAConfig) -> None:
+        def build() -> Graph:
+            torch.manual_seed(99)
+            g = Graph()
+            dim = config.sensor_output_dim
+            s = Node(NodeType.SENSOR, dim, dim * 2, dim, 0, config)
+            a = Node(NodeType.ASSOCIATOR, dim, dim * 2, dim, 0, config)
+            b = Node(NodeType.ASSOCIATOR, dim, dim * 2, dim, 0, config)
+            o = Node(NodeType.OUTPUT, dim, dim * 2, dim, 0, config)
+            g.add_node(s, modality="text")
+            g.add_node(a)
+            g.add_node(b)
+            g.add_node(o, modality="text")
+            for src, tgt in [(s, a), (a, b), (b, o), (b, a)]:
+                g.add_edge(
+                    Edge(
+                        source_id=src.id,
+                        target_id=tgt.id,
+                        source_output_dim=dim,
+                        target_input_dim=dim,
+                        creation_step=0,
+                        initial_weight=1.0,
+                    )
+                )
+            return g
+
+        g1 = build()
+        g2 = copy.deepcopy(g1)
+        data = torch.ones(config.sensor_output_dim)
+        _, prev_seq = execute_graph(g1, inputs={"text": data}, current_step=1)
+        _, prev_bat = execute_graph_batched(
+            g2, inputs={"text": data}, current_step=1
+        )
+        out_seq, _ = execute_graph(
+            g1,
+            inputs={"text": data},
+            current_step=2,
+            previous_activations=prev_seq,
+        )
+        out_bat, _ = execute_graph_batched(
+            g2,
+            inputs={"text": data},
+            current_step=2,
+            previous_activations=prev_bat,
+        )
+        assert torch.allclose(out_seq["text"], out_bat["text"], atol=1e-5, rtol=1e-5)

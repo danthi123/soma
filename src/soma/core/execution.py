@@ -217,18 +217,55 @@ def execute_graph_batched(
     previous_activations: Mapping[str, torch.Tensor] | None = None,
     record_edge_activity: bool = True,
 ) -> tuple[dict[str, torch.Tensor], dict[str, torch.Tensor]]:
-    """Batched variant of :func:`execute_graph`.
+    """Wave-batched variant of :func:`execute_graph`.
 
-    Currently delegates to the sequential path. Subsequent tasks replace
-    the body with wave-grouped batched matmuls.
+    Produces outputs and activations equal-up-to-float-reassociation
+    (atol=1e-5) to the sequential executor. Batches the per-node MLP
+    kernels by shape within each topological wave to collapse ~N kernel
+    launches per wave into ~4 (W1 matmul + bias, GELU, W2 matmul + bias).
+
+    Parameter documentation matches :func:`execute_graph` verbatim.
     """
-    return execute_graph(
-        graph,
-        inputs,
-        current_step,
-        previous_activations=previous_activations,
-        record_edge_activity=record_edge_activity,
-    )
+    _inject_sensor_inputs(graph, inputs)
+
+    _, back_edges = topological_sort(graph)
+    waves = compute_wave_layers(graph)
+    prev: Mapping[str, torch.Tensor] = previous_activations or {}
+    activations: dict[str, torch.Tensor] = {}
+
+    for wave in waves:
+        # 1. Sensor nodes in this wave: forward each one sequentially
+        # (their forward is just "return injected input"; no MLP).
+        for node_id in wave:
+            node = graph.nodes[node_id]
+            if node.node_type is NodeType.SENSOR:
+                activations[node_id] = node.forward({}, current_step)
+
+        # 2. Non-sensor nodes: bucket by shape, batch per bucket.
+        buckets = bucket_wave_by_shape(graph, wave)
+        for bucket_ids in buckets.values():
+            bucket_nodes = [graph.nodes[nid] for nid in bucket_ids]
+            x, active_nodes = _aggregate_bucket_inputs(
+                graph=graph,
+                nodes=bucket_nodes,
+                activations=activations,
+                previous_activations=prev,
+                back_edges=back_edges,
+                current_step=current_step,
+                record_edge_activity=record_edge_activity,
+            )
+            if not active_nodes:
+                continue
+            y = _batched_node_forward(active_nodes, x)
+            # Unbind so each node's activation is its own tensor —
+            # downstream loss.backward() can then route gradients freely.
+            y_rows = torch.unbind(y, dim=0)
+            for node, row in zip(active_nodes, y_rows, strict=True):
+                activations[node.id] = row
+            _record_batched_activations(active_nodes, y, current_step)
+
+    outputs = _collect_outputs(graph, activations)
+    return outputs, activations
 
 
 # ----------------------------------------------------------------------

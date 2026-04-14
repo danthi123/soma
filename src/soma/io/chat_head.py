@@ -78,11 +78,12 @@ class ChatHead:
 def build_position_ids(*, num_prefix: int, num_tokens: int, batch_size: int) -> torch.Tensor:
     """Produce [0..k+T-1] positions per batch row for prefix+tokens layout.
 
-    Prefix occupies positions 0..k-1; user tokens occupy k..k+T-1.
-    RoPE-friendly: the usual contiguous arange the LLM expects.
+    Prefix occupies positions 0..k-1; user tokens occupy k..k+T-1. Returned
+    tensor is contiguous (not a strided view) so HF paths that internally
+    ``.view(...)`` on ``position_ids`` stay happy.
     """
     seq_len = num_prefix + num_tokens
-    return torch.arange(seq_len).unsqueeze(0).expand(batch_size, -1)
+    return torch.arange(seq_len, dtype=torch.long).unsqueeze(0).expand(batch_size, -1).contiguous()
 
 
 def build_attention_mask(*, num_prefix: int, num_tokens: int, batch_size: int) -> torch.Tensor:

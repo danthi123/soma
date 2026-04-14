@@ -1015,3 +1015,30 @@ across prompts") at some point — not urgent.
 Service pid 127076 at step 408K, running stable. 29 commits pending push.
 
 | 1776150952 | 435000 | 0.01899 | 0.01893 | 20.24 | 34/90 | no_change | healthy — heldout plateau broken, edges growing |
+
+---
+
+## 2026-04-14 ~03:53 UTC — step 479K: growth steady, diversity dip borderline
+
+At step 479K (heartbeat), edge count 99 (up from 82 at 395K). Tick 1776150952
+at step 435K:
+
+| metric                      | 395K      | 435K      | 475K (inspect) |
+|-----------------------------|-----------|-----------|----------------|
+| heldout_loss                | 0.01885   | 0.01893   | —              |
+| loss_ema_500                | 0.0197    | 0.0190    | —              |
+| output KL                   | 20.71     | **20.24** | —              |
+| edges                       | 82        | 90        | 99             |
+| tick-chat unique words      | 6         | 4         | —              |
+
+Edge growth linear: ~0.25 edges per 1K steps, avg_degree 99/34 ≈ 2.9
+(vs max_edges_per_node cap of 20). Well under congestion pruning.
+
+KL improvement (−0.47) contradicts collapse worry: if the decoder were
+narrowing onto one token, KL to corpus would rise. Lower KL means the
+output distribution is moving toward corpus frequency. The 6→4 dip is
+the model emitting fewer, more common corpus words — a different shape,
+not strictly worse.
+
+Not intervening. Stable cadence continues. If unique words drop <3 AND
+KL reverses upward, will tighten synaptogenesis_rate. 30 commits pending.

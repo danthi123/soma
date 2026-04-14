@@ -867,3 +867,13 @@ or raise synaptogenesis_rate back to 0.01 so the graph can actually
 grow capacity. Flagging for the next check.
 
 25 commits pending push.
+
+### tick 1776130966 — step 200K — no change
+
+- **loss_ema_500:** 0.01565 (−9.2% vs baseline)
+- **heldout_loss:** 0.02373 (+23.2% vs baseline) — overfit trend continues
+- **graph:** 34 nodes / 64 edges — static (0 growth events last 1K steps)
+- **wm_occupancy:** 0.0 (was 1.0 at baseline)
+- **KL:** 20.71 (plateau since step 45K)
+- **Decision:** no change. Overfit mild in absolute terms (perplexity 1.024).
+  Impactful interventions all touch carveout paths. Collecting more data.

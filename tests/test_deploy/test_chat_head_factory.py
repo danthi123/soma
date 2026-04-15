@@ -112,3 +112,166 @@ def test_build_chat_head_returns_chathead_on_happy_path(
     assert head.hidden_size == 1536
     for p in head.model.parameters():
         assert not p.requires_grad, "ChatHead must freeze all base-model params"
+
+
+# ----- quantization rejection paths ----------------------------------------
+
+
+def test_build_chat_head_quantization_rejects_cpu() -> None:
+    """int4 / int8 on CPU is a ValueError before any HF download is attempted."""
+    from soma.deploy.chat_head_factory import build_chat_head
+
+    for q in ("int4", "int8"):
+        with pytest.raises(ValueError, match="CUDA"):
+            build_chat_head(
+                tier="small",
+                device=torch.device("cpu"),
+                dtype=torch.float16,
+                quantization=q,  # type: ignore[arg-type]
+            )
+
+
+def test_build_chat_head_quantization_without_bitsandbytes_raises_int4(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When bnb is missing, int4 raises ImportError with the install hint."""
+    import soma.deploy.chat_head_factory as mod
+    from soma.deploy.chat_head_factory import build_chat_head
+
+    monkeypatch.setattr(mod, "_HAS_BITSANDBYTES", False)
+    with pytest.raises(ImportError, match=r"bitsandbytes.*\[quant\]"):
+        build_chat_head(
+            tier="small",
+            device=torch.device("cuda"),
+            dtype=torch.float16,
+            quantization="int4",
+        )
+
+
+def test_build_chat_head_quantization_without_bitsandbytes_raises_int8(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When bnb is missing, int8 raises ImportError with the install hint."""
+    import soma.deploy.chat_head_factory as mod
+    from soma.deploy.chat_head_factory import build_chat_head
+
+    monkeypatch.setattr(mod, "_HAS_BITSANDBYTES", False)
+    with pytest.raises(ImportError, match=r"bitsandbytes.*\[quant\]"):
+        build_chat_head(
+            tier="small",
+            device=torch.device("cuda"),
+            dtype=torch.float16,
+            quantization="int8",
+        )
+
+
+# ----- quantization config-passing -----------------------------------------
+
+
+def _patch_hf_capturing(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    hidden_size: int,
+    captured_kwargs: dict[str, Any],
+) -> None:
+    """Patch HF + presence flag; capture kwargs the factory passes to from_pretrained.
+
+    Lets quantisation tests inspect the ``quantization_config`` and
+    ``device_map`` that the factory hands to ``AutoModelForCausalLM`` without
+    requiring real bitsandbytes wheels at test time.
+    """
+
+    class _FakeAutoModel:
+        @staticmethod
+        def from_pretrained(name: str, **kw: Any) -> _MockAutoModel:
+            captured_kwargs.update(kw)
+            return _MockAutoModel(hidden_size=hidden_size)
+
+    class _FakeAutoTokenizer:
+        @staticmethod
+        def from_pretrained(name: str, **kw: Any) -> _MockAutoTokenizer:
+            return _MockAutoTokenizer()
+
+    import soma.deploy.chat_head_factory as mod
+
+    monkeypatch.setattr(mod, "AutoModelForCausalLM", _FakeAutoModel)
+    monkeypatch.setattr(mod, "AutoTokenizer", _FakeAutoTokenizer)
+    monkeypatch.setattr(mod, "_HAS_BITSANDBYTES", True)
+
+
+def test_build_chat_head_quantization_int4_passes_config_to_from_pretrained(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """int4 path constructs an nf4 BitsAndBytesConfig and passes it via kwargs."""
+    pytest.importorskip("transformers")
+    from transformers import BitsAndBytesConfig
+
+    from soma.deploy.chat_head_factory import build_chat_head
+
+    captured: dict[str, Any] = {}
+    _patch_hf_capturing(monkeypatch, hidden_size=1536, captured_kwargs=captured)
+
+    head = build_chat_head(
+        tier="small",
+        device=torch.device("cuda"),
+        dtype=torch.float16,
+        quantization="int4",
+    )
+
+    assert isinstance(head, ChatHead)
+    qcfg = captured.get("quantization_config")
+    assert isinstance(qcfg, BitsAndBytesConfig)
+    assert qcfg.load_in_4bit is True
+    assert qcfg.bnb_4bit_quant_type == "nf4"
+    assert qcfg.bnb_4bit_use_double_quant is True
+    assert qcfg.bnb_4bit_compute_dtype == torch.float16
+    # device_map pins to single CUDA device (not "auto" sharding).
+    assert captured.get("device_map") == {"": "cuda"}
+
+
+def test_build_chat_head_quantization_int8_passes_config_to_from_pretrained(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """int8 path constructs a load_in_8bit BitsAndBytesConfig and passes it."""
+    pytest.importorskip("transformers")
+    from transformers import BitsAndBytesConfig
+
+    from soma.deploy.chat_head_factory import build_chat_head
+
+    captured: dict[str, Any] = {}
+    _patch_hf_capturing(monkeypatch, hidden_size=1536, captured_kwargs=captured)
+
+    build_chat_head(
+        tier="small",
+        device=torch.device("cuda"),
+        dtype=torch.float16,
+        quantization="int8",
+    )
+
+    qcfg = captured.get("quantization_config")
+    assert isinstance(qcfg, BitsAndBytesConfig)
+    assert qcfg.load_in_8bit is True
+    assert captured.get("device_map") == {"": "cuda"}
+
+
+def test_build_chat_head_quantization_none_does_not_set_quant_kwargs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Default quantization='none' must NOT inject quantization_config or device_map.
+
+    Guards against a future regression where the bnb branch leaks into the
+    fp16 path -- the existing fp16 ChatHead behaviour must stay byte-identical.
+    """
+    from soma.deploy.chat_head_factory import build_chat_head
+
+    captured: dict[str, Any] = {}
+    _patch_hf_capturing(monkeypatch, hidden_size=1536, captured_kwargs=captured)
+
+    build_chat_head(
+        tier="small",
+        device=torch.device("cpu"),
+        dtype=torch.float32,
+    )
+
+    assert "quantization_config" not in captured
+    assert "device_map" not in captured

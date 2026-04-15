@@ -46,6 +46,13 @@ dev-chat = [
     "accelerate>=0.30",
     "safetensors>=0.4",
 ]
+quant = [
+    # bitsandbytes provides int4/int8 weight quantization for HF causal LMs.
+    # Kept as an optional extra (NOT a hard dep) because Windows wheels have
+    # historically been flaky and CI/dev should not break when bnb is missing.
+    # See `docs/deployment.md` "Quantization (optional)" for usage.
+    "bitsandbytes>=0.43.0",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -84,5 +91,6 @@ module = [
     "transformers", "transformers.*",
     "accelerate", "accelerate.*",
     "safetensors", "safetensors.*",
+    "bitsandbytes", "bitsandbytes.*",
 ]
 ignore_missing_imports = true

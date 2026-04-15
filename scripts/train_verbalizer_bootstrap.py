@@ -189,6 +189,27 @@ def _build_parser() -> argparse.ArgumentParser:
             "the bootstrap loop when SOMA was the bottleneck."
         ),
     )
+    p.add_argument(
+        "--joint-soma",
+        action="store_true",
+        help=(
+            "Enable joint SOMA + verbalizer training: gradients from the LM "
+            "loss flow back through the prefix into SOMA's Node MLPs + Edge "
+            "weights. The ChatHead LLM stays frozen. Only the verbalizer's "
+            "projector is trained by default; this flag expands the scope."
+        ),
+    )
+    p.add_argument(
+        "--soma-lr",
+        type=float,
+        default=None,
+        help=(
+            "LR for SOMA's param-group in joint mode. Defaults to "
+            "config.verbalizer_lr * 0.01 — SOMA has ~200x more params than "
+            "the projector, so a small LR keeps its update magnitude "
+            "comparable on a per-param basis."
+        ),
+    )
     return p
 
 
@@ -343,6 +364,8 @@ def main() -> None:
         config=cfg,
         tokenizer=tokenizer,
         encoder=encoder,
+        joint_soma=args.joint_soma,
+        soma_lr=args.soma_lr,
     )
     if args.soma_max_tokens is not None:
         trainer.soma_max_tokens = args.soma_max_tokens

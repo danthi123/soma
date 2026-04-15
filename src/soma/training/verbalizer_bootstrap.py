@@ -8,6 +8,7 @@ contract — enforced at trainer init).
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import math
@@ -49,11 +50,23 @@ class VerbalizerTrainer:
         config: SOMAConfig,
         tokenizer: Any,
         encoder: Any,
+        joint_soma: bool = False,
+        soma_lr: float | None = None,
     ) -> None:
         self.soma = soma
         self.verbalizer = verbalizer
         self.chat_head = chat_head
         self.config = config
+        # Joint-training mode: gradients from the LM loss flow back through
+        # the verbalizer's prefix into SOMA. SOMA's params join a second
+        # optimiser param-group with a smaller LR so its graph can adapt
+        # toward useful-state-for-verbalization without being whiplashed by
+        # the verbalizer's LR (SOMA params are higher-dim MLPs + Edge
+        # weights, much more numerous than the projector).
+        self.joint_soma = joint_soma
+        self._soma_lr = (
+            soma_lr if soma_lr is not None else config.verbalizer_lr * 0.01
+        )
         # Tokenizer + encoder are plumbed here (rather than pulled off the
         # SOMA instance) because SOMA itself has no default .tokenizer /
         # .text_encoder attributes. Storing them underscore-prefixed to
@@ -73,13 +86,23 @@ class VerbalizerTrainer:
                 "requires_grad=False on every param) and do not unfreeze."
             )
 
-        # Adam on verbalizer only — SOMA has its own Hebbian learning path
-        # that runs inside soma.step(); that path must not be reached during
-        # bootstrap (text_to_state in T4 wraps soma.step in torch.no_grad).
-        self.optim = torch.optim.Adam(
-            self.verbalizer.parameters(),
-            lr=config.verbalizer_lr,
-        )
+        # Adam on verbalizer (frozen-SOMA contract) or verbalizer+SOMA
+        # (joint mode). In joint mode the caller must also have passed
+        # text_to_state with ``trainable=True`` so a real gradient arrives
+        # at SOMA's params. Otherwise SOMA params get registered in the
+        # optim but never receive gradient, wasting Adam state.
+        if self.joint_soma:
+            self.optim = torch.optim.Adam(
+                [
+                    {"params": self.verbalizer.parameters(), "lr": config.verbalizer_lr},
+                    {"params": list(self.soma.graph.parameters()), "lr": self._soma_lr},
+                ]
+            )
+        else:
+            self.optim = torch.optim.Adam(
+                self.verbalizer.parameters(),
+                lr=config.verbalizer_lr,
+            )
 
     def _step_loss(self, *, texts: list[str]) -> tuple[torch.Tensor, float]:
         """Forward pass: produce LM loss tensor + its scalar value for a batch.
@@ -107,6 +130,7 @@ class VerbalizerTrainer:
                 encoder=self._encoder,
                 soma_output_dim=self.verbalizer.spec.soma_output_dim,
                 max_tokens=self.soma_max_tokens,
+                trainable=self.joint_soma,
             )
             for t in texts
         ]
@@ -507,6 +531,7 @@ def text_to_state(
     encoder: Any,
     soma_output_dim: int,
     max_tokens: int | None = None,
+    trainable: bool = False,
 ) -> torch.Tensor:
     """Feed ``text`` through SOMA (no-grad) and return the pooled OUTPUT state.
 
@@ -564,7 +589,15 @@ def text_to_state(
     # strip position embeddings and drop any encoder-side truncation.
     del tokenizer
 
-    with torch.no_grad():
+    ctx: Any = contextlib.nullcontext() if trainable else torch.no_grad()
+    # When trainable=True, we need the *live* per-step outputs (with grad_fn
+    # pointing back into SOMA's params). ``_current_output_activations``
+    # reads ``Node.last_activation`` which was detached by the executor, so
+    # we can't use it for joint training — capture ``result["outputs"]``
+    # (modality -> live activation) off the last soma.step instead.
+    last_live_outputs: dict[str, torch.Tensor] | None = None
+
+    with ctx:
         embeddings = encoder.encode(text)  # list[Tensor(embed_dim,)]
         if max_tokens is not None and len(embeddings) > max_tokens:
             # Evenly-spaced subsample so SOMA sees coverage of the whole
@@ -578,10 +611,18 @@ def text_to_state(
             step = max(len(embeddings) // max_tokens, 1)
             embeddings = embeddings[::step][:max_tokens]
         for emb in embeddings:
-            soma.step(inputs={"text": emb}, eval_mode=True)
+            result = soma.step(inputs={"text": emb}, eval_mode=True)
+            if trainable:
+                last_live_outputs = result.get("outputs")
 
-    output_acts = soma._current_output_activations()
-    pooled = SomaAggregator.collapse(output_acts, soma_output_dim=soma_output_dim)
+    source_outputs = (
+        (last_live_outputs or {}) if trainable else soma._current_output_activations()
+    )
+    pooled = SomaAggregator.collapse(source_outputs, soma_output_dim=soma_output_dim)
+    if trainable:
+        # Joint-training caller will backward through this tensor into
+        # SOMA's Node MLPs + Edge weights. Do NOT detach.
+        return pooled
     # Defensive: collapse already detaches via view-on-detached inputs, but
     # belt-and-braces — the verbalizer grafts its own autograd graph on top
     # of this vector and we must not chain gradients back into SOMA.

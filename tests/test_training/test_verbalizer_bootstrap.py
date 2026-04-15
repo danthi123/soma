@@ -1062,6 +1062,142 @@ def test_eval_lm_loss_batched_matches_sequential():
     assert abs(batched - ref) < 1e-4, f"batched={batched:.6f} vs ref={ref:.6f}"
 
 
+# ---------------------------------------------------------------------------
+# Joint SOMA + verbalizer training
+# ---------------------------------------------------------------------------
+
+
+def test_text_to_state_trainable_returns_live_tensor(_t4_tokenizer: Any) -> None:
+    """With trainable=True, the returned state must carry a grad_fn back
+    into SOMA's params — the whole point of the joint-training path."""
+    cfg = _soma_cfg()
+    soma = SOMA(cfg, device=torch.device("cpu"))
+    tokenizer, encoder = _build_text_io(cfg, _t4_tokenizer)
+    state = text_to_state(
+        text="hello world",
+        soma=soma,
+        tokenizer=tokenizer,
+        encoder=encoder,
+        soma_output_dim=cfg.sensor_output_dim,
+        trainable=True,
+    )
+    assert state.requires_grad, "trainable state must require grad"
+    assert state.grad_fn is not None, "trainable state must carry grad_fn"
+
+
+def test_text_to_state_trainable_backprop_reaches_soma(_t4_tokenizer: Any) -> None:
+    """A backward through the trainable state must populate grads on at
+    least one SOMA parameter — proves the gradient chain actually lands."""
+    cfg = _soma_cfg()
+    soma = SOMA(cfg, device=torch.device("cpu"))
+    tokenizer, encoder = _build_text_io(cfg, _t4_tokenizer)
+    state = text_to_state(
+        text="hello world",
+        soma=soma,
+        tokenizer=tokenizer,
+        encoder=encoder,
+        soma_output_dim=cfg.sensor_output_dim,
+        trainable=True,
+    )
+    state.sum().backward()
+    with_grad = [p for p in soma.graph.parameters() if p.grad is not None]
+    assert len(with_grad) > 0, "no SOMA params received gradient — chain is broken"
+
+
+def test_text_to_state_default_still_detached(_t4_tokenizer: Any) -> None:
+    """Default call (trainable=False) preserves the frozen-SOMA contract."""
+    cfg = _soma_cfg()
+    soma = SOMA(cfg, device=torch.device("cpu"))
+    tokenizer, encoder = _build_text_io(cfg, _t4_tokenizer)
+    state = text_to_state(
+        text="hello world",
+        soma=soma,
+        tokenizer=tokenizer,
+        encoder=encoder,
+        soma_output_dim=cfg.sensor_output_dim,
+    )
+    assert not state.requires_grad
+    assert state.grad_fn is None
+
+
+def _joint_trainer(soma_lr: float | None = None) -> VerbalizerTrainer:
+    cfg = _soma_cfg()
+    soma = SOMA(cfg, device=torch.device("cpu"))
+    spec = VerbalizerSpec(
+        soma_output_dim=cfg.sensor_output_dim,
+        llm_name="mock",
+        llm_hidden_dim=16,
+        num_prefix_tokens=4,
+        proj_hidden_dim=16,
+    )
+    verbalizer = SomaVerbalizer(spec)
+    chat_head = ChatHead(
+        model=_TinyCausalLM(vocab=32, d_model=16),
+        tokenizer=_TinyTokenizer(),
+    )
+    encoder = TextEncoder(
+        _shared_bpe_tokenizer,
+        embed_dim=cfg.text_embed_dim,
+        max_seq_len=cfg.max_input_tokens,
+    )
+    return VerbalizerTrainer(
+        soma=soma,
+        verbalizer=verbalizer,
+        chat_head=chat_head,
+        config=cfg,
+        tokenizer=_shared_bpe_tokenizer,
+        encoder=encoder,
+        joint_soma=True,
+        soma_lr=soma_lr,
+    )
+
+
+def test_joint_trainer_optim_has_two_param_groups():
+    t = _joint_trainer()
+    assert len(t.optim.param_groups) == 2, "joint mode needs verbalizer + SOMA groups"
+    assert t.optim.param_groups[0]["lr"] == t.config.verbalizer_lr
+    assert t.optim.param_groups[1]["lr"] == t.config.verbalizer_lr * 0.01
+
+
+def test_joint_trainer_soma_lr_override():
+    t = _joint_trainer(soma_lr=5e-5)
+    assert t.optim.param_groups[1]["lr"] == 5e-5
+
+
+def test_joint_train_step_updates_soma_params():
+    """Load-bearing: one joint train_step must move at least one SOMA param."""
+    t = _joint_trainer(soma_lr=0.01)
+    soma_before = [p.detach().clone() for p in t.soma.graph.parameters()]
+    _ = t.train_step(text="hello world, this is a training sample")
+    soma_after = [p.detach().clone() for p in t.soma.graph.parameters()]
+    moved = sum(
+        1 for b, a in zip(soma_before, soma_after, strict=True) if not torch.equal(b, a)
+    )
+    assert moved > 0, "joint training did not move any SOMA param"
+
+
+def test_joint_train_step_does_not_unfreeze_chat_head():
+    """Joint mode trains verbalizer + SOMA; the LLM must still stay frozen."""
+    t = _joint_trainer()
+    before = [p.detach().clone() for p in t.chat_head.model.parameters()]
+    _ = t.train_step(text="hello world")
+    after = [p.detach().clone() for p in t.chat_head.model.parameters()]
+    for b, a in zip(before, after, strict=True):
+        assert torch.equal(b, a), "ChatHead drifted under joint training"
+
+
+def test_frozen_mode_soma_params_unchanged():
+    """Control: with joint_soma=False, SOMA params stay frozen."""
+    t = _fresh_trainer()
+    soma_before = [p.detach().clone() for p in t.soma.graph.parameters()]
+    _ = t.train_step(text="hello world")
+    soma_after = [p.detach().clone() for p in t.soma.graph.parameters()]
+    for b, a in zip(soma_before, soma_after, strict=True):
+        assert torch.equal(b, a), (
+            "SOMA param moved in default (frozen) mode — trainable path leaked"
+        )
+
+
 def test_train_step_skips_when_loss_is_non_finite(monkeypatch: pytest.MonkeyPatch):
     """If compute_lm_loss returns NaN, train_step must NOT call optim.step
     or backward — return the NaN as-is so callers can react."""

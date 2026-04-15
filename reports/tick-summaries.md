@@ -1311,3 +1311,7 @@ to Stage 5 multimodal).
 | 1776208687 | 1160000 | no_change | loss_ema=0.01677 kl=22.11 nodes=35 edges=148 | stable plateau, KL jump needs observation |
 | 1776210919 | 2026-04-14T23:58:06Z | 1190000 | no_change | loss plateau stable ~0.016, no viable config intervention |
 | 1776215358 | 1250000 | no_change | loss_ema=0.01556, heldout=0.02065, nodes=35, edges=142 | system stable, no auto-scope intervention available |
+| 1776217581 | 1280000 | no_change | loss_ema=0.0146 heldout=0.0230 kl=20.97 nodes=35 edges=146 | System stable; viable interventions carveout-protected or risk circuit breaker |
+| 1776219799 | 1310000 | no_change | loss_ema=0.01516 heldout=0.02168 kl=20.71 nodes=35 edges=143 lr_mult=0.415 | lr_mult self-correcting; recent config changes reverted |
+
+- **tick 1776222025** step=1340000 loss_ema=0.01601 curiosity=0.00165 nodes=35 edges=142 — no change (loss plateau, recent growth-config reverts block similar proposals)

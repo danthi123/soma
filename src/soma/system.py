@@ -707,14 +707,37 @@ class SOMA:
         pad_mask = tok_out.get("attention_mask")
         if pad_mask is None:
             pad_mask = torch.ones_like(input_ids)
+        # Phase 7: HF tokenizers return CPU tensors regardless of where the
+        # model lives. On a CUDA-loaded ChatHead, feeding CPU input_ids into
+        # ``get_input_embeddings()`` raises a device-mismatch RuntimeError.
+        # Move ids + pad mask onto the LLM's device before embedding / mask
+        # construction so downstream tensors are all colocated. We infer the
+        # device from the embedding weight (works for both HF PreTrainedModel
+        # and minimal nn.Module test mocks — nn.Module has no default
+        # ``.device`` property, only HF's PreTrainedModel does).
+        llm_device = chat_head.model.get_input_embeddings().weight.device
+        input_ids = input_ids.to(llm_device)
+        pad_mask = pad_mask.to(llm_device)
         token_embeds = chat_head.model.get_input_embeddings()(input_ids)  # (1, T, D)
 
+        # Phase 7 T3: align prefix dtype with the LLM's embedding dtype before
+        # concat. The verbalizer trains in fp32 for numerical stability, but
+        # on CUDA the deploy layer loads HF causal LMs in fp16 to fit consumer
+        # VRAM. Without this cast, torch.cat silently promotes the whole
+        # sequence to fp32 inside HF's matmul kernels — doubling VRAM and
+        # defeating the fp16 load. ``.to(dtype=...)`` is autograd-safe, so
+        # verbalizer gradients still flow during training. Device cast
+        # matches the same concern — prefix must land on the LLM's device.
+        if prefix.device != token_embeds.device or prefix.dtype != token_embeds.dtype:
+            prefix = prefix.to(device=token_embeds.device, dtype=token_embeds.dtype)
         inputs_embeds = torch.cat([prefix, token_embeds], dim=1)
 
         k = verbalizer.spec.num_prefix_tokens
         num_tokens = int(input_ids.shape[1])
         attention_mask = build_attention_mask_from_pad(num_prefix=k, pad_mask=pad_mask)
-        position_ids = build_position_ids(num_prefix=k, num_tokens=num_tokens, batch_size=1)
+        position_ids = build_position_ids(num_prefix=k, num_tokens=num_tokens, batch_size=1).to(
+            llm_device
+        )
 
         return cast(
             str,

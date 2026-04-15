@@ -1,8 +1,20 @@
 from datetime import datetime
 
 import pytest
+import torch
+from torch import nn
 
-from soma.training.online_verbalizer import ChatExchange, ReplayBuffer
+from soma.core.config import SOMAConfig
+from soma.io.chat_head import ChatHead
+from soma.io.text_encoder import TextEncoder, train_bpe_tokenizer
+from soma.io.verbalizer import SomaVerbalizer, VerbalizerSpec
+from soma.system import SOMA
+from soma.training.online_verbalizer import (
+    ChatExchange,
+    OnlineVerbalizerTrainer,
+    ReplayBuffer,
+)
+from soma.training.verbalizer_bootstrap import VerbalizerTrainer
 
 
 def test_chat_exchange_dataclass_fields():
@@ -72,3 +84,198 @@ def test_replay_buffer_rejects_non_positive_capacity():
         ReplayBuffer(capacity=0)
     with pytest.raises(ValueError, match="capacity"):
         ReplayBuffer(capacity=-5)
+
+
+# --- Shared fixtures for OnlineVerbalizerTrainer tests (T3/T4) -------------
+
+
+class _TinyCausalLM(nn.Module):
+    def __init__(self, vocab: int = 32, d_model: int = 16) -> None:
+        super().__init__()
+        self.embed = nn.Embedding(vocab, d_model)
+        self.lm_head = nn.Linear(d_model, vocab)
+        self.config = type("Cfg", (), {"hidden_size": d_model, "vocab_size": vocab})()
+
+    def get_input_embeddings(self) -> nn.Embedding:
+        return self.embed
+
+    def forward(self, *, inputs_embeds, attention_mask=None, labels=None, **_):
+        # Simple causal-mean-pool + lm_head (so prefix influences every position).
+        B, T, D = inputs_embeds.shape
+        # Causal cumulative mean:
+        cumsum = inputs_embeds.cumsum(dim=1)
+        counts = torch.arange(
+            1, T + 1, dtype=inputs_embeds.dtype, device=inputs_embeds.device
+        ).view(1, T, 1)
+        pooled = cumsum / counts
+        logits = self.lm_head(pooled)
+        if labels is None:
+            return type("Out", (), {"logits": logits, "loss": None})()
+        shift_logits = logits[:, :-1, :].contiguous()
+        shift_labels = labels[:, 1:].contiguous()
+        loss = nn.functional.cross_entropy(
+            shift_logits.view(-1, shift_logits.size(-1)),
+            shift_labels.view(-1),
+            ignore_index=-100,
+        )
+        return type("Out", (), {"logits": logits, "loss": loss})()
+
+
+class _TinyTokenizer:
+    def __init__(self) -> None:
+        self.pad_token_id = 0
+
+    def __call__(self, text: str, return_tensors: str = "pt") -> dict:
+        ids = [min(ord(c) % 32, 31) for c in text]
+        return {"input_ids": torch.tensor([ids], dtype=torch.long)}
+
+
+def _soma_cfg() -> SOMAConfig:
+    return SOMAConfig(
+        sensor_output_dim=8,
+        associator_input_dim=8,
+        associator_hidden_dim=16,
+        associator_output_dim=8,
+        integrator_input_dim=16,
+        integrator_hidden_dim=16,
+        integrator_output_dim=16,
+        position_dim=4,
+        wm_slots=2,
+        wm_dim=8,
+        episodic_capacity=4,
+        key_dim=8,
+        value_dim=8,
+        vocab_size=128,
+        text_embed_dim=8,
+        max_nodes=32,
+        initial_associator_count=2,
+        initial_integrator_count=1,
+        max_input_tokens=8,
+        max_output_tokens=4,
+        seed=0,
+    )
+
+
+_shared_tokenizer = train_bpe_tokenizer(
+    iter(["hello world", "the quick brown fox", "lorem ipsum"]),
+    vocab_size=128,
+)
+
+
+def _fresh_inner_trainer() -> VerbalizerTrainer:
+    cfg = _soma_cfg()
+    soma = SOMA(cfg, device=torch.device("cpu"))
+    encoder = TextEncoder(
+        _shared_tokenizer,
+        embed_dim=cfg.text_embed_dim,
+        max_seq_len=cfg.max_input_tokens,
+    )
+    spec = VerbalizerSpec(
+        soma_output_dim=cfg.sensor_output_dim,
+        llm_name="mock",
+        llm_hidden_dim=16,
+        num_prefix_tokens=4,
+        proj_hidden_dim=16,
+    )
+    verbalizer = SomaVerbalizer(spec)
+    chat_head = ChatHead(
+        model=_TinyCausalLM(vocab=32, d_model=16),
+        tokenizer=_TinyTokenizer(),
+    )
+    return VerbalizerTrainer(
+        soma=soma,
+        verbalizer=verbalizer,
+        chat_head=chat_head,
+        config=cfg,
+        tokenizer=_shared_tokenizer,
+        encoder=encoder,
+    )
+
+
+# --- T3 tests: OnlineVerbalizerTrainer __init__ + record -------------------
+
+
+def test_online_trainer_stores_inner_and_config():
+    inner = _fresh_inner_trainer()
+    online = OnlineVerbalizerTrainer(inner=inner, config=inner.config)
+    assert online.inner is inner
+    assert online.config is inner.config
+
+
+def test_online_trainer_builds_replay_buffer_from_config():
+    inner = _fresh_inner_trainer()
+    online = OnlineVerbalizerTrainer(inner=inner, config=inner.config)
+    assert isinstance(online.replay_buffer, ReplayBuffer)
+    assert online.replay_buffer.capacity == inner.config.replay_buffer_capacity
+
+
+def test_online_trainer_initial_is_not_diverged():
+    inner = _fresh_inner_trainer()
+    online = OnlineVerbalizerTrainer(inner=inner, config=inner.config)
+    assert online.is_diverged is False
+
+
+def test_online_trainer_overrides_inner_lr():
+    """Constructor should swap the inner optimizer's LR to the online rate
+    (preserving Adam moments — same param_group, just LR edit)."""
+    inner = _fresh_inner_trainer()
+    # Sanity: before online trainer, inner uses bootstrap LR.
+    assert inner.optim.param_groups[0]["lr"] == inner.config.verbalizer_lr
+    online = OnlineVerbalizerTrainer(inner=inner, config=inner.config)
+    # After construction, LR is online_verbalizer_lr.
+    assert inner.optim.param_groups[0]["lr"] == inner.config.online_verbalizer_lr
+    assert online.inner.optim.param_groups[0]["lr"] == inner.config.online_verbalizer_lr
+
+
+def test_online_trainer_record_adds_to_buffer():
+    inner = _fresh_inner_trainer()
+    online = OnlineVerbalizerTrainer(inner=inner, config=inner.config)
+    online.record(user_text="hi", response="hello")
+    assert len(online.replay_buffer) == 1
+    assert online.replay_buffer.entries[0].user_text == "hi"
+    assert online.replay_buffer.entries[0].response == "hello"
+
+
+# --- T4 tests: sample_batch ------------------------------------------------
+
+
+def test_sample_batch_returns_user_texts():
+    inner = _fresh_inner_trainer()
+    online = OnlineVerbalizerTrainer(inner=inner, config=inner.config)
+    online.record(user_text="u0", response="r0")
+    online.record(user_text="u1", response="r1")
+    online.record(user_text="u2", response="r2")
+
+    batch = online.sample_batch(batch_size=2)
+    assert isinstance(batch, list)
+    assert len(batch) == 2
+    assert all(isinstance(t, str) for t in batch)
+    # Most-recent exchange must be first (contract for training).
+    assert batch[0] == "u2"
+    # Second slot must come from prior turns.
+    assert batch[1] in {"u0", "u1"}
+
+
+def test_sample_batch_with_empty_buffer_returns_empty():
+    inner = _fresh_inner_trainer()
+    online = OnlineVerbalizerTrainer(inner=inner, config=inner.config)
+    batch = online.sample_batch(batch_size=4)
+    assert batch == []
+
+
+def test_sample_batch_caps_at_buffer_size():
+    inner = _fresh_inner_trainer()
+    online = OnlineVerbalizerTrainer(inner=inner, config=inner.config)
+    online.record(user_text="u0", response="r0")
+    batch = online.sample_batch(batch_size=4)
+    assert len(batch) == 1
+    assert batch[0] == "u0"
+
+
+def test_sample_batch_size_one_returns_just_latest():
+    inner = _fresh_inner_trainer()
+    online = OnlineVerbalizerTrainer(inner=inner, config=inner.config)
+    for i in range(5):
+        online.record(user_text=f"u{i}", response=f"r{i}")
+    batch = online.sample_batch(batch_size=1)
+    assert batch == ["u4"]

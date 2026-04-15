@@ -77,6 +77,7 @@ pythonpath = ["src"]
 markers = [
     "slow: marks tests as slow (integration tests, deselect with '-m \"not slow\"')",
     "cuda: requires a CUDA GPU to run (deselect with '-m \"not cuda\"')",
+    "quant: requires bitsandbytes and CUDA for weight quantization tests",
 ]
 
 [tool.mypy]

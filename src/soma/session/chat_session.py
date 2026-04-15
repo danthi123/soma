@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 _VALID_ROLES = ("user", "assistant")
 
@@ -78,3 +78,69 @@ class ChatSession:
             encoder=self.encoder,
             soma_output_dim=self.verbalizer.spec.soma_output_dim,
         )
+
+    def respond(
+        self,
+        *,
+        user_text: str,
+        max_new_tokens: int = 64,
+        **gen_kwargs: Any,
+    ) -> str:
+        """Generate an assistant response to ``user_text``.
+
+        Pipeline:
+            1. Feed user_text into SOMA (per-token, no_grad, eval_mode).
+            2. Pool OUTPUT activations -> verbalizer -> soft-prompt prefix.
+            3. Tokenize user_text via the LLM tokenizer (NOT the SOMA one).
+            4. Embed via the LLM's input embeddings, concat prefix + tokens.
+            5. ChatHead.generate_text(...) -> response string.
+            6. Feed the response back through SOMA so next turn sees it.
+            7. Append (user, assistant) turns to ``self.history``.
+        """
+        import torch  # local import — keeps module-top imports lean
+
+        from soma.io.chat_head import build_attention_mask_from_pad, build_position_ids
+        from soma.io.verbalizer import SomaAggregator
+
+        self._feed_text_through_soma(user_text)
+
+        output_acts = self.soma._current_output_activations()
+        pooled = SomaAggregator.collapse(
+            output_acts,
+            soma_output_dim=self.verbalizer.spec.soma_output_dim,
+        )
+        prefix = cast(torch.Tensor, self.verbalizer(pooled))  # (1, k, d_model)
+
+        tok_out = self.chat_head.tokenizer(user_text, return_tensors="pt")
+        input_ids = tok_out["input_ids"]
+        pad_mask = tok_out.get("attention_mask")
+        if pad_mask is None:
+            pad_mask = torch.ones_like(input_ids)
+        token_embeds = self.chat_head.model.get_input_embeddings()(input_ids)
+        inputs_embeds = torch.cat([prefix, token_embeds], dim=1)
+
+        k = self.verbalizer.spec.num_prefix_tokens
+        t_tok = int(input_ids.shape[1])
+        attention_mask = build_attention_mask_from_pad(num_prefix=k, pad_mask=pad_mask)
+        position_ids = build_position_ids(num_prefix=k, num_tokens=t_tok, batch_size=1)
+
+        response = cast(
+            str,
+            self.chat_head.generate_text(
+                inputs_embeds=inputs_embeds,
+                attention_mask=attention_mask,
+                position_ids=position_ids,
+                max_new_tokens=max_new_tokens,
+                **gen_kwargs,
+            ),
+        )
+
+        # Close the loop: feed the assistant's response back through SOMA so
+        # working memory and last_activation reflect what we just said. The
+        # next respond() call will see updated state. This is the load-bearing
+        # change vs. Phase 3's single-turn SOMA.chat.
+        self._feed_text_through_soma(response)
+
+        self.history.append(ChatTurn(role="user", text=user_text))
+        self.history.append(ChatTurn(role="assistant", text=response))
+        return response

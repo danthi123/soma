@@ -171,9 +171,7 @@ def test_feed_text_advances_global_step():
     before = s.soma.global_step
     s._feed_text_through_soma("hello world this is a test")
     after = s.soma.global_step
-    assert after > before, (
-        f"soma.global_step did not advance ({before} → {after})"
-    )
+    assert after > before, f"soma.global_step did not advance ({before} → {after})"
 
 
 def test_feed_text_does_not_train_soma():
@@ -183,8 +181,7 @@ def test_feed_text_does_not_train_soma():
     s._feed_text_through_soma("some words to push through")
     after = next(node.parameters()).detach().clone()
     assert torch.allclose(before, after), (
-        "SOMA params drifted during _feed_text_through_soma — "
-        "no_grad/eval_mode contract broken"
+        "SOMA params drifted during _feed_text_through_soma — no_grad/eval_mode contract broken"
     )
 
 
@@ -206,3 +203,60 @@ def test_feed_text_evolves_output_activations():
             "OUTPUT activations identical after two distinct feeds — "
             "Node.last_activation isn't being updated by soma.step"
         )
+
+
+# ---------------------------------------------------------------------------
+# T3: respond — single-turn flow
+# ---------------------------------------------------------------------------
+
+
+def test_respond_returns_string():
+    s = _build_session()
+    out = s.respond(user_text="hello")
+    assert isinstance(out, str)
+
+
+def test_respond_appends_user_and_assistant_turns():
+    s = _build_session()
+    assert len(s.history) == 0
+    s.respond(user_text="hi")
+    assert len(s.history) == 2
+    assert s.history[0].role == "user"
+    assert s.history[0].text == "hi"
+    assert s.history[1].role == "assistant"
+    assert isinstance(s.history[1].text, str)
+
+
+def test_respond_max_new_tokens_passes_through():
+    s = _build_session()
+    out = s.respond(user_text="hi", max_new_tokens=2)
+    # Mock decoder: each token id → 1 char. Response length == max_new_tokens.
+    assert len(out) == 2
+
+
+# ---------------------------------------------------------------------------
+# T4: response back-loop
+# ---------------------------------------------------------------------------
+
+
+def test_respond_feeds_response_back_into_soma():
+    """After respond(), SOMA's global_step should reflect TWO text-pushes:
+    one for the user input, one for the assistant response. Compare to a
+    parallel session where only the user input was fed.
+    """
+    # Session A: full respond (user push + LLM gen + response push)
+    s_a = _build_session()
+    before_a = s_a.soma.global_step
+    _ = s_a.respond(user_text="hi", max_new_tokens=3)
+    delta_a = s_a.soma.global_step - before_a
+
+    # Session B: user push only, no respond
+    s_b = _build_session()
+    before_b = s_b.soma.global_step
+    s_b._feed_text_through_soma("hi")
+    delta_b = s_b.soma.global_step - before_b
+
+    assert delta_a > delta_b, (
+        f"SOMA didn't see the assistant response — delta_a={delta_a} vs "
+        f"user-only delta_b={delta_b}. Back-loop missing or no-op."
+    )

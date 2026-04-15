@@ -159,3 +159,50 @@ def test_session_with_system_prompt_pre_warms_soma():
             if k in acts_without
         )
         assert any_diff, "system_prompt warm did not change OUTPUT state"
+
+
+# ---------------------------------------------------------------------------
+# T2: _feed_text_through_soma — explicit side-effect tests
+# ---------------------------------------------------------------------------
+
+
+def test_feed_text_advances_global_step():
+    s = _build_session()
+    before = s.soma.global_step
+    s._feed_text_through_soma("hello world this is a test")
+    after = s.soma.global_step
+    assert after > before, (
+        f"soma.global_step did not advance ({before} → {after})"
+    )
+
+
+def test_feed_text_does_not_train_soma():
+    s = _build_session()
+    node = next(iter(s.soma.graph.nodes.values()))
+    before = next(node.parameters()).detach().clone()
+    s._feed_text_through_soma("some words to push through")
+    after = next(node.parameters()).detach().clone()
+    assert torch.allclose(before, after), (
+        "SOMA params drifted during _feed_text_through_soma — "
+        "no_grad/eval_mode contract broken"
+    )
+
+
+def test_feed_text_evolves_output_activations():
+    """Two distinct inputs through SOMA should produce different OUTPUT
+    activations afterward — proves WM/last_activation actually advance."""
+    s = _build_session()
+    s._feed_text_through_soma("warm up text alpha")
+    acts_first = {k: v.clone() for k, v in s.soma._current_output_activations().items()}
+    s._feed_text_through_soma("very different second text beta gamma")
+    acts_second = s.soma._current_output_activations()
+    if acts_first and acts_second:
+        any_changed = any(
+            not torch.allclose(acts_first[k], acts_second[k])
+            for k in acts_first
+            if k in acts_second
+        )
+        assert any_changed, (
+            "OUTPUT activations identical after two distinct feeds — "
+            "Node.last_activation isn't being updated by soma.step"
+        )

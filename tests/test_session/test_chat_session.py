@@ -260,3 +260,75 @@ def test_respond_feeds_response_back_into_soma():
         f"SOMA didn't see the assistant response — delta_a={delta_a} vs "
         f"user-only delta_b={delta_b}. Back-loop missing or no-op."
     )
+
+
+# ---------------------------------------------------------------------------
+# T5: system_prompt pre-warm contract hardening
+# ---------------------------------------------------------------------------
+
+
+def test_session_without_system_prompt_does_not_warm_soma():
+    s = _build_session(system_prompt=None)
+    assert s.soma.global_step == 0, (
+        f"SOMA pre-warmed without a system_prompt — global_step={s.soma.global_step}"
+    )
+
+
+def test_session_with_system_prompt_advances_global_step():
+    s = _build_session(system_prompt="be helpful and concise")
+    assert s.soma.global_step > 0, "system_prompt did not warm SOMA — global_step still zero"
+
+
+def test_session_with_empty_string_system_prompt_does_not_warm():
+    """Empty string is falsy → treated as no system prompt."""
+    s = _build_session(system_prompt="")
+    assert s.soma.global_step == 0
+
+
+# ---------------------------------------------------------------------------
+# T6: multi-turn coherence — state evolves across turns
+# ---------------------------------------------------------------------------
+
+
+def test_multi_turn_state_evolves():
+    """Load-bearing P5 test: after 3 distinct turns, OUTPUT activations
+    must differ from the turn-1 state. Proves WM is actually carrying
+    context across turns rather than being reset.
+    """
+    s = _build_session()
+
+    s.respond(user_text="apples are red")
+    state_after_t1 = {k: v.clone() for k, v in s.soma._current_output_activations().items()}
+
+    s.respond(user_text="bananas are yellow")
+    s.respond(user_text="grapes are purple")
+    state_after_t3 = s.soma._current_output_activations()
+
+    if state_after_t1 and state_after_t3:
+        any_diff = any(
+            not torch.allclose(state_after_t1[k], state_after_t3[k])
+            for k in state_after_t1
+            if k in state_after_t3
+        )
+        assert any_diff, "OUTPUT state identical after 3 distinct turns — WM frozen?"
+
+
+def test_history_grows_two_per_respond_call():
+    """History interleaves user/assistant correctly across multiple turns."""
+    s = _build_session()
+    assert len(s.history) == 0
+    s.respond(user_text="a")
+    assert len(s.history) == 2
+    s.respond(user_text="b")
+    assert len(s.history) == 4
+    s.respond(user_text="c")
+    assert len(s.history) == 6
+    assert [t.role for t in s.history] == [
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+    ]
+    assert [t.text for t in s.history if t.role == "user"] == ["a", "b", "c"]

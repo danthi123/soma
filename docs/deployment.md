@@ -143,6 +143,23 @@ update `MODEL_TIERS` in `src/soma/deploy/devices.py`.
 
 ---
 
+## Diagnostics
+
+Inspect a saved SOMA bundle:
+
+```bash
+python scripts/inspect_soma.py --bundle path/to/bundle
+```
+
+Prints node counts by type, edge density, WM slot state, homeostatic
+gain range, and episodic memory occupancy. Accepts both directory
+bundles and single `.pt` checkpoints. Use when training metrics look
+off (e.g., gain pinned at 10.0 -> homeostasis overshoot; all edge
+weights near zero -> signal collapse) to get a fast read on internal
+state without spinning up the full training harness.
+
+---
+
 ## Quantization (optional)
 
 For 7B models on 8GB-class GPUs, install the optional `bitsandbytes`

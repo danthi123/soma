@@ -1317,3 +1317,4 @@ to Stage 5 multimodal).
 - **tick 1776222025** step=1340000 loss_ema=0.01601 curiosity=0.00165 nodes=35 edges=142 — no change (loss plateau, recent growth-config reverts block similar proposals)
 | 1776224238 | 1380000 | 0.01522 | 0.0239 | 35/116 | no_change | loss plateau, edge loss 142→116, wm_occupancy flip; recent config reverts block intervention |
 | 1776228691 | 1445000 | 0.01412 | 0.02056 | 35/118 | no_change | loss improving, growth stalled, no intervention |
+| 1776231092 | 1475000 | 0.01713 | 0.02345 | 36/119 | no_change | loss regressed +21% post-synaptogenesis; waiting to confirm trend |

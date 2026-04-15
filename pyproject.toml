@@ -62,6 +62,7 @@ testpaths = ["tests"]
 pythonpath = ["src"]
 markers = [
     "slow: marks tests as slow (integration tests, deselect with '-m \"not slow\"')",
+    "cuda: requires a CUDA GPU to run (deselect with '-m \"not cuda\"')",
 ]
 
 [tool.mypy]

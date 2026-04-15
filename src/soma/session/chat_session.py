@@ -36,7 +36,19 @@ class ChatTurn:
 
 
 class ChatSession:
-    """Stateful multi-turn chat over SOMA + frozen LLM."""
+    """Stateful multi-turn chat over SOMA + frozen LLM.
+
+    Optional ``online_trainer`` (Phase 6 T7): if a non-None value is
+    passed, each ``respond()`` call hands the ``(user_text, response)``
+    pair to the trainer's ``step()`` after generation + back-loop. This
+    lets the SomaVerbalizer adapt continuously during live chat; when
+    left at the default ``None``, chat behavior is pure Phase 5 (the
+    verbalizer stays frozen). The trainer is typed ``Any`` here — the
+    concrete class lives in ``soma.training.online_verbalizer`` and
+    importing it would introduce an import cycle via
+    ``verbalizer_bootstrap``; same pattern as the other session
+    ``Any``-typed kwargs.
+    """
 
     def __init__(
         self,
@@ -47,6 +59,7 @@ class ChatSession:
         tokenizer: Any,
         encoder: Any,
         system_prompt: str | None = None,
+        online_trainer: Any = None,
     ) -> None:
         self.soma = soma
         self.verbalizer = verbalizer
@@ -54,6 +67,7 @@ class ChatSession:
         self.tokenizer = tokenizer
         self.encoder = encoder
         self.system_prompt = system_prompt
+        self.online_trainer = online_trainer
         self.history: list[ChatTurn] = []
 
         # Pre-warm SOMA with the system prompt so the first respond() call
@@ -145,6 +159,14 @@ class ChatSession:
 
         self.history.append(ChatTurn(role="user", text=user_text))
         self.history.append(ChatTurn(role="assistant", text=response))
+
+        # Phase 6 T7: optional online training hook. History is appended
+        # BEFORE the training step so a trainer exception can't desync the
+        # conversation log from what was actually generated — the turn
+        # succeeded regardless of whether the post-turn weight update does.
+        if self.online_trainer is not None:
+            self.online_trainer.step(user_text=user_text, response=response)
+
         return response
 
     def save(self, *, out_dir: Path) -> None:

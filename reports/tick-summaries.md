@@ -1333,3 +1333,5 @@ to Stage 5 multimodal).
 | 1776250919 | 2026-04-15T11:04:55Z | no_change | loss_ema=0.01488, kl=20.71, nodes=36, edges=117 | Stable plateau, no safe auto-scope intervention |
 
 | 1776253208 | 1670000 | 0.01502 | 0.02079 | 36/123 | no_change | stable plateau, no intervention warranted |
+
+| 1776255323 | 1685000 | 0.01466 | 0.02085 | 36/116 | no_change | loss plateau 0.0147-0.0150 for 100K steps; prior config levers exhausted; structural changes need carveout |

@@ -29,6 +29,13 @@ Usage:
         --resume-from artifacts/sessions/today/ \\
         --out-dir artifacts/sessions/today/
 
+    # GGUF (inference-only) from a local LM Studio cache:
+    python scripts/chat_repl.py \\
+        --soma-checkpoint artifacts/brain-bundle/ \\
+        --gguf-path C:/Users/you/.cache/lm-studio/models/.../model.gguf
+    # Verbalizer is skipped; user_text goes straight to llama.cpp.
+    # Online-training flags are refused in this mode.
+
 REPL conventions:
     > user message
     Empty line -> ignored (prompt again)
@@ -56,9 +63,11 @@ from soma.deploy.chat_head_factory import build_chat_head
 from soma.deploy.cli import (
     add_deploy_arguments,
     print_selection,
+    resolve_backend,
     resolve_device_dtype_tier,
     resolve_quantization,
 )
+from soma.deploy.gguf_backend import GGUFChatHead, build_gguf_chat_head
 from soma.io.chat_head import ChatHead
 from soma.io.verbalizer import SomaVerbalizer, VerbalizerSpec
 from soma.session.chat_session import ChatSession
@@ -238,8 +247,41 @@ def _repl(session: ChatSession, max_new_tokens: int) -> None:
         print()  # blank line after each response
 
 
-def main() -> None:
-    args = _parse_args()
+def _build_gguf_session(
+    args: argparse.Namespace,
+    *,
+    device: torch.device,
+) -> ChatSession:
+    """Build a ChatSession wired to the GGUF backend.
+
+    Skips verbalizer construction entirely — GGUF mode feeds ``user_text``
+    directly to llama.cpp. The SOMA graph still runs for state evolution,
+    but its OUTPUT activations are NOT projected into soft-prompt tokens.
+    """
+    soma, _cfg, tokenizer, encoder = _load_soma(args.soma_checkpoint, device)
+
+    gguf_head: GGUFChatHead = build_gguf_chat_head(gguf_path=args.gguf_path)
+    print(f"Using GGUF backend: {args.gguf_path}")
+
+    # Resume vs. fresh: identical to the HF path — the saved brain already
+    # reflects the system prompt's effect, so don't double-feed on resume.
+    system_prompt = None if args.resume_from else args.system_prompt
+
+    return ChatSession(
+        soma=soma,
+        verbalizer=None,
+        chat_head=None,
+        gguf_head=gguf_head,
+        tokenizer=tokenizer,
+        encoder=encoder,
+        system_prompt=system_prompt,
+    )
+
+
+def _build_hf_session(
+    args: argparse.Namespace,
+) -> ChatSession:
+    """Build a ChatSession wired to the HF backend (verbalizer + ChatHead)."""
     device, dtype, llm_name, tier = resolve_device_dtype_tier(args)
     quantization = resolve_quantization(args)
     print_selection(
@@ -247,6 +289,7 @@ def main() -> None:
     )
 
     soma, cfg, tokenizer, encoder = _load_soma(args.soma_checkpoint, device)
+    chat_head: ChatHead
     if tier is None:
         chat_head = _build_chat_head_explicit(llm_name, device, dtype)
     else:
@@ -270,7 +313,7 @@ def main() -> None:
     # feed. So only pass system_prompt on a fresh session.
     system_prompt = None if args.resume_from else args.system_prompt
 
-    session = ChatSession(
+    return ChatSession(
         soma=soma,
         verbalizer=verbalizer,
         chat_head=chat_head,
@@ -278,6 +321,21 @@ def main() -> None:
         encoder=encoder,
         system_prompt=system_prompt,
     )
+
+
+def main() -> None:
+    args = _parse_args()
+
+    backend = resolve_backend(args)
+    if backend == "gguf":
+        # GGUF skips the tier/device/dtype pipeline entirely -- llama.cpp
+        # manages its own device placement. We still need a torch device
+        # for the SOMA brain load, but the LLM-side dtype / tier logic is
+        # irrelevant here.
+        device, _dtype, _llm_name, _tier = resolve_device_dtype_tier(args)
+        session = _build_gguf_session(args, device=device)
+    else:
+        session = _build_hf_session(args)
 
     if args.resume_from is not None:
         session.load_history(out_dir=args.resume_from)

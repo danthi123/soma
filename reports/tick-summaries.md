@@ -1348,3 +1348,4 @@ to Stage 5 multimodal).
 - **tick 1776288618** (step 2035000): no_change — stable plateau, mild overfitting (heldout +9.1% vs baseline), config levers exhausted (2 recent reverts). loss_ema=0.01542 heldout=0.02100 kl=20.71 nodes=36 edges=148
 - **tick 1776290845** (step 2070K): no_change — loss_ema=0.0144, curiosity=0.00189, nodes=36, edges=153. Stable plateau; no non-carveout intervention available.
 | 1776293154 | 2100000 | no_change | loss_ema=0.01689 heldout=0.02100 nodes=36 edges=155 lr_mult=0.681 | stable plateau, lr self-correcting |
+| 1776295286 | 2130000 | 0.0210 | 0.0142 | 36/158 | no_change | stable plateau; growth interventions blocked by watchdog curiosity check |

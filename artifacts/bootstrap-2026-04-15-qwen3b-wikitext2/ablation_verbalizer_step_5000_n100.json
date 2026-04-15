@@ -1,0 +1,16 @@
+{
+  "verbalizer": "artifacts\\bootstrap-2026-04-15-qwen3b-wikitext2\\verbalizer_step_5000",
+  "llm": "Qwen/Qwen2.5-3B-Instruct",
+  "dtype": "fp16",
+  "eval_samples": 100,
+  "loss": {
+    "real": 3.8199,
+    "zero": 3.8253,
+    "shuffle": 3.8337
+  },
+  "delta_vs_real": {
+    "zero": 0.0054,
+    "shuffle": 0.0138
+  },
+  "verdict": "SOMA NOT CONTRIBUTING (zero state matches real)"
+}

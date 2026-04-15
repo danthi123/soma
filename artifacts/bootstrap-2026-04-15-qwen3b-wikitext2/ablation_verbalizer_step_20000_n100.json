@@ -1,0 +1,16 @@
+{
+  "verbalizer": "artifacts\\bootstrap-2026-04-15-qwen3b-wikitext2\\verbalizer_step_20000",
+  "llm": "Qwen/Qwen2.5-3B-Instruct",
+  "dtype": "fp16",
+  "eval_samples": 100,
+  "loss": {
+    "real": 3.6987,
+    "zero": 3.7233,
+    "shuffle": 3.7239
+  },
+  "delta_vs_real": {
+    "zero": 0.0246,
+    "shuffle": 0.0252
+  },
+  "verdict": "SOMA carries text-specific signal (both zero and shuffle are worse than real)"
+}

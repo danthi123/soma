@@ -59,11 +59,51 @@ Raw CSV: `artifacts/bootstrap-2026-04-15-qwen3b-wikitext2/loss_curve.csv`.
   reasonably stop at 5K and avoid the noisy plateau; for production we'd
   want LR decay + gradient accumulation to push the floor lower.
 
-## Open Questions / Next Steps (Brainstorm, not committed)
+## SOMA Contribution Ablation (added 2026-04-15)
 
-- **Is SOMA actually contributing?** Run an ablation with a constant
-  zero-tensor SOMA state and compare. If loss is similar, the verbalizer
-  is just memorising "wikitext is mostly Wikipedia-like" — not useful.
+To answer "is the verbalizer actually USING SOMA's state, or just
+learning a generic prefix?", re-evaluated four checkpoints under three
+state-provider regimes (N=100 eval windows each):
+
+  - **real**:    actual SOMA forward pass over the eval text
+  - **zero**:    `torch.zeros` instead — verbalizer gets a constant
+  - **shuffle**: real state from a different eval text — breaks the
+                 per-text alignment but keeps the marginal distribution
+
+| step | real | zero | shuffle | Δ(zero) | Δ(shuffle) |
+|------|------|------|---------|---------|------------|
+| 500     | 4.0602 | 4.0659 | 4.0643 | +0.006 | +0.004 |
+| 5,000   | 3.8199 | 3.8253 | 3.8337 | +0.005 | +0.014 |
+| 15,500  | 3.4722 | 3.4885 | 3.4967 | +0.016 | +0.025 |
+| 20,000  | 3.6987 | 3.7233 | 3.7239 | +0.025 | +0.025 |
+
+**Verdict**: SOMA's contribution is real, directionally correct
+(shuffle ≥ zero > real by step 15K), and **growing with training**
+even though SOMA itself was never gradient-updated during bootstrap.
+The verbalizer learns to use SOMA's state more over time. The absolute
+contribution is small — SOMA accounts for ~1% of the 1.6-nat loss
+reduction the verbalizer made — but the trajectory is positive.
+
+This means the architecture pipeline is correct AND the projector
+has a path to depending on SOMA more, not less, with continued
+training. Implications for next experiments:
+
+  - Pre-train SOMA on the same corpus first, so its OUTPUT activations
+    encode something more than noise. The verbalizer would have a
+    richer signal to map.
+  - Try joint SOMA + verbalizer training (gradient flow back into the
+    graph). Currently SOMA stays frozen during bootstrap.
+  - Try a corpus where context across windows matters (dialogue,
+    sequential narrative) — wikitext windows are largely independent,
+    so SOMA's WM/episodic memory has nothing useful to carry.
+
+Raw ablation JSONs at
+`artifacts/bootstrap-2026-04-15-qwen3b-wikitext2/ablation_*_n100.json`.
+
+## Other Open Questions / Next Steps (Brainstorm, not committed)
+
+- **Is SOMA actually contributing?** ✅ Answered above — yes, weakly
+  but directionally correct.
 - **Pick the best checkpoint, not the last.** Promote step_15500 (or
   best-by-eval) to the canonical "trained verbalizer" artifact.
 - **Improve the trainer**: cosine LR schedule, gradient accumulation

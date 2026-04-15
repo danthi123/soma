@@ -12,6 +12,7 @@ ground truth for the tier -> model-name mapping.
 from __future__ import annotations
 
 import argparse
+from pathlib import Path
 
 import pytest
 import torch
@@ -22,6 +23,7 @@ from soma.deploy.cli import (
     add_deploy_arguments,
     dtype_label,
     print_selection,
+    resolve_backend,
     resolve_device_dtype_tier,
 )
 from soma.deploy.devices import MODEL_TIERS
@@ -241,3 +243,63 @@ def test_train_verbalizer_bootstrap_parser_rejects_unknown_dtype() -> None:
                 "bf16",
             ]
         )
+
+
+# ----- gguf backend flag ---------------------------------------------------
+
+
+def test_parser_default_gguf_path_is_none() -> None:
+    """No --gguf-path flag -> args.gguf_path is None (HF backend default)."""
+    args = _build_test_parser().parse_args([])
+    assert args.gguf_path is None
+
+
+def test_parser_accepts_gguf_path_as_path() -> None:
+    """--gguf-path arg is parsed into a pathlib.Path, not a raw str."""
+    args = _build_test_parser().parse_args(["--gguf-path", "/some/file.gguf"])
+    assert isinstance(args.gguf_path, Path)
+    assert args.gguf_path == Path("/some/file.gguf")
+
+
+def test_resolve_backend_default_is_hf() -> None:
+    """No --gguf-path -> 'hf' backend (preserves Phase-7 default behavior)."""
+    args = _build_test_parser().parse_args([])
+    assert resolve_backend(args) == "hf"
+
+
+def test_resolve_backend_with_gguf_path_is_gguf() -> None:
+    """--gguf-path X -> 'gguf' backend, regardless of other flags."""
+    args = _build_test_parser().parse_args(["--gguf-path", "/some/file.gguf"])
+    assert resolve_backend(args) == "gguf"
+
+
+def test_resolve_backend_gguf_overrides_tier_and_llm_name() -> None:
+    """--gguf-path wins even when the operator also passed --tier/--llm-name.
+
+    Documents the precedence rule: the GGUF path is the most-specific
+    backend selector, so it short-circuits the registry lookup. We don't
+    raise on the combination -- operators may want to keep the tier flag
+    set to its default while overriding the actual backend for one run.
+    """
+    args = _build_test_parser().parse_args(
+        [
+            "--tier",
+            "small",
+            "--llm-name",
+            "foo/bar",
+            "--gguf-path",
+            "/some/file.gguf",
+        ]
+    )
+    assert resolve_backend(args) == "gguf"
+
+
+def test_resolve_backend_does_not_check_file_existence() -> None:
+    """The resolver is a pure flag inspector -- it does NOT touch the disk.
+
+    File-existence checking is the GGUF factory's job (FileNotFoundError).
+    Keeping the resolver pure lets argparse-level tests run without
+    creating temp files.
+    """
+    args = _build_test_parser().parse_args(["--gguf-path", "/nonexistent/file.gguf"])
+    assert resolve_backend(args) == "gguf"

@@ -1340,3 +1340,4 @@ to Stage 5 multimodal).
 | 1776262011 | 2026-04-15T14:10:16Z | 1750000 | no_change | loss_ema=0.01448 heldout=0.02087 nodes=36 edges=130 | stable plateau, no safe intervention |
 
 | 1776266429 | 1800000 | no_change | loss_ema=0.01446, kl=20.84, nodes=36, edges=138 | Training stable plateau; no safe intervention available |
+| 1776273230 | 2026-04-15T17:16:33Z | step=1845000 loss_ema=0.0156 heldout=0.0209 | no_change | Training stable, consecutive_failures=2, waiting |

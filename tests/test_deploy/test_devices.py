@@ -33,6 +33,28 @@ def test_detect_cuda_vram_returns_int_or_none():
         assert result is None
 
 
+def test_detect_cuda_vram_reports_gb_floor(monkeypatch):
+    """When CUDA claims 24*1024**3 bytes, detect reports 24 GB (floor)."""
+
+    class _FakeProps:
+        total_memory = 24 * 1024**3
+
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+    monkeypatch.setattr(torch.cuda, "get_device_properties", lambda _i: _FakeProps())
+    assert detect_cuda_vram() == 24
+
+
+def test_detect_cuda_vram_floors_fractional_gb(monkeypatch):
+    """A card reporting 7.94 GB of bytes must floor to 7, not round to 8."""
+
+    class _FakeProps:
+        total_memory = int(7.94 * 1024**3)
+
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+    monkeypatch.setattr(torch.cuda, "get_device_properties", lambda _i: _FakeProps())
+    assert detect_cuda_vram() == 7
+
+
 def test_select_device_and_dtype_cpu_when_no_cuda(monkeypatch):
     monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
     device, dtype = select_device_and_dtype()

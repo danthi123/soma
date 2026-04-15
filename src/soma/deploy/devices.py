@@ -42,7 +42,12 @@ MODEL_TIERS: dict[str, ModelTierSpec] = {
 
 
 def detect_cuda_vram() -> int | None:
-    """Total VRAM of CUDA device 0, in GB (integer). None if no CUDA."""
+    """Total VRAM of CUDA device 0, in GB. ``None`` when no CUDA.
+
+    Returns the floor of the GB figure: a 7.94 GB card reports ``7``.
+    Downstream ``auto_select_tier`` assumes this floor convention — its
+    4/16 GB thresholds already bake in a working-set cushion.
+    """
     if not torch.cuda.is_available():
         return None
     total_bytes = torch.cuda.get_device_properties(0).total_memory

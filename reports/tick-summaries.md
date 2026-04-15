@@ -1337,3 +1337,4 @@ to Stage 5 multimodal).
 | 1776255323 | 1685000 | 0.01466 | 0.02085 | 36/116 | no_change | loss plateau 0.0147-0.0150 for 100K steps; prior config levers exhausted; structural changes need carveout |
 | 1776257546 | 1700000 | no_change | loss_ema=0.0153 kl=17.70 nodes=36 edges=120 | stable, KL drop needs observation |
 | 1776259770 | 1720000 | 0.01507 | 0.00159 | 36/127 | no_change | stable plateau, curiosity low but transient; recent growth configs reverted |
+| 1776262011 | 2026-04-15T14:10:16Z | 1750000 | no_change | loss_ema=0.01448 heldout=0.02087 nodes=36 edges=130 | stable plateau, no safe intervention |

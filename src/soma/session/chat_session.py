@@ -197,6 +197,24 @@ class ChatSession:
             )
         )
 
+        # Phase 6: if an online trainer is attached, persist its state alongside.
+        if self.online_trainer is not None:
+            online_state_path = out_dir / "online_state.json"
+            replay_entries = [
+                {
+                    "user_text": ex.user_text,
+                    "response": ex.response,
+                    "ts": ex.ts.isoformat(),
+                }
+                for ex in self.online_trainer.replay_buffer.entries
+            ]
+            state = {
+                "replay_buffer": replay_entries,
+                "loss_history": list(self.online_trainer._loss_history),
+                "is_diverged": self.online_trainer.is_diverged,
+            }
+            online_state_path.write_text(json.dumps(state, indent=2))
+
     def load_history(self, *, out_dir: Path) -> None:
         """Load a previously-saved chat history into ``self.history``.
 
@@ -217,3 +235,37 @@ class ChatSession:
             )
             for item in raw
         ]
+
+    def load_online_state(self, *, out_dir: Path, online_trainer: Any) -> None:
+        """Restore an OnlineVerbalizerTrainer's state from an online_state.json.
+
+        Does NOT construct the trainer — caller must have already built a
+        fresh ``OnlineVerbalizerTrainer`` (same config shape as at save
+        time) and pass it in. This mirrors ``load_history``'s "caller owns
+        reconstruction" contract.
+
+        Restores:
+            - replay_buffer.entries (oldest first)
+            - _loss_history (preserves window order)
+            - is_diverged flag
+        """
+        from soma.training.online_verbalizer import ChatExchange
+
+        state_path = out_dir / "online_state.json"
+        if not state_path.exists():
+            raise FileNotFoundError(f"online_state.json missing at {state_path}")
+        data = json.loads(state_path.read_text())
+
+        online_trainer.replay_buffer.entries.clear()
+        for item in data.get("replay_buffer", []):
+            online_trainer.replay_buffer.entries.append(
+                ChatExchange(
+                    user_text=item["user_text"],
+                    response=item["response"],
+                    ts=datetime.fromisoformat(item["ts"]),
+                )
+            )
+        online_trainer._loss_history.clear()
+        for loss in data.get("loss_history", []):
+            online_trainer._loss_history.append(float(loss))
+        online_trainer.is_diverged = bool(data.get("is_diverged", False))

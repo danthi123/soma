@@ -116,6 +116,65 @@ class TestConstruction:
             assert sensor.id in incoming_sources
             assert out.id in outgoing_targets
 
+    def test_seeds_requested_integrators(self, small_config: SOMAConfig) -> None:
+        """config.initial_integrator_count must actually produce INTEGRATOR nodes.
+
+        Regression guard: before the seed-graph fix the field was silently
+        ignored, leaving every SOMA with zero INTEGRATORs despite a non-zero
+        config value (observed in a 1.6M-step checkpoint).
+        """
+        cfg = SOMAConfig(
+            sensor_output_dim=8,
+            associator_input_dim=8,
+            associator_hidden_dim=16,
+            associator_output_dim=8,
+            integrator_input_dim=16,
+            integrator_hidden_dim=16,
+            integrator_output_dim=16,
+            wm_dim=8,
+            key_dim=8,
+            value_dim=16,
+            text_embed_dim=8,
+            initial_associator_count=4,
+            initial_integrator_count=3,
+            num_curiosity_domains=2,
+            seed=0,
+        )
+        soma = SOMA(cfg)
+        integ_count = sum(1 for n in soma.graph.all_nodes() if n.node_type is NodeType.INTEGRATOR)
+        assert integ_count == 3
+
+    def test_integrators_connect_associator_and_outputs(self, small_config: SOMAConfig) -> None:
+        """Every seeded integrator must have at least one inbound edge from an
+        ASSOCIATOR and one outbound edge to an OUTPUT."""
+        cfg = SOMAConfig(
+            sensor_output_dim=8,
+            associator_input_dim=8,
+            associator_hidden_dim=16,
+            associator_output_dim=8,
+            integrator_input_dim=16,
+            integrator_hidden_dim=16,
+            integrator_output_dim=16,
+            wm_dim=8,
+            key_dim=8,
+            value_dim=16,
+            text_embed_dim=8,
+            initial_associator_count=2,
+            initial_integrator_count=2,
+            num_curiosity_domains=2,
+            seed=0,
+        )
+        soma = SOMA(cfg)
+        out = soma.graph.get_output("text")
+        for node in soma.graph.all_nodes():
+            if node.node_type is not NodeType.INTEGRATOR:
+                continue
+            incoming = soma.graph.get_incoming_edges(node.id)
+            outgoing_targets = {e.target_id for e in soma.graph.get_outgoing_edges(node.id)}
+            in_types = {soma.graph.nodes[e.source_id].node_type for e in incoming}
+            assert NodeType.ASSOCIATOR in in_types, f"integrator {node.id} has no associator fan-in"
+            assert out.id in outgoing_targets, f"integrator {node.id} does not reach the output"
+
     def test_modules_instantiated(self, soma: SOMA) -> None:
         # All sub-modules must be wired up.
         assert soma.working_memory.wm_dim == soma.config.wm_dim

@@ -225,6 +225,7 @@ class SOMA:
             outputs.append(node)
 
         # Associator layer wired sensor -> assoc -> output.
+        associators: list[Node] = []
         for _ in range(max(1, config.initial_associator_count)):
             node = Node(
                 node_type=NodeType.ASSOCIATOR,
@@ -236,8 +237,32 @@ class SOMA:
                 device=self.device,
             )
             self.graph.add_node(node)
+            associators.append(node)
             for sensor in sensors:
                 self._try_add_edge(sensor, node)
+            for out_node in outputs:
+                self._try_add_edge(node, out_node)
+
+        # Integrator layer wired assoc -> integrator -> output. Each integrator
+        # receives from one associator (round-robin) and broadcasts to every
+        # output — enough to ensure the integrator sees signal on day zero.
+        # Synaptogenesis widens the inbound fan-in later based on correlation.
+        # Fixes a long-standing bug where config.initial_integrator_count was
+        # read by SOMAConfig but never consumed here, leaving the graph with
+        # no INTEGRATOR nodes ever (neurogenesis only grows ASSOCIATORs).
+        for i in range(max(0, config.initial_integrator_count)):
+            node = Node(
+                node_type=NodeType.INTEGRATOR,
+                input_dim=config.integrator_input_dim,
+                hidden_dim=config.integrator_hidden_dim,
+                output_dim=config.integrator_output_dim,
+                creation_step=0,
+                config=config,
+                device=self.device,
+            )
+            self.graph.add_node(node)
+            if associators:
+                self._try_add_edge(associators[i % len(associators)], node)
             for out_node in outputs:
                 self._try_add_edge(node, out_node)
 

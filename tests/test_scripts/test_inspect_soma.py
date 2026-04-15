@@ -76,11 +76,12 @@ def test_inspect_directory_bundle(tmp_path: Path) -> None:
     for section in ("Graph", "Working Memory", "Homeostasis", "Episodic Memory"):
         assert section in stdout, f"missing section {section!r}:\n{stdout}"
 
-    # Node-count sanity: 1 sensor + 1 output + 2 associators from the tiny cfg.
-    assert "Nodes: 4 total" in stdout
+    # Node-count sanity: 1 sensor + 1 output + 2 associators + 1 integrator.
+    assert "Nodes: 5 total" in stdout
     assert "SENSOR      1" in stdout
     assert "OUTPUT      1" in stdout
     assert "ASSOCIATOR  2" in stdout
+    assert "INTEGRATOR  1" in stdout
 
 
 def test_inspect_single_file(tmp_path: Path) -> None:

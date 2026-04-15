@@ -7,7 +7,13 @@ frozen HuggingFace causal LM wrapped in :class:`ChatHead`, and a
 then drops the caller into an interactive REPL.
 
 Usage:
-    # Fresh session:
+    # Zero-config: pick the best tier for this machine's hardware
+    # (see soma.deploy.MODEL_TIERS for the tier -> model-name map):
+    python scripts/chat_repl.py \\
+        --soma-checkpoint artifacts/brain-bundle/ \\
+        --tier auto
+
+    # Fresh session with an explicit HF model:
     python scripts/chat_repl.py \\
         --soma-checkpoint artifacts/brain-bundle/ \\
         --llm-name HuggingFaceTB/SmolLM2-360M-Instruct \\
@@ -46,13 +52,19 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from soma.core.brain_bundle import peek_payload
 from soma.core.config import SOMAConfig
+from soma.deploy.chat_head_factory import build_chat_head
+from soma.deploy.cli import (
+    add_deploy_arguments,
+    print_selection,
+    resolve_device_dtype_tier,
+)
 from soma.io.chat_head import ChatHead
 from soma.io.verbalizer import SomaVerbalizer, VerbalizerSpec
 from soma.session.chat_session import ChatSession
 from soma.system import SOMA
 
 
-def _parse_args() -> argparse.Namespace:
+def _build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         description="Interactive multi-turn SOMA chat REPL (SOMA + frozen HF LLM).",
     )
@@ -66,12 +78,7 @@ def _parse_args() -> argparse.Namespace:
             "rejected because interactive chat needs a bundled tokenizer."
         ),
     )
-    p.add_argument(
-        "--llm-name",
-        type=str,
-        required=True,
-        help="HuggingFace model name (e.g., HuggingFaceTB/SmolLM2-360M-Instruct).",
-    )
+    add_deploy_arguments(p)
     p.add_argument(
         "--verbalizer-checkpoint",
         type=Path,
@@ -114,12 +121,6 @@ def _parse_args() -> argparse.Namespace:
         ),
     )
     p.add_argument(
-        "--device",
-        type=str,
-        default="cpu",
-        help="Torch device string (default: cpu; GPU usually owned by the train service).",
-    )
-    p.add_argument(
         "--num-prefix-tokens",
         type=int,
         default=8,
@@ -131,7 +132,11 @@ def _parse_args() -> argparse.Namespace:
         default=64,
         help="Max new tokens per assistant response (default: 64).",
     )
-    return p.parse_args()
+    return p
+
+
+def _parse_args() -> argparse.Namespace:
+    return _build_parser().parse_args()
 
 
 def _load_soma(checkpoint_path: Path, device: torch.device) -> tuple[SOMA, SOMAConfig, Any, Any]:
@@ -172,13 +177,18 @@ def _load_soma(checkpoint_path: Path, device: torch.device) -> tuple[SOMA, SOMAC
     return soma, config, tokenizer, encoder
 
 
-def _build_chat_head(llm_name: str, device: torch.device) -> ChatHead:
+def _build_chat_head_explicit(
+    llm_name: str,
+    device: torch.device,
+    dtype: torch.dtype,
+) -> ChatHead:
+    """Build a ChatHead for an explicitly-named HF model at the given dtype."""
     hf_tokenizer = AutoTokenizer.from_pretrained(llm_name)
     hf_model = cast(
         Any,
         AutoModelForCausalLM.from_pretrained(
             llm_name,
-            torch_dtype=torch.float32,
+            torch_dtype=dtype,
         ),
     ).to(device)
     return ChatHead(model=hf_model, tokenizer=hf_tokenizer)
@@ -229,14 +239,18 @@ def _repl(session: ChatSession, max_new_tokens: int) -> None:
 
 def main() -> None:
     args = _parse_args()
-    device = torch.device(args.device)
+    device, dtype, llm_name, tier = resolve_device_dtype_tier(args)
+    print_selection(llm_name=llm_name, tier=tier, device=device, dtype=dtype)
 
     soma, cfg, tokenizer, encoder = _load_soma(args.soma_checkpoint, device)
-    chat_head = _build_chat_head(args.llm_name, device)
+    if tier is None:
+        chat_head = _build_chat_head_explicit(llm_name, device, dtype)
+    else:
+        chat_head = build_chat_head(tier=tier, device=device, dtype=dtype)
     verbalizer = _build_verbalizer(
         soma_output_dim=cfg.sensor_output_dim,
         chat_head=chat_head,
-        llm_name=args.llm_name,
+        llm_name=llm_name,
         num_prefix_tokens=args.num_prefix_tokens,
         checkpoint_path=args.verbalizer_checkpoint,
         device=device,

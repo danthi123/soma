@@ -10,12 +10,21 @@ see the projector actually learned something.
 
 Usage::
 
+    # Explicit HF model name (legacy backward-compat path):
     python scripts/train_verbalizer_bootstrap.py \\
         --soma-checkpoint checkpoints/current.pt \\
         --corpus data/tinyshakespeare.txt \\
         --llm-name HuggingFaceTB/SmolLM2-360M-Instruct \\
         --out-dir artifacts/verbalizer-bootstrap-001 \\
         --max-steps 2000
+
+    # Zero-config: pick the tier matching available VRAM
+    # (see soma.deploy.MODEL_TIERS for the tier -> model-name map):
+    python scripts/train_verbalizer_bootstrap.py \\
+        --soma-checkpoint checkpoints/current.pt \\
+        --corpus data/tinyshakespeare.txt \\
+        --tier auto \\
+        --out-dir artifacts/verbalizer-bootstrap-001
 
 The ``--soma-checkpoint`` flag accepts either a single ``.pt`` file
 (legacy layout) or a bundle directory (from :meth:`SOMA.save_bundle`).
@@ -35,6 +44,12 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from soma.core.brain_bundle import peek_payload
 from soma.core.config import SOMAConfig
+from soma.deploy.chat_head_factory import build_chat_head
+from soma.deploy.cli import (
+    add_deploy_arguments,
+    print_selection,
+    resolve_device_dtype_tier,
+)
 from soma.io.chat_head import ChatHead
 from soma.io.text_encoder import TextEncoder, train_bpe_tokenizer
 from soma.io.verbalizer import SomaVerbalizer, VerbalizerSpec
@@ -54,7 +69,7 @@ def _window_corpus(text: str, window_chars: int) -> list[str]:
     return [text[i : i + window_chars] for i in range(0, len(text) - window_chars, stride)]
 
 
-def _parse_args() -> argparse.Namespace:
+def _build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         description="Bootstrap-train SOMA's verbalizer against a frozen HF LLM.",
     )
@@ -73,12 +88,7 @@ def _parse_args() -> argparse.Namespace:
         required=True,
         help="Path to a UTF-8 text corpus used for training + held-out eval.",
     )
-    p.add_argument(
-        "--llm-name",
-        type=str,
-        required=True,
-        help="HuggingFace model name (e.g., HuggingFaceTB/SmolLM2-360M-Instruct).",
-    )
+    add_deploy_arguments(p)
     p.add_argument(
         "--out-dir",
         type=Path,
@@ -90,12 +100,6 @@ def _parse_args() -> argparse.Namespace:
         type=int,
         default=None,
         help="Override SOMAConfig.bootstrap_max_steps (default: use config value).",
-    )
-    p.add_argument(
-        "--device",
-        type=str,
-        default="cpu",
-        help="Torch device string (default: cpu; GPU usually owned by the train service).",
     )
     p.add_argument(
         "--num-prefix-tokens",
@@ -118,7 +122,11 @@ def _parse_args() -> argparse.Namespace:
             "(single-file checkpoint path only; default: config.vocab_size)."
         ),
     )
-    return p.parse_args()
+    return p
+
+
+def _parse_args() -> argparse.Namespace:
+    return _build_parser().parse_args()
 
 
 def _load_soma(
@@ -191,7 +199,8 @@ def _load_soma(
 
 def main() -> None:
     args = _parse_args()
-    device = torch.device(args.device)
+    device, dtype, llm_name, tier = resolve_device_dtype_tier(args)
+    print_selection(llm_name=llm_name, tier=tier, device=device, dtype=dtype)
 
     corpus_text = args.corpus.read_text(encoding="utf-8")
 
@@ -207,22 +216,29 @@ def main() -> None:
         cfg = replace(cfg, bootstrap_max_steps=args.max_steps)
 
     # ----- Load frozen HF LLM --------------------------------------------
-    hf_tokenizer = AutoTokenizer.from_pretrained(args.llm_name)
-    hf_model = cast(
-        Any,
-        AutoModelForCausalLM.from_pretrained(
-            args.llm_name,
-            torch_dtype=torch.float32,
-        ),
-    ).to(device)
-    chat_head = ChatHead(model=hf_model, tokenizer=hf_tokenizer)
+    # --tier path uses the shared factory so the hidden-dim validation and
+    # any future download/caching policies are shared with chat_repl.
+    # --llm-name path keeps the bespoke loader so operators can point at
+    # arbitrary HF models not in MODEL_TIERS.
+    if tier is None:
+        hf_tokenizer = AutoTokenizer.from_pretrained(llm_name)
+        hf_model = cast(
+            Any,
+            AutoModelForCausalLM.from_pretrained(
+                llm_name,
+                torch_dtype=dtype,
+            ),
+        ).to(device)
+        chat_head = ChatHead(model=hf_model, tokenizer=hf_tokenizer)
+    else:
+        chat_head = build_chat_head(tier=tier, device=device, dtype=dtype)
 
     # ----- Build verbalizer ----------------------------------------------
     # Match the verbalizer's input dim to SOMA's actual OUTPUT-node dim.
     # Per SOMA._initialize_seed_graph, OUTPUT nodes share sensor_output_dim.
     spec = VerbalizerSpec(
         soma_output_dim=cfg.sensor_output_dim,
-        llm_name=args.llm_name,
+        llm_name=llm_name,
         llm_hidden_dim=chat_head.hidden_size,
         num_prefix_tokens=args.num_prefix_tokens,
     )

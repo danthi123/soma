@@ -26,7 +26,7 @@ from soma.deploy.devices import (
     select_device_and_dtype,
 )
 
-TIER_CHOICES = ["auto", "tiny", "small", "large"]
+TIER_CHOICES = ["auto", "tiny", "small", "large", "xlarge"]
 DTYPE_CHOICES = ["auto", "fp32", "fp16"]
 
 

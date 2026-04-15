@@ -114,10 +114,13 @@ def test_resolve_dtype_override_fp32_on_cuda(monkeypatch: pytest.MonkeyPatch) ->
     assert dtype == torch.float32
 
 
-def test_resolve_dtype_override_fp16_on_cpu() -> None:
-    """Operator can force fp16 on CPU even though auto would pick fp32."""
+def test_resolve_dtype_override_fp16_on_cpu_warns() -> None:
+    """fp16+cpu is accepted but must warn -- it's a real footgun on most
+    consumer CPUs (fp16 matmul without AVX-512-fp16 is slower than fp32),
+    so silent acceptance would hide a performance trap from benchmarks."""
     args = _build_test_parser().parse_args(["--device", "cpu", "--dtype", "fp16"])
-    _device, dtype, _llm_name, _tier = resolve_device_dtype_tier(args)
+    with pytest.warns(UserWarning, match="fp16.*cpu"):
+        _device, dtype, _llm_name, _tier = resolve_device_dtype_tier(args)
     assert dtype == torch.float16
 
 

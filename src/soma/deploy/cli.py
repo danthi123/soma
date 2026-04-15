@@ -15,6 +15,7 @@ later without churning both call sites.
 from __future__ import annotations
 
 import argparse
+import warnings
 
 import torch
 
@@ -56,7 +57,11 @@ def add_deploy_arguments(parser: argparse.ArgumentParser) -> None:
         "--device",
         type=str,
         default="auto",
-        help="Torch device string. 'auto' picks cuda if available, else cpu.",
+        help=(
+            "Torch device string. 'auto' picks cuda if available, else cpu. "
+            "Note: cuda now defaults to fp16 (Phase 7). Pass --dtype fp32 to "
+            "restore the pre-Phase-7 fp32-on-cuda behavior."
+        ),
     )
     parser.add_argument(
         "--dtype",
@@ -90,6 +95,18 @@ def resolve_device_dtype_tier(
         dtype = torch.float16
     else:
         dtype = torch.float32
+
+    # fp16 on CPU is typically SLOWER than fp32 (no AVX-512-fp16 on most
+    # consumer CPUs). Warn operators who explicitly requested this combo
+    # instead of silently accepting a footgun -- but don't reject, since
+    # a benchmark or memory-shape test might legitimately want it.
+    if dtype == torch.float16 and device.type == "cpu":
+        warnings.warn(
+            "--dtype fp16 with --device cpu is typically slower than fp32 on "
+            "consumer CPUs that lack AVX-512-fp16. Prefer --dtype fp32 on CPU, "
+            "or --device cuda for fp16.",
+            stacklevel=2,
+        )
 
     # Tier / llm-name resolution. Explicit --llm-name beats any --tier.
     if args.llm_name is not None:

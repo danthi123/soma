@@ -1015,7 +1015,93 @@ class SOMAConfig:
 
 ---
 
-## 11. Resource Estimation
+## 11. Hybrid SOMA + Transformer
+
+Sections 1-10 describe SOMA as a self-contained adaptive processor. In
+practice, SOMA alone cannot produce fluent natural language at the
+scale a human user expects from a conversational assistant — the
+`TextDecoder` of Section 8.2 is a single `Linear → vocab` layer whose
+output quality is bounded by corpus token statistics. To close that
+capability gap without surrendering SOMA's adaptive properties, SOMA
+is paired with a frozen small transformer through a thin, swappable
+projection head: the **SomaVerbalizer**. The transformer is the voice;
+SOMA (Section 3) remains the mind.
+
+### 11.1 SomaVerbalizer — the portable interface
+
+`src/soma/io/verbalizer.py` defines `SomaVerbalizer`, an
+`nn.Sequential(Linear → LayerNorm → GELU → Linear)` projector with
+near-zero final-layer init. Its identity is pinned by a frozen
+`VerbalizerSpec` dataclass carrying `soma_output_dim`, `llm_name`,
+`llm_hidden_dim`, and `num_prefix_tokens`. A `SomaAggregator` helper
+mean-pools the `OUTPUT` node activations produced by the graph in
+Section 3.3 into a canonical `(B, 128)` tensor; the verbalizer maps
+that to `(B, k, d_model)` soft-prompt prefix embeddings which the LLM
+consumes through its `inputs_embeds` entrypoint. Near-zero init means
+an untrained projector is a safe no-op — the LLM behaves vanilla.
+
+Save/load is a directory format (`spec.json` + `weights.pt`) nested
+inside the brain bundle as `verbalizer/`, so the SOMA checkpoint and
+its paired projector travel together but are independently
+replaceable. Swapping the transformer requires retraining only the
+projector's final layer on a small paired dataset. SOMA itself is
+untouched.
+
+### 11.2 ChatHead — frozen conditioner
+
+`src/soma/io/chat_head.py` defines `ChatHead`, which wraps any
+HuggingFace causal LM plus its tokenizer. At `__init__`, all base-model
+parameters have `requires_grad=False` and the module is placed in
+inference mode; the Phase 4 bootstrap trainer re-asserts this
+invariant at every step. `ChatHead.generate_text(inputs_embeds,
+attention_mask, position_ids, ...)` is a thin wrapper that prepends
+the verbalizer prefix to tokenized user text and delegates to the
+LLM's `generate`. Position IDs span `0..k+T-1`; RoPE-family models
+handle the prefix natively.
+
+### 11.3 Bootstrap training
+
+`src/soma/training/verbalizer_bootstrap.py` implements the
+`VerbalizerTrainer`. For each training window: text is fed through a
+no-grad SOMA forward pass to produce an OUTPUT state; the verbalizer
+projects it to a prefix; the frozen LLM's input embedder tokenizes and
+embeds the same text; the two are concatenated as `inputs_embeds`; and
+a standard causal-LM cross-entropy loss is computed with `labels=-100`
+across the `k` prefix positions so only token-position predictions
+contribute. Only the verbalizer's two linear layers receive gradient.
+SOMA stays frozen by `with torch.no_grad()` around `soma.step()`; the
+LLM stays frozen by `requires_grad=False`. Optimizer is Adam with
+cosine LR + warmup; checkpoints are saved every
+`verbalizer_checkpoint_interval` steps, and the best-by-eval
+projector is promoted to the canonical artifact.
+
+### 11.4 Consumer-deploy tiering
+
+`src/soma/deploy/` exposes `MODEL_TIERS` (`tiny` SmolLM2-360M,
+`small` Qwen2.5-1.5B, `large` Gemma-4-E4B, `xlarge` Qwen3.5-9B) plus
+`auto_select_tier()`, `select_device_and_dtype()`, and
+`build_chat_head()`. VRAM detection picks a tier that fits with a
+configurable safety factor. For VRAM-tight configurations,
+bitsandbytes `int4`/`int8` quantization is available through a
+`--quantization` CLI flag; a separate GGUF inference-only backend
+is available for runtime deployment once the verbalizer is trained.
+An RTX 3090 comfortably hosts the `large` tier alongside SOMA's own
+graph.
+
+### 11.5 Why this preserves SOMA's promise
+
+The split is deliberately lopsided: SOMA is the large, slow, adaptive
+artifact users accumulate over time; the verbalizer is the small,
+cheap, replaceable translator. When a better small transformer ships,
+only the verbalizer's output layer needs retraining on modest paired
+data. The user keeps their brain. This is the "SOMA as portable
+brain" contract — continual learning in Sections 3-7 is preserved,
+and the transformer becomes an interchangeable mouthpiece, not a
+baked-in component.
+
+---
+
+## 12. Resource Estimation
 
 ### Memory Budget (RTX 3090, 24GB VRAM)
 
@@ -1032,7 +1118,7 @@ class SOMAConfig:
 
 ---
 
-## 12. Key Risks and Mitigations
+## 13. Key Risks and Mitigations
 
 | Risk | Mitigation |
 |------|------------|

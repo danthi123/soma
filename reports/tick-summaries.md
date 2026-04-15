@@ -1320,3 +1320,4 @@ to Stage 5 multimodal).
 | 1776231092 | 1475000 | 0.01713 | 0.02345 | 36/119 | no_change | loss regressed +21% post-synaptogenesis; waiting to confirm trend |
 
 - **tick 1776233282** (step 1,495K) — no change. loss_ema=0.01500 (-13% vs baseline). Training stable; recent config tweaks reverted for curiosity instability; waiting.
+| 1776235358 | 2026-04-15T06:46:13Z | 1510000 | no_change | loss plateau stable, consecutive_failures=2, skipping intervention |

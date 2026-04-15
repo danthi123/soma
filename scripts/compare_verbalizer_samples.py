@@ -50,6 +50,8 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument("--llm-name", type=str, required=True)
     p.add_argument("--device", type=str, default="cuda")
     p.add_argument("--dtype", choices=["fp32", "fp16"], default="fp16")
+    p.add_argument("--quantization", choices=["none", "int4", "int8"], default="none",
+                   help="LLM quantization mode (match training for faithful comparison).")
     p.add_argument("--max-new-tokens", type=int, default=40)
     p.add_argument("--out", type=Path, required=True)
     return p.parse_args()
@@ -88,12 +90,25 @@ def main() -> None:
     # SOMA, only the SOMA graph state needs to be independent.
 
     # ---- LLM ---------------------------------------------------------
-    print(f"Loading LLM {args.llm_name} ({args.dtype}) on {device}...")
+    print(f"Loading LLM {args.llm_name} ({args.dtype}, quant={args.quantization}) on {device}...")
     hf_tokenizer = AutoTokenizer.from_pretrained(args.llm_name)
-    hf_model = cast(
-        Any,
-        AutoModelForCausalLM.from_pretrained(args.llm_name, torch_dtype=dtype),
-    ).to(device)
+    if args.quantization == "none":
+        hf_model = cast(
+            Any,
+            AutoModelForCausalLM.from_pretrained(args.llm_name, torch_dtype=dtype),
+        ).to(device)
+    else:
+        from soma.deploy.chat_head_factory import _build_bnb_config
+
+        hf_model = cast(
+            Any,
+            AutoModelForCausalLM.from_pretrained(
+                args.llm_name,
+                torch_dtype=dtype,
+                quantization_config=_build_bnb_config(args.quantization, dtype),
+                device_map={"": device.type},
+            ),
+        )
     chat_head = ChatHead(model=hf_model, tokenizer=hf_tokenizer)
 
     # ---- Verbalizers --------------------------------------------------

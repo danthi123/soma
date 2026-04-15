@@ -135,12 +135,18 @@ def build_encoders(
     *,
     vocab_size: int | None = None,
     tie_decoder_weights: bool = True,
+    device: torch.device | str | None = None,
 ) -> tuple[TextEncoder, TextDecoder]:
     """Train a BPE tokenizer over the corpus and wire encoder + decoder.
 
     When ``tie_decoder_weights`` is True (the default), the decoder's
     output projection shares the encoder's embedding matrix so that
     well-learned embedding directions decode back to their token ids.
+
+    ``device`` is forwarded to the encoder so embeddings are allocated on
+    the same device as the SOMA graph — without it the feeder returns CPU
+    tensors and a GPU-resident SOMA crashes with a device-mismatch error
+    inside ``edge.transmit`` on the very first step.
     """
     effective_vocab = vocab_size if vocab_size is not None else config.vocab_size
     tokenizer = train_bpe_tokenizer(corpus, vocab_size=effective_vocab)
@@ -148,10 +154,13 @@ def build_encoders(
         tokenizer,
         embed_dim=config.text_embed_dim,
         max_seq_len=config.max_input_tokens,
+        device=device,
     )
     decoder = TextDecoder(tokenizer, embed_dim=config.text_embed_dim)
     if tie_decoder_weights:
         decoder.tie_weights(encoder)
+        if device is not None:
+            decoder.to(device)
     return encoder, decoder
 
 
@@ -333,7 +342,13 @@ def main(argv: list[str] | None = None) -> int:
         config.seed = args.seed
 
     corpus = read_corpus(args.corpus)
-    encoder, _decoder = build_encoders(config, corpus, vocab_size=args.tokenizer_vocab_size)
+    device = torch.device(args.device)
+    encoder, _decoder = build_encoders(
+        config,
+        corpus,
+        vocab_size=args.tokenizer_vocab_size,
+        device=device,
+    )
 
     feeder = TextDatasetFeeder(
         encoder,
@@ -341,7 +356,6 @@ def main(argv: list[str] | None = None) -> int:
         chunk_size=min(16, config.max_input_tokens // 2),
     )
 
-    device = torch.device(args.device)
     soma = SOMA(config, device=device)
 
     if args.resume is not None:

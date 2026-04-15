@@ -53,6 +53,9 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument("--dtype", choices=["fp32", "fp16"], default="fp16")
     p.add_argument("--eval-samples", type=int, default=20)
     p.add_argument("--seed", type=int, default=42)
+    p.add_argument("--soma-max-tokens", type=int, default=None,
+                   help="Cap tokens fed through soma.step per window. Must match the "
+                        "training config or the state distribution shifts.")
     p.add_argument("--out", type=Path, default=None)
     return p.parse_args()
 
@@ -133,6 +136,7 @@ def main() -> None:
             tokenizer=tokenizer,
             encoder=encoder,
             soma_output_dim=soma_output_dim,
+            max_tokens=args.soma_max_tokens,
         )
         real_states.append(state.detach())
 

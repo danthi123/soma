@@ -8,3 +8,4 @@
 - **tick 1776275310** (step 1,860,000): no_change — loss plateau stable at ema=0.015/heldout=0.021, no actionable symptoms, recent growth-config changes reverted
 
 - **tick 1776277526** (step 1,875,000): no_change — loss_ema=0.01484 heldout=0.02086 kl=20.71 nodes=36 edges=140, curiosity rising (0.00575 highest in 6 ticks), two growth-config reverts still blocking
+- **tick 1776284175** (step 1975000): no_change — loss_ema=0.0153, heldout=0.0209, kl=20.71, nodes=36, edges=149. Graph growth stalled; prior growth-config attempts reverted; consecutive_failures=2, deferring to operator.

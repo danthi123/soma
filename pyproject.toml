@@ -53,6 +53,13 @@ quant = [
     # See `docs/deployment.md` "Quantization (optional)" for usage.
     "bitsandbytes>=0.43.0",
 ]
+gguf = [
+    # llama-cpp-python lets SOMA's inference-only path consume local GGUF
+    # files (e.g., from LM Studio cache). Optional extra -- NOT a hard dep
+    # because the wheel build is environment-sensitive. Training paths are
+    # unaffected; GGUF cannot be used for verbalizer gradient flow.
+    "llama-cpp-python>=0.2.70",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -92,5 +99,6 @@ module = [
     "accelerate", "accelerate.*",
     "safetensors", "safetensors.*",
     "bitsandbytes", "bitsandbytes.*",
+    "llama_cpp", "llama_cpp.*",
 ]
 ignore_missing_imports = true

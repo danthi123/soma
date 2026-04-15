@@ -16,7 +16,8 @@ from __future__ import annotations
 
 import argparse
 import warnings
-from typing import cast
+from pathlib import Path
+from typing import Literal, cast
 
 import torch
 
@@ -31,6 +32,8 @@ from soma.deploy.devices import (
 TIER_CHOICES = ["auto", "tiny", "small", "large", "xlarge"]
 DTYPE_CHOICES = ["auto", "fp32", "fp16"]
 QUANT_CHOICES = ["none", "int8", "int4"]
+
+Backend = Literal["hf", "gguf"]
 
 # Default safety factor for the deploy CLI. Mirrors
 # ``SOMAConfig.vram_safety_factor`` but is duplicated here because the
@@ -119,6 +122,16 @@ def add_deploy_arguments(parser: argparse.ArgumentParser) -> None:
             "while preserving gradient flow through input embeddings."
         ),
     )
+    parser.add_argument(
+        "--gguf-path",
+        type=Path,
+        default=None,
+        help=(
+            "Path to a local GGUF file (e.g., from LM Studio cache). Inference-"
+            "only -- cannot be used with verbalizer training. Overrides --tier "
+            "and --llm-name."
+        ),
+    )
 
 
 def resolve_device_dtype_tier(
@@ -187,6 +200,22 @@ def resolve_quantization(args: argparse.Namespace) -> str:
     churn three call sites for no real win.
     """
     return cast(str, args.quantization)
+
+
+def resolve_backend(args: argparse.Namespace) -> Backend:
+    """Pick the inference backend implied by ``args``.
+
+    Returns ``"gguf"`` when the operator passed ``--gguf-path``, else
+    ``"hf"`` (the default Phase-7 path that downloads HF safetensors).
+
+    The GGUF backend is inference-only and bypasses the tier registry --
+    ``--gguf-path`` therefore wins over ``--tier`` and ``--llm-name``.
+    Callers that need a training-capable LLM should refuse the ``"gguf"``
+    backend explicitly (see ``GGUFChatHead.supports_gradients``).
+    """
+    if getattr(args, "gguf_path", None) is not None:
+        return "gguf"
+    return "hf"
 
 
 def dtype_label(dtype: torch.dtype) -> str:

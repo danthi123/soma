@@ -205,12 +205,51 @@ consuming. Run them serially unless you have >20 GB of headroom.
 
 ---
 
+## GGUF inference-only backend (optional)
+
+Use this when you already have GGUFs cached locally (e.g., from LM Studio
+under `~/.cache/lm-studio/models/`) and don't want to re-download HF
+safetensors. **GGUF is inference-only** — `llama.cpp` does not expose
+the input-embedding tensor as a gradient-enabled `nn.Module`, so the
+SOMA verbalizer cannot be bootstrapped or trained against a GGUF
+backend. Use the HF path (`build_chat_head`) for any training run.
+
+Install the optional extras:
+
+```bash
+pip install -e ".[gguf]"
+```
+
+`llama-cpp-python` is intentionally not a hard dependency — it ships
+with several CUDA/CPU build variants that can be finicky to install.
+
+Smoke-test against a local file:
+
+```python
+from pathlib import Path
+from soma.deploy.gguf_backend import build_gguf_chat_head
+
+head = build_gguf_chat_head(
+    gguf_path=Path("C:/Users/dant123/.cache/lm-studio/models/.../model.gguf"),
+)
+print(head.generate_text(prompt="Hello!", max_new_tokens=10))
+```
+
+CLI: pass `--gguf-path /path/to/model.gguf` to deploy scripts. The flag
+overrides `--tier` and `--llm-name`. `scripts/demo_chat.py` and
+`scripts/chat_repl.py` are not yet wired to consume it — that requires a
+soft-prompt -> hard-prompt conversion path for the verbalizer prefix
+and is deferred to a future phase.
+
+---
+
 ## References
 
 - `docs/plans/2026-04-14-consumer-deploy.md` — Phase 7 design doc.
 - `src/soma/deploy/devices.py` — tier registry + detection helpers.
 - `src/soma/deploy/chat_head_factory.py` — `build_chat_head` factory.
-- `src/soma/deploy/cli.py` — shared `--tier/--device/--dtype/--llm-name`
+- `src/soma/deploy/gguf_backend.py` — `build_gguf_chat_head` factory.
+- `src/soma/deploy/cli.py` — shared `--tier/--device/--dtype/--llm-name/--gguf-path`
   argparse glue.
 - `scripts/demo_chat.py` — zero-arg end-to-end demo.
 - `scripts/chat_repl.py` — interactive REPL.

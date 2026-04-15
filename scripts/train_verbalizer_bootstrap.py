@@ -49,6 +49,7 @@ from soma.deploy.cli import (
     add_deploy_arguments,
     print_selection,
     resolve_device_dtype_tier,
+    resolve_quantization,
 )
 from soma.io.chat_head import ChatHead
 from soma.io.text_encoder import TextEncoder, train_bpe_tokenizer
@@ -200,7 +201,10 @@ def _load_soma(
 def main() -> None:
     args = _parse_args()
     device, dtype, llm_name, tier = resolve_device_dtype_tier(args)
-    print_selection(llm_name=llm_name, tier=tier, device=device, dtype=dtype)
+    quantization = resolve_quantization(args)
+    print_selection(
+        llm_name=llm_name, tier=tier, device=device, dtype=dtype, quantization=quantization
+    )
 
     corpus_text = args.corpus.read_text(encoding="utf-8")
 
@@ -231,7 +235,12 @@ def main() -> None:
         ).to(device)
         chat_head = ChatHead(model=hf_model, tokenizer=hf_tokenizer)
     else:
-        chat_head = build_chat_head(tier=tier, device=device, dtype=dtype)
+        chat_head = build_chat_head(
+            tier=tier,
+            device=device,
+            dtype=dtype,
+            quantization=quantization,  # type: ignore[arg-type]
+        )
 
     # ----- Build verbalizer ----------------------------------------------
     # Match the verbalizer's input dim to SOMA's actual OUTPUT-node dim.

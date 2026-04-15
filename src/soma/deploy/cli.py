@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import warnings
+from typing import cast
 
 import torch
 
@@ -28,6 +29,7 @@ from soma.deploy.devices import (
 
 TIER_CHOICES = ["auto", "tiny", "small", "large"]
 DTYPE_CHOICES = ["auto", "fp32", "fp16"]
+QUANT_CHOICES = ["none", "int8", "int4"]
 
 
 def add_deploy_arguments(parser: argparse.ArgumentParser) -> None:
@@ -69,6 +71,17 @@ def add_deploy_arguments(parser: argparse.ArgumentParser) -> None:
         choices=DTYPE_CHOICES,
         default="auto",
         help="Model dtype override. 'auto' pairs with --device auto (cuda->fp16, cpu->fp32).",
+    )
+    parser.add_argument(
+        "--quantization",
+        type=str,
+        choices=QUANT_CHOICES,
+        default="none",
+        help=(
+            "Apply weight quantization to the LLM (requires bitsandbytes; install "
+            'via `pip install -e ".[quant]"`). int4 fits a 7B model in ~5GB VRAM '
+            "while preserving gradient flow through input embeddings."
+        ),
     )
 
 
@@ -117,6 +130,17 @@ def resolve_device_dtype_tier(
     return device, dtype, llm_name, tier
 
 
+def resolve_quantization(args: argparse.Namespace) -> str:
+    """Return the requested quantisation mode (``"none" | "int8" | "int4"``).
+
+    Kept as a small dedicated helper rather than expanding the four-tuple
+    return of :func:`resolve_device_dtype_tier` -- the CLIs only need this
+    one extra string and threading it through the existing tuple would
+    churn three call sites for no real win.
+    """
+    return cast(str, args.quantization)
+
+
 def dtype_label(dtype: torch.dtype) -> str:
     """Short human label for a torch dtype ("fp16" / "fp32" / raw repr)."""
     if dtype == torch.float16:
@@ -132,16 +156,25 @@ def print_selection(
     tier: str | None,
     device: torch.device,
     dtype: torch.dtype,
+    quantization: str = "none",
 ) -> None:
     """One-line report of the resolved tier/device/dtype, to stdout.
 
     Two forms: the tier-auto line ("Selected tier=small (Qwen/...), ...")
     and the explicit-llm-name line ("Using explicit --llm-name=..., ...").
-    Kept small on purpose -- operators want to see it next to normal
-    ``print()`` output, not buried in logs.
+    When ``quantization != "none"``, appends ``, quant=int4`` so operators
+    can confirm at a glance that bnb is engaged. Kept small on purpose --
+    operators want to see it next to normal ``print()`` output, not buried
+    in logs.
     """
     label = dtype_label(dtype)
+    quant_suffix = "" if quantization == "none" else f", quant={quantization}"
     if tier is None:
-        print(f"Using explicit --llm-name={llm_name}, device={device.type}, dtype={label}")
+        print(
+            f"Using explicit --llm-name={llm_name}, device={device.type}, "
+            f"dtype={label}{quant_suffix}"
+        )
     else:
-        print(f"Selected tier={tier} ({llm_name}), device={device.type}, dtype={label}")
+        print(
+            f"Selected tier={tier} ({llm_name}), device={device.type}, dtype={label}{quant_suffix}"
+        )

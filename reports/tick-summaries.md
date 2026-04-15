@@ -1346,3 +1346,4 @@ to Stage 5 multimodal).
 - tick 1776286397 step=2005000 loss_ema=0.01473 heldout=0.02099 kl=20.71 nodes=36 edges=153 class=null reason="stable plateau; no viable auto-scope intervention"
 
 - **tick 1776288618** (step 2035000): no_change — stable plateau, mild overfitting (heldout +9.1% vs baseline), config levers exhausted (2 recent reverts). loss_ema=0.01542 heldout=0.02100 kl=20.71 nodes=36 edges=148
+- **tick 1776290845** (step 2070K): no_change — loss_ema=0.0144, curiosity=0.00189, nodes=36, edges=153. Stable plateau; no non-carveout intervention available.

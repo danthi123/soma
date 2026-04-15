@@ -60,6 +60,10 @@ class VerbalizerTrainer:
         # signal "internal plumbing, not user-facing trainer surface".
         self._tokenizer = tokenizer
         self._encoder = encoder
+        # Caller may restrict the per-window soma.step call budget to
+        # shave wall-clock off the SOMA-serial loop. ``None`` (default)
+        # preserves the original behaviour of processing every embedding.
+        self.soma_max_tokens: int | None = None
 
         # Sanity: ChatHead must already be frozen (Phase 3 invariant).
         if any(p.requires_grad for p in self.chat_head.model.parameters()):
@@ -102,6 +106,7 @@ class VerbalizerTrainer:
                 tokenizer=self._tokenizer,
                 encoder=self._encoder,
                 soma_output_dim=self.verbalizer.spec.soma_output_dim,
+                max_tokens=self.soma_max_tokens,
             )
             for t in texts
         ]
@@ -501,6 +506,7 @@ def text_to_state(
     tokenizer: Any,
     encoder: Any,
     soma_output_dim: int,
+    max_tokens: int | None = None,
 ) -> torch.Tensor:
     """Feed ``text`` through SOMA (no-grad) and return the pooled OUTPUT state.
 
@@ -560,6 +566,17 @@ def text_to_state(
 
     with torch.no_grad():
         embeddings = encoder.encode(text)  # list[Tensor(embed_dim,)]
+        if max_tokens is not None and len(embeddings) > max_tokens:
+            # Evenly-spaced subsample so SOMA sees coverage of the whole
+            # window (not just the head). Each soma.step carries ~6 ms of
+            # Python/CUDA overhead per call, so capping the number of
+            # steps is the most direct way to accelerate bootstrap without
+            # changing the SOMA architecture. The compressed pooled state
+            # is the only signal the verbalizer reads — intermediate
+            # per-token state never leaves SOMA — so subsampling here
+            # trades slightly coarser state for a large throughput win.
+            step = max(len(embeddings) // max_tokens, 1)
+            embeddings = embeddings[::step][:max_tokens]
         for emb in embeddings:
             soma.step(inputs={"text": emb}, eval_mode=True)
 

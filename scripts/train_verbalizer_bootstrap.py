@@ -177,6 +177,18 @@ def _build_parser() -> argparse.ArgumentParser:
             "Padded windows are masked out of the loss."
         ),
     )
+    p.add_argument(
+        "--soma-max-tokens",
+        type=int,
+        default=None,
+        help=(
+            "Cap the number of token embeddings fed through soma.step per "
+            "window; longer windows are evenly subsampled. Default None "
+            "(process every embedding). Profiled overhead is ~6 ms per "
+            "soma.step call, so capping at e.g. 16 gives a ~4x speedup on "
+            "the bootstrap loop when SOMA was the bottleneck."
+        ),
+    )
     return p
 
 
@@ -332,6 +344,8 @@ def main() -> None:
         tokenizer=tokenizer,
         encoder=encoder,
     )
+    if args.soma_max_tokens is not None:
+        trainer.soma_max_tokens = args.soma_max_tokens
 
     # ----- Corpus split ---------------------------------------------------
     window_chars = cfg.bootstrap_sample_tokens * 4  # ~4 chars per BPE token

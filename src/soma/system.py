@@ -709,6 +709,15 @@ class SOMA:
             pad_mask = torch.ones_like(input_ids)
         token_embeds = chat_head.model.get_input_embeddings()(input_ids)  # (1, T, D)
 
+        # Phase 7 T3: align prefix dtype with the LLM's embedding dtype before
+        # concat. The verbalizer trains in fp32 for numerical stability, but
+        # on CUDA the deploy layer loads HF causal LMs in fp16 to fit consumer
+        # VRAM. Without this cast, torch.cat silently promotes the whole
+        # sequence to fp32 inside HF's matmul kernels — doubling VRAM and
+        # defeating the fp16 load. ``.to(dtype=...)`` is autograd-safe, so
+        # verbalizer gradients still flow during training.
+        if prefix.dtype != token_embeds.dtype:
+            prefix = prefix.to(dtype=token_embeds.dtype)
         inputs_embeds = torch.cat([prefix, token_embeds], dim=1)
 
         k = verbalizer.spec.num_prefix_tokens

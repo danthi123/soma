@@ -76,3 +76,8 @@ consolidation_error_threshold: 0.5
 # Sequence Processing
 max_output_tokens: 128
 max_input_tokens: 256
+
+# Deployment
+# Headroom factor applied to detected VRAM before tier selection.
+# 0.9 = "reserve 10% for OS/driver/KV-cache jitter". Must be in (0, 1].
+vram_safety_factor: 0.9

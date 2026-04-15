@@ -229,6 +229,41 @@ class TestStabilityFields:
             SOMAConfig(max_consecutive_skipped_steps=0)
 
 
+class TestVramSafetyFactor:
+    def test_default_is_zero_point_nine(self) -> None:
+        """Default 0.9 = reserve 10% headroom for OS/driver/KV-cache jitter.
+        See devices.effective_vram_gb for the application site."""
+        cfg = SOMAConfig()
+        assert cfg.vram_safety_factor == pytest.approx(0.9)
+
+    def test_round_trip_yaml(self, tmp_path: Path) -> None:
+        original = SOMAConfig(vram_safety_factor=0.7)
+        yaml_path = tmp_path / "vram.yaml"
+        original.to_yaml(yaml_path)
+        recovered = SOMAConfig.from_yaml(yaml_path)
+        assert recovered.vram_safety_factor == pytest.approx(0.7)
+
+    def test_round_trip_dict(self) -> None:
+        original = SOMAConfig(vram_safety_factor=0.5)
+        recovered = SOMAConfig.from_dict(original.to_dict())
+        assert recovered.vram_safety_factor == pytest.approx(0.5)
+
+    def test_factor_one_allowed(self) -> None:
+        """1.0 means 'use full VRAM' -- valid, not the default but legal."""
+        cfg = SOMAConfig(vram_safety_factor=1.0)
+        assert cfg.vram_safety_factor == pytest.approx(1.0)
+
+    def test_factor_just_above_zero_allowed(self) -> None:
+        """Lower bound is exclusive zero -- tiny positive values allowed."""
+        cfg = SOMAConfig(vram_safety_factor=0.01)
+        assert cfg.vram_safety_factor == pytest.approx(0.01)
+
+    @pytest.mark.parametrize("bad", [0.0, -0.1, 1.5, 2.0, -1.0])
+    def test_rejects_out_of_range(self, bad: float) -> None:
+        with pytest.raises(ValueError, match="vram_safety_factor"):
+            SOMAConfig(vram_safety_factor=bad)
+
+
 class TestYamlConsistency:
     def test_default_yaml_matches_dataclass_defaults(self) -> None:
         """The shipped ``configs/default.yaml`` should match the dataclass.

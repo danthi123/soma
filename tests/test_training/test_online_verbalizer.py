@@ -126,9 +126,26 @@ class _TinyTokenizer:
     def __init__(self) -> None:
         self.pad_token_id = 0
 
-    def __call__(self, text: str, return_tensors: str = "pt") -> dict:
-        ids = [min(ord(c) % 32, 31) for c in text]
-        return {"input_ids": torch.tensor([ids], dtype=torch.long)}
+    def __call__(
+        self,
+        text: str | list[str],
+        return_tensors: str = "pt",
+        padding: bool = False,
+    ) -> dict:
+        del return_tensors
+        if isinstance(text, str):
+            ids = [min(ord(c) % 32, 31) for c in text]
+            return {"input_ids": torch.tensor([ids], dtype=torch.long)}
+        encoded = [[min(ord(c) % 32, 31) for c in t] for t in text]
+        if padding:
+            max_len = max((len(row) for row in encoded), default=0)
+            padded = [row + [self.pad_token_id] * (max_len - len(row)) for row in encoded]
+            attn = [[1] * len(row) + [0] * (max_len - len(row)) for row in encoded]
+            return {
+                "input_ids": torch.tensor(padded, dtype=torch.long),
+                "attention_mask": torch.tensor(attn, dtype=torch.long),
+            }
+        return {"input_ids": torch.tensor(encoded, dtype=torch.long)}
 
 
 def _soma_cfg() -> SOMAConfig:

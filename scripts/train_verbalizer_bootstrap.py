@@ -167,6 +167,16 @@ def _build_parser() -> argparse.ArgumentParser:
             "(columns: step,train_loss,eval_loss,lr). Written incrementally."
         ),
     )
+    p.add_argument(
+        "--batch-size",
+        type=int,
+        default=1,
+        help=(
+            "Number of corpus windows per forward pass (near-linear speedup "
+            "up to GPU saturation). Default 1 (one window per step). "
+            "Padded windows are masked out of the loss."
+        ),
+    )
     return p
 
 
@@ -270,13 +280,29 @@ def main() -> None:
     # arbitrary HF models not in MODEL_TIERS.
     if tier is None:
         hf_tokenizer = AutoTokenizer.from_pretrained(llm_name)
-        hf_model = cast(
-            Any,
-            AutoModelForCausalLM.from_pretrained(
-                llm_name,
-                torch_dtype=dtype,
-            ),
-        ).to(device)
+        if quantization == "none":
+            hf_model = cast(
+                Any,
+                AutoModelForCausalLM.from_pretrained(
+                    llm_name,
+                    torch_dtype=dtype,
+                ),
+            ).to(device)
+        else:
+            # Mirror chat_head_factory's bnb path: bnb handles placement via
+            # device_map, so no .to(device) after load (would break quantised
+            # buffers). Import locally to keep the vanilla path bnb-free.
+            from soma.deploy.chat_head_factory import _build_bnb_config
+
+            hf_model = cast(
+                Any,
+                AutoModelForCausalLM.from_pretrained(
+                    llm_name,
+                    torch_dtype=dtype,
+                    quantization_config=_build_bnb_config(quantization, dtype),  # type: ignore[arg-type]
+                    device_map={"": device.type},
+                ),
+            )
         chat_head = ChatHead(model=hf_model, tokenizer=hf_tokenizer)
     else:
         chat_head = build_chat_head(
@@ -342,6 +368,7 @@ def main() -> None:
         cosine_lr=args.cosine_lr,
         warmup_steps=args.warmup_steps,
         loss_log_path=args.loss_log,
+        batch_size=args.batch_size,
     )
 
     if losses:

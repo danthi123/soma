@@ -67,12 +67,36 @@ class _TinyCausalLM(nn.Module):
 
 
 class _TinyTokenizer:
+    """Minimal HF-like tokenizer stub: supports single-text and batched
+    (list-of-text) calls with optional ``padding=True``. Emits an
+    ``attention_mask`` in the batched case so ``compute_lm_loss`` can mask
+    out pad positions; unbatched calls omit it (matching the pre-batching
+    contract used by compute_lm_loss when no mask is supplied)."""
+
     def __init__(self) -> None:
         self.pad_token_id = 0
 
-    def __call__(self, text: str, return_tensors: str = "pt") -> dict:
-        ids = [min(ord(c) % 32, 31) for c in text]
-        return {"input_ids": torch.tensor([ids], dtype=torch.long)}
+    def __call__(
+        self,
+        text: str | list[str],
+        return_tensors: str = "pt",
+        padding: bool = False,
+    ) -> dict:
+        del return_tensors  # always pt for this stub
+        if isinstance(text, str):
+            ids = [min(ord(c) % 32, 31) for c in text]
+            return {"input_ids": torch.tensor([ids], dtype=torch.long)}
+
+        encoded = [[min(ord(c) % 32, 31) for c in t] for t in text]
+        if padding:
+            max_len = max((len(row) for row in encoded), default=0)
+            padded = [row + [self.pad_token_id] * (max_len - len(row)) for row in encoded]
+            attn = [[1] * len(row) + [0] * (max_len - len(row)) for row in encoded]
+            return {
+                "input_ids": torch.tensor(padded, dtype=torch.long),
+                "attention_mask": torch.tensor(attn, dtype=torch.long),
+            }
+        return {"input_ids": torch.tensor(encoded, dtype=torch.long)}
 
 
 def _soma_cfg() -> SOMAConfig:
@@ -896,6 +920,148 @@ def test_train_writes_loss_log_csv(tmp_path: Path):
     assert row_noeval[2] == "", "eval_loss should be empty on non-eval step"
 
 
+# ---------------------------------------------------------------------------
+# Batching: compute_lm_loss + _step_loss over multi-sample inputs
+# ---------------------------------------------------------------------------
+
+
+def test_compute_lm_loss_pad_positions_do_not_affect_loss():
+    """A short sample concat'd with a padded sample must yield the same loss
+    as the short sample alone (padded positions masked out via -100 and
+    attention_mask=0)."""
+    torch.manual_seed(0)
+    head = ChatHead(
+        model=_TinyCausalLM(vocab=32, d_model=16),
+        tokenizer=_TinyTokenizer(),
+    )
+    # Single-sample baseline.
+    prefix_single = torch.zeros(1, 4, 16)
+    tokens_single = torch.tensor([[1, 2, 3]], dtype=torch.long)
+    loss_single = compute_lm_loss(
+        chat_head=head,
+        prefix=prefix_single,
+        token_ids=tokens_single,
+    ).item()
+
+    # Two-sample batch where the second sample is entirely pad.
+    prefix_batch = torch.zeros(2, 4, 16)
+    tokens_batch = torch.tensor(
+        [[1, 2, 3, 0, 0], [0, 0, 0, 0, 0]],
+        dtype=torch.long,
+    )
+    attn_batch = torch.tensor(
+        [[1, 1, 1, 0, 0], [0, 0, 0, 0, 0]],
+        dtype=torch.long,
+    )
+    loss_batch = compute_lm_loss(
+        chat_head=head,
+        prefix=prefix_batch,
+        token_ids=tokens_batch,
+        token_attention_mask=attn_batch,
+    ).item()
+
+    assert abs(loss_batch - loss_single) < 1e-5, (
+        f"pad positions leaked into loss: single={loss_single:.6f}, batch={loss_batch:.6f}"
+    )
+
+
+def test_step_loss_accepts_batch_and_returns_scalar():
+    t = _fresh_trainer()
+    loss_tensor, loss_value = t._step_loss(texts=["hello world", "another sample"])
+    assert loss_tensor.ndim == 0
+    assert isinstance(loss_value, float)
+    assert loss_value > 0
+
+
+def test_train_batch_updates_verbalizer_once():
+    """train_batch must update the verbalizer (one optim.step per call)."""
+    t = _fresh_trainer()
+    before = [p.detach().clone() for p in t.verbalizer.parameters()]
+    _ = t.train_batch(texts=["the quick brown fox", "jumped over"])
+    after = [p.detach().clone() for p in t.verbalizer.parameters()]
+    assert any(not torch.allclose(b, a) for b, a in zip(before, after, strict=True)), (
+        "verbalizer did not move after train_batch"
+    )
+
+
+def test_train_step_delegates_to_batch_path():
+    """train_step(text=...) should go through the new batched path with B=1
+    and produce a sensible loss (back-compat shim for existing callers)."""
+    t = _fresh_trainer()
+    loss_value = t.train_step(text="hello world")
+    assert isinstance(loss_value, float)
+    assert loss_value > 0
+
+
+def test_train_batch_size_controls_samples_per_forward(tmp_path: Path):
+    """With batch_size=3 and 12 corpus items, train should do 4 forward
+    passes (optim.step called 4 times — one per batch, no accumulation)."""
+    t = _fresh_trainer()
+    calls: list[int] = []
+    original_step = t.optim.step
+
+    def _counting_step() -> None:
+        calls.append(len(calls) + 1)
+        original_step()
+
+    t.optim.step = _counting_step  # type: ignore[method-assign]
+
+    losses = t.train(
+        corpus=iter(["sample"] * 12),
+        max_steps=4,
+        out_dir=tmp_path,
+        batch_size=3,
+    )
+    assert len(losses) == 4, f"expected 4 batched steps, got {len(losses)}"
+    assert len(calls) == 4, f"expected 4 optim.step calls, got {len(calls)}"
+
+
+def test_train_partial_tail_batch_is_still_forwarded(tmp_path: Path):
+    """Corpus of 7 items with batch_size=3: batches are [3, 3, 1]. The
+    partial tail (1 item) must still contribute a training step."""
+    t = _fresh_trainer()
+    losses = t.train(
+        corpus=iter(["sample"] * 7),
+        max_steps=10,
+        out_dir=tmp_path,
+        batch_size=3,
+    )
+    assert len(losses) == 3
+
+
+def test_train_rejects_invalid_batch_size(tmp_path: Path):
+    t = _fresh_trainer()
+    with pytest.raises(ValueError, match="batch_size"):
+        t.train(
+            corpus=iter(["x"]),
+            max_steps=1,
+            out_dir=tmp_path,
+            batch_size=0,
+        )
+
+
+def test_eval_lm_loss_batched_matches_sequential():
+    """Batched eval must produce the same token-weighted mean as per-sample
+    eval (within fp tolerance)."""
+    t = _fresh_trainer()
+    texts = ["foo", "bar baz qux", "hello world", "a"]
+
+    # Token-weighted sequential reference.
+    total_loss_tokens = 0.0
+    total_tokens = 0
+    for text in texts:
+        one = t.eval_lm_loss(texts=[text], batch_size=1)
+        # For B=1, num valid tokens = len of ids.
+        ids = t.chat_head.tokenizer(text, return_tensors="pt")["input_ids"]
+        n = int(ids.numel())
+        total_loss_tokens += one * n
+        total_tokens += n
+    ref = total_loss_tokens / total_tokens
+
+    batched = t.eval_lm_loss(texts=texts, batch_size=4)
+    assert abs(batched - ref) < 1e-4, f"batched={batched:.6f} vs ref={ref:.6f}"
+
+
 def test_train_step_skips_when_loss_is_non_finite(monkeypatch: pytest.MonkeyPatch):
     """If compute_lm_loss returns NaN, train_step must NOT call optim.step
     or backward — return the NaN as-is so callers can react."""
@@ -907,7 +1073,7 @@ def test_train_step_skips_when_loss_is_non_finite(monkeypatch: pytest.MonkeyPatc
     # Replace the module-level compute_lm_loss with a NaN-returning stub.
     from soma.training import verbalizer_bootstrap as vb
 
-    def _nan_loss(*, chat_head, prefix, token_ids):  # noqa: ARG001
+    def _nan_loss(*, chat_head, prefix, token_ids, token_attention_mask=None):  # noqa: ARG001
         # Return a NaN scalar that has a real grad-fn (would-be-trainable)
         # so the test catches the "skip backward" guard, not "no graph".
         return (prefix.sum() * 0) + float("nan")

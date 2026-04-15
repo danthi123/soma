@@ -77,55 +77,87 @@ class VerbalizerTrainer:
             lr=config.verbalizer_lr,
         )
 
-    def _step_loss(self, *, text: str) -> tuple[torch.Tensor, float]:
-        """Forward pass: produce LM loss tensor + its scalar value.
+    def _step_loss(self, *, texts: list[str]) -> tuple[torch.Tensor, float]:
+        """Forward pass: produce LM loss tensor + its scalar value for a batch.
 
-        No ``zero_grad``, no ``backward``, no ``optim.step`` — caller owns
-        those. Shared plumbing between ``train_step`` (one sample per
-        optim step) and ``train`` (supports gradient accumulation).
+        Each text goes through SOMA sequentially (SOMA is stateful and can't
+        be trivially parallelised), pooled states are stacked into a single
+        ``(B, soma_output_dim)`` tensor, and the verbalizer + LLM forward
+        run as one batched pass. Per-sample padding is handled via the HF
+        tokenizer's ``attention_mask`` so pad tokens are masked out of both
+        attention and the CE label positions.
+
+        Callers can pass a single-element list for unbatched behaviour — the
+        loss reduces to the same mean-over-valid-tokens scalar a B=1 forward
+        would produce (padded positions contribute zero). No ``zero_grad``,
+        ``backward``, or ``optim.step`` — caller owns those.
         """
-        state = text_to_state(
-            text=text,
-            soma=self.soma,
-            tokenizer=self._tokenizer,
-            encoder=self._encoder,
-            soma_output_dim=self.verbalizer.spec.soma_output_dim,
-        )
-        prefix = self.verbalizer(state)
+        if not texts:
+            raise ValueError("_step_loss requires at least one text")
 
-        tok_out = self.chat_head.tokenizer(text, return_tensors="pt")
+        states = [
+            text_to_state(
+                text=t,
+                soma=self.soma,
+                tokenizer=self._tokenizer,
+                encoder=self._encoder,
+                soma_output_dim=self.verbalizer.spec.soma_output_dim,
+            )
+            for t in texts
+        ]
+        stacked = torch.cat(states, dim=0)  # (B, soma_output_dim)
+        prefix = self.verbalizer(stacked)  # (B, k, d_model)
+
+        tok_out = self.chat_head.tokenizer(
+            texts,
+            padding=True,
+            return_tensors="pt",
+        )
         token_ids = tok_out["input_ids"]
+        attn_mask = tok_out.get("attention_mask")
 
         loss = compute_lm_loss(
             chat_head=self.chat_head,
             prefix=prefix,
             token_ids=token_ids,
+            token_attention_mask=attn_mask,
         )
         return loss, float(loss.item())
 
     def train_step(self, *, text: str) -> float:
-        """One forward + backward + optim.step. Returns scalar loss as float.
+        """Single-text convenience wrapper around ``train_batch``.
+
+        Kept as the public training entrypoint for backward-compat; the
+        underlying plumbing batches internally via ``_step_loss`` / the
+        ``train_batch`` helper below.
+        """
+        return self.train_batch(texts=[text])
+
+    def train_batch(self, *, texts: list[str]) -> float:
+        """One forward + backward + optim.step over a batch of texts.
 
         Gradient flows only through the verbalizer's two Linear layers.
         SOMA is wrapped in ``torch.no_grad`` inside ``text_to_state`` (T4);
         ChatHead is frozen via the invariant enforced at ``__init__`` (T2).
+
+        Returns the scalar batch loss (mean over valid target tokens).
+        Non-finite losses are returned unchanged and skip the optim step
+        to protect Adam's running moments — same contract as the previous
+        single-text ``train_step``.
         """
         self.verbalizer.train()
         self.optim.zero_grad()
 
-        loss, loss_value = self._step_loss(text=text)
+        loss, loss_value = self._step_loss(texts=texts)
 
-        # Skip backward + optim.step on non-finite loss so a single
-        # degenerate sample (NaN/inf SOMA state, exploding logits, etc.)
-        # cannot corrupt Adam's running moments and silently poison every
-        # subsequent update. Caller still sees the NaN in returned losses
-        # and can react (skip-ahead, lower LR, dump checkpoint, etc.).
         if not math.isfinite(loss_value):
+            preview = (texts[0] if texts else "")[:60]
             _log.warning(
-                "verbalizer train_step skipped: non-finite loss %r on "
-                "text=%r — no backward/optim.step performed.",
+                "verbalizer train_batch skipped: non-finite loss %r "
+                "(batch_size=%d, first text=%r) — no backward/optim.step.",
                 loss_value,
-                text[:60],
+                len(texts),
+                preview,
             )
             return loss_value
 
@@ -145,6 +177,7 @@ class VerbalizerTrainer:
         cosine_lr: bool = False,
         warmup_steps: int = 0,
         loss_log_path: Path | None = None,
+        batch_size: int = 1,
     ) -> list[float]:
         """Run up to ``max_steps`` micro-batches over ``corpus``.
 
@@ -186,6 +219,12 @@ class VerbalizerTrainer:
             Optional CSV path. One row per micro-step:
             ``step,train_loss,eval_loss,lr``. ``eval_loss`` is empty on
             non-eval steps. Flushed per row for crash-safety.
+        batch_size:
+            Number of corpus windows per forward pass. Default 1. Larger
+            values amortise the frozen-LLM forward across multiple samples
+            (~near-linear throughput gain up to GPU saturation). Variable-
+            length windows are padded; pad positions receive ``-100`` label
+            masking so they don't contribute to the loss.
         """
         if grad_accum_steps < 1:
             raise ValueError(f"grad_accum_steps must be >= 1, got {grad_accum_steps}")
@@ -195,6 +234,8 @@ class VerbalizerTrainer:
             raise ValueError(
                 f"warmup_steps ({warmup_steps}) must not exceed max_steps ({max_steps})"
             )
+        if batch_size < 1:
+            raise ValueError(f"batch_size must be >= 1, got {batch_size}")
 
         out_dir.mkdir(parents=True, exist_ok=True)
         losses: list[float] = []
@@ -217,11 +258,18 @@ class VerbalizerTrainer:
             self.optim.zero_grad()
             accumulated = 0
 
+            corpus_exhausted = False
             for step in range(1, max_steps + 1):
+                batch: list[str] = []
                 try:
-                    text = next(corpus_iter)
+                    for _ in range(batch_size):
+                        batch.append(next(corpus_iter))
                 except StopIteration:
-                    break
+                    corpus_exhausted = True
+                    if not batch:
+                        break
+                    # Partial batch at the tail of the corpus — still worth a
+                    # forward pass, then we exit after the step logic runs.
 
                 # Apply LR schedule first so a NaN micro-batch doesn't pause
                 # the cosine decay (it also keeps the CSV log honest).
@@ -232,7 +280,7 @@ class VerbalizerTrainer:
                 else:
                     lr_now = base_lr
 
-                loss, loss_value = self._step_loss(text=text)
+                loss, loss_value = self._step_loss(texts=batch)
 
                 if math.isfinite(loss_value):
                     (loss / grad_accum_steps).backward()  # type: ignore[no-untyped-call]
@@ -248,9 +296,11 @@ class VerbalizerTrainer:
                     # so cosine LR + eval cadence keep ticking.
                     _log.warning(
                         "verbalizer train skipped: non-finite loss %r on "
-                        "text=%r — discarding %d accumulated micro-batch(es).",
+                        "batch_size=%d (first text=%r) — discarding %d "
+                        "accumulated micro-batch(es).",
                         loss_value,
-                        text[:60],
+                        len(batch),
+                        batch[0][:60],
                         accumulated,
                     )
                     self.optim.zero_grad()
@@ -282,6 +332,9 @@ class VerbalizerTrainer:
                     loss_log_fh.write(f"{step},{train_field},{eval_field},{lr_now:.6g}\n")
                     loss_log_fh.flush()
 
+                if corpus_exhausted:
+                    break
+
             # Flush any leftover grads from a partial accumulation bucket.
             if accumulated > 0:
                 self.optim.step()
@@ -301,37 +354,66 @@ class VerbalizerTrainer:
         return losses
 
     @torch.no_grad()
-    def eval_lm_loss(self, *, texts: list[str]) -> float:
+    def eval_lm_loss(self, *, texts: list[str], batch_size: int = 8) -> float:
         """Mean LM loss over held-out texts. No gradient, no optim step.
+
+        Runs in mini-batches of up to ``batch_size`` (default 8) to amortise
+        the LLM forward across held-out windows. Per-batch losses are
+        weighted by the number of valid target tokens so the final mean
+        matches what a single giant forward would compute — padded windows
+        don't inflate shorter ones' share of the loss.
 
         Puts the verbalizer in inference mode (``.train(False)``) for the
         duration, then restores training mode before returning — so callers
         can freely alternate eval and train calls without manual bookkeeping.
         """
+        if batch_size < 1:
+            raise ValueError(f"batch_size must be >= 1, got {batch_size}")
         self.verbalizer.train(False)
         try:
-            total = 0.0
-            count = 0
-            for text in texts:
-                state = text_to_state(
-                    text=text,
-                    soma=self.soma,
-                    tokenizer=self._tokenizer,
-                    encoder=self._encoder,
-                    soma_output_dim=self.verbalizer.spec.soma_output_dim,
+            total_loss_tokens = 0.0
+            total_tokens = 0
+            for start in range(0, len(texts), batch_size):
+                batch = texts[start : start + batch_size]
+                states = [
+                    text_to_state(
+                        text=t,
+                        soma=self.soma,
+                        tokenizer=self._tokenizer,
+                        encoder=self._encoder,
+                        soma_output_dim=self.verbalizer.spec.soma_output_dim,
+                    )
+                    for t in batch
+                ]
+                stacked = torch.cat(states, dim=0)
+                prefix = self.verbalizer(stacked)
+                tok_out = self.chat_head.tokenizer(
+                    batch,
+                    padding=True,
+                    return_tensors="pt",
                 )
-                prefix = self.verbalizer(state)
-                tok_out = self.chat_head.tokenizer(text, return_tensors="pt")
+                attn_mask = tok_out.get("attention_mask")
                 loss = compute_lm_loss(
                     chat_head=self.chat_head,
                     prefix=prefix,
                     token_ids=tok_out["input_ids"],
+                    token_attention_mask=attn_mask,
                 )
-                total += float(loss.item())
-                count += 1
+                # HF's loss is mean over valid target tokens in the batch;
+                # reconstruct the per-batch token weight so the final mean
+                # across batches is still token-weighted rather than batch-
+                # weighted (matters when batches have very different token
+                # counts, e.g. a partial tail batch).
+                if attn_mask is not None:
+                    num_valid = int(attn_mask.sum().item())
+                else:
+                    num_valid = int(tok_out["input_ids"].numel())
+                if num_valid > 0:
+                    total_loss_tokens += float(loss.item()) * num_valid
+                    total_tokens += num_valid
         finally:
             self.verbalizer.train(True)
-        return total / count if count > 0 else 0.0
+        return total_loss_tokens / total_tokens if total_tokens > 0 else 0.0
 
 
 def compute_lm_loss(
@@ -339,15 +421,21 @@ def compute_lm_loss(
     chat_head: Any,
     prefix: torch.Tensor,
     token_ids: torch.Tensor,
+    token_attention_mask: torch.Tensor | None = None,
 ) -> torch.Tensor:
     """Causal-LM cross-entropy conditioned on a continuous prefix.
 
     ``prefix`` is the (B, k, d_model) soft-prompt from the verbalizer;
-    ``token_ids`` is the (B, T) target text. Returns a scalar loss.
+    ``token_ids`` is the (B, T) target text. ``token_attention_mask`` is
+    an optional (B, T) tensor with 1s on real target tokens and 0s on
+    pad tokens — produced by ``tokenizer(texts, padding=True, ...)`` when
+    the batch contains variable-length sequences.
 
-    Prefix positions are masked via ``-100`` labels so only token-position
-    predictions contribute to the loss. Gradient flows through ``prefix``
-    back into the verbalizer; the LLM stays frozen (no grads recorded).
+    Prefix positions are masked via ``-100`` labels so only real-token
+    predictions contribute to the loss; when an attention mask is supplied,
+    pad positions also get ``-100`` labels and are excluded from attention.
+    Gradient flows through ``prefix`` back into the verbalizer; the LLM
+    stays frozen (no grads recorded).
     """
     batch_size, num_prefix, _ = prefix.shape
     _, num_tokens = token_ids.shape
@@ -358,6 +446,8 @@ def compute_lm_loss(
     llm_device = chat_head.model.get_input_embeddings().weight.device
     if token_ids.device != llm_device:
         token_ids = token_ids.to(llm_device)
+    if token_attention_mask is not None and token_attention_mask.device != llm_device:
+        token_attention_mask = token_attention_mask.to(llm_device)
 
     token_embeds = chat_head.model.get_input_embeddings()(token_ids)
     # Align prefix dtype to the LLM's token embeddings (Phase 7 T3 fix).
@@ -373,14 +463,28 @@ def compute_lm_loss(
         dtype=torch.long,
         device=llm_device,
     )
-    labels = torch.cat([prefix_labels, token_ids], dim=1)
+    if token_attention_mask is not None:
+        token_labels = token_ids.masked_fill(token_attention_mask == 0, -100)
+    else:
+        token_labels = token_ids
+    labels = torch.cat([prefix_labels, token_labels], dim=1)
 
-    attn_mask = torch.ones(
+    prefix_attn = torch.ones(
         batch_size,
-        num_prefix + num_tokens,
+        num_prefix,
         dtype=torch.long,
         device=llm_device,
     )
+    if token_attention_mask is not None:
+        attn_mask = torch.cat([prefix_attn, token_attention_mask.long()], dim=1)
+    else:
+        token_attn = torch.ones(
+            batch_size,
+            num_tokens,
+            dtype=torch.long,
+            device=llm_device,
+        )
+        attn_mask = torch.cat([prefix_attn, token_attn], dim=1)
 
     out = chat_head.model(
         inputs_embeds=inputs_embeds,

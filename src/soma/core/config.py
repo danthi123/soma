@@ -141,6 +141,19 @@ class SOMAConfig:
     # ``tests/test_core/test_execution_parity.py``.
     use_batched_executor: bool = True
 
+    # --- Deployment ------------------------------------------------------
+    # Headroom factor applied to detected CUDA VRAM before tier selection.
+    # 0.9 (default) means "reserve 10% for OS/driver/KV-cache jitter": a
+    # 23 GB raw RTX 3090 reading becomes 20 effective GB, comfortably
+    # picking the ``large`` tier instead of getting unstuck at the
+    # 23/24-boundary edge case where a few hundred MB of driver overhead
+    # OOMs the model. Set to 1.0 to disable headroom (use full VRAM); set
+    # below 0.9 (e.g., 0.7) to be more conservative when SOMA's own
+    # memory footprint is unusually large for the run. Must be in (0, 1].
+    # Applied at tier-selection time, not at VRAM-report time -- callers
+    # using ``detect_cuda_vram`` for their own purposes still see raw GB.
+    vram_safety_factor: float = 0.9
+
     def __post_init__(self) -> None:
         self._validate()
 
@@ -240,6 +253,11 @@ class SOMAConfig:
             raise ValueError(
                 f"SOMAConfig.max_consecutive_skipped_steps must be >= 1, "
                 f"got {self.max_consecutive_skipped_steps!r}"
+            )
+
+        if not 0.0 < self.vram_safety_factor <= 1.0:
+            raise ValueError(
+                f"SOMAConfig.vram_safety_factor must be in (0, 1], got {self.vram_safety_factor!r}"
             )
 
     # ------------------------------------------------------------------

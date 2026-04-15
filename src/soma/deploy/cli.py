@@ -23,11 +23,36 @@ from soma.deploy.devices import (
     MODEL_TIERS,
     auto_select_tier,
     detect_cuda_vram,
+    effective_vram_gb,
     select_device_and_dtype,
 )
 
-TIER_CHOICES = ["auto", "tiny", "small", "large"]
+TIER_CHOICES = ["auto", "tiny", "small", "large", "xlarge"]
 DTYPE_CHOICES = ["auto", "fp32", "fp16"]
+
+# Default safety factor for the deploy CLI. Mirrors
+# ``SOMAConfig.vram_safety_factor`` but is duplicated here because the
+# CLI doesn't own a SOMAConfig (the verbalizer/REPL scripts construct
+# their own config later). Keep this in sync with the dataclass default;
+# the ``test_cli_default_vram_safety_factor_matches_config`` test guards
+# it so a future config-default change can't silently drift.
+DEFAULT_VRAM_SAFETY_FACTOR = 0.9
+
+
+def _parse_vram_safety_factor(raw: str) -> float:
+    """argparse type-converter for ``--vram-safety-factor``.
+
+    Wraps the float() conversion so we can reject 0.0 / negative / >1.0
+    values at parse time with a friendly ``argparse`` error instead of
+    letting them through and crashing later in :func:`effective_vram_gb`.
+    """
+    try:
+        value = float(raw)
+    except ValueError as e:
+        raise argparse.ArgumentTypeError(f"invalid float: {raw!r}") from e
+    if not 0.0 < value <= 1.0:
+        raise argparse.ArgumentTypeError(f"--vram-safety-factor must be in (0, 1], got {value!r}")
+    return value
 
 
 def add_deploy_arguments(parser: argparse.ArgumentParser) -> None:
@@ -69,6 +94,17 @@ def add_deploy_arguments(parser: argparse.ArgumentParser) -> None:
         choices=DTYPE_CHOICES,
         default="auto",
         help="Model dtype override. 'auto' pairs with --device auto (cuda->fp16, cpu->fp32).",
+    )
+    parser.add_argument(
+        "--vram-safety-factor",
+        type=_parse_vram_safety_factor,
+        default=DEFAULT_VRAM_SAFETY_FACTOR,
+        help=(
+            "Headroom factor applied to detected VRAM before tier selection. "
+            "0.9 (default) reserves 10%% for OS/driver/KV-cache jitter. Set to "
+            "1.0 for no headroom; set lower (e.g. 0.7) when SOMA's own footprint "
+            "is large. Must be in (0, 1]."
+        ),
     )
 
 
@@ -112,7 +148,19 @@ def resolve_device_dtype_tier(
     if args.llm_name is not None:
         return device, dtype, args.llm_name, None
 
-    tier = auto_select_tier(vram_gb=detect_cuda_vram()) if args.tier == "auto" else args.tier
+    if args.tier == "auto":
+        # Apply the headroom factor before threshold comparison. Factor lives
+        # on the namespace if the operator passed --vram-safety-factor;
+        # otherwise we use DEFAULT_VRAM_SAFETY_FACTOR (which mirrors the
+        # SOMAConfig default of 0.9). Older callers built before the flag
+        # existed might not have it on their namespace -- fall back to
+        # default in that case rather than erroring, so the resolver stays
+        # backward-compatible with hand-built Namespace objects in tests.
+        safety_factor = getattr(args, "vram_safety_factor", DEFAULT_VRAM_SAFETY_FACTOR)
+        effective = effective_vram_gb(vram_gb=detect_cuda_vram(), safety_factor=safety_factor)
+        tier = auto_select_tier(vram_gb=effective)
+    else:
+        tier = args.tier
     llm_name = MODEL_TIERS[tier]["name"]
     return device, dtype, llm_name, tier
 

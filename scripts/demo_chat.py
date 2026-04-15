@@ -27,6 +27,7 @@ from soma.deploy.devices import (
     MODEL_TIERS,
     auto_select_tier,
     detect_cuda_vram,
+    effective_vram_gb,
     select_device_and_dtype,
 )
 from soma.io.text_encoder import TextEncoder, train_bpe_tokenizer
@@ -51,26 +52,9 @@ DEMO_QUESTIONS: list[str] = [
 
 
 def main() -> None:
-    # 1. Detect hardware + pick a tier.
-    vram = detect_cuda_vram()
-    tier = auto_select_tier(vram_gb=vram)
-    device, dtype = select_device_and_dtype()
-    spec = MODEL_TIERS[tier]
-
-    # 2. Print the selection — the whole "is the auto-detect working" signal.
-    if vram is None:
-        print("Detected VRAM: none (no CUDA) -- running on CPU")
-    else:
-        print(f"Detected VRAM: {vram}GB")
-    print(f"Selected tier: {tier}  ({spec['name']}, ~{spec['approx_fp16_gb']:.1f}GB)")
-    print(f"Device: {device}  dtype: {dtype_label(dtype)}")
-    print()
-
-    # 3. Build the frozen LLM-backed ChatHead.
-    chat_head = build_chat_head(tier=tier, device=device, dtype=dtype)
-
-    # 4. Build a tiny fresh SOMA. Dims are CPU-friendly; this is NOT a
-    # production config, just enough to exercise the pipeline.
+    # 0. Build the SOMA config first -- the demo SOMA uses small CPU-friendly
+    # dims, but the vram_safety_factor is independent of those, so it's the
+    # one knob worth surfacing up front.
     cfg = SOMAConfig(
         sensor_output_dim=16,
         associator_input_dim=16,
@@ -94,6 +78,33 @@ def main() -> None:
         max_output_tokens=8,
         seed=0,
     )
+
+    # 1. Detect hardware + pick a tier. Apply the headroom factor so an
+    # RTX 3090 (raw 23 GB floor) gets 20 effective GB and lands in the
+    # 'large' tier instead of bouncing on the 23/24 boundary.
+    vram = detect_cuda_vram()
+    effective = effective_vram_gb(vram_gb=vram, safety_factor=cfg.vram_safety_factor)
+    tier = auto_select_tier(vram_gb=effective)
+    device, dtype = select_device_and_dtype()
+    spec = MODEL_TIERS[tier]
+
+    # 2. Print the selection — the whole "is the auto-detect working" signal.
+    if vram is None:
+        print("Detected VRAM: none (no CUDA) -- running on CPU")
+    else:
+        print(
+            f"Detected VRAM: {vram}GB raw -> {effective}GB effective "
+            f"(safety_factor={cfg.vram_safety_factor})"
+        )
+    print(f"Selected tier: {tier}  ({spec['name']}, ~{spec['approx_fp16_gb']:.1f}GB)")
+    print(f"Device: {device}  dtype: {dtype_label(dtype)}")
+    print()
+
+    # 3. Build the frozen LLM-backed ChatHead.
+    chat_head = build_chat_head(tier=tier, device=device, dtype=dtype)
+
+    # 4. SOMA construction (cfg built above so vram_safety_factor was
+    # available for the auto-detect step).
     soma = SOMA(cfg, device=device)
 
     # 5. Train a tiny BPE tokenizer on the bundled seed corpus.

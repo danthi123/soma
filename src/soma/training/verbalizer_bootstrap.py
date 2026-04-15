@@ -235,7 +235,7 @@ class VerbalizerTrainer:
                 loss, loss_value = self._step_loss(text=text)
 
                 if math.isfinite(loss_value):
-                    (loss / grad_accum_steps).backward()
+                    (loss / grad_accum_steps).backward()  # type: ignore[no-untyped-call]
                     accumulated += 1
                     if accumulated >= grad_accum_steps:
                         self.optim.step()
@@ -277,13 +277,9 @@ class VerbalizerTrainer:
                     self.verbalizer.save(out_dir / f"verbalizer_step_{step}")
 
                 if loss_log_fh is not None:
-                    train_field = (
-                        f"{loss_value:.6f}" if math.isfinite(loss_value) else "nan"
-                    )
+                    train_field = f"{loss_value:.6f}" if math.isfinite(loss_value) else "nan"
                     eval_field = f"{eval_loss:.6f}" if eval_loss is not None else ""
-                    loss_log_fh.write(
-                        f"{step},{train_field},{eval_field},{lr_now:.6g}\n"
-                    )
+                    loss_log_fh.write(f"{step},{train_field},{eval_field},{lr_now:.6g}\n")
                     loss_log_fh.flush()
 
             # Flush any leftover grads from a partial accumulation bucket.

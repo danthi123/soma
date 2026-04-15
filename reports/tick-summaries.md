@@ -1310,3 +1310,4 @@ to Stage 5 multimodal).
 | 1776206476 | 2026-04-14T22:44:18Z | 1135000 | 0.01706 | 0.00504 | 35/149 | no_change | stable plateau, observing curiosity spike |
 | 1776208687 | 1160000 | no_change | loss_ema=0.01677 kl=22.11 nodes=35 edges=148 | stable plateau, KL jump needs observation |
 | 1776210919 | 2026-04-14T23:58:06Z | 1190000 | no_change | loss plateau stable ~0.016, no viable config intervention |
+| 1776215358 | 1250000 | no_change | loss_ema=0.01556, heldout=0.02065, nodes=35, edges=142 | system stable, no auto-scope intervention available |

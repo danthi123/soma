@@ -1315,3 +1315,4 @@ to Stage 5 multimodal).
 | 1776219799 | 1310000 | no_change | loss_ema=0.01516 heldout=0.02168 kl=20.71 nodes=35 edges=143 lr_mult=0.415 | lr_mult self-correcting; recent config changes reverted |
 
 - **tick 1776222025** step=1340000 loss_ema=0.01601 curiosity=0.00165 nodes=35 edges=142 — no change (loss plateau, recent growth-config reverts block similar proposals)
+| 1776224238 | 1380000 | 0.01522 | 0.0239 | 35/116 | no_change | loss plateau, edge loss 142→116, wm_occupancy flip; recent config reverts block intervention |

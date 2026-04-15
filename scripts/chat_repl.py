@@ -57,6 +57,7 @@ from soma.deploy.cli import (
     add_deploy_arguments,
     print_selection,
     resolve_device_dtype_tier,
+    resolve_quantization,
 )
 from soma.io.chat_head import ChatHead
 from soma.io.verbalizer import SomaVerbalizer, VerbalizerSpec
@@ -240,13 +241,21 @@ def _repl(session: ChatSession, max_new_tokens: int) -> None:
 def main() -> None:
     args = _parse_args()
     device, dtype, llm_name, tier = resolve_device_dtype_tier(args)
-    print_selection(llm_name=llm_name, tier=tier, device=device, dtype=dtype)
+    quantization = resolve_quantization(args)
+    print_selection(
+        llm_name=llm_name, tier=tier, device=device, dtype=dtype, quantization=quantization
+    )
 
     soma, cfg, tokenizer, encoder = _load_soma(args.soma_checkpoint, device)
     if tier is None:
         chat_head = _build_chat_head_explicit(llm_name, device, dtype)
     else:
-        chat_head = build_chat_head(tier=tier, device=device, dtype=dtype)
+        chat_head = build_chat_head(
+            tier=tier,
+            device=device,
+            dtype=dtype,
+            quantization=quantization,  # type: ignore[arg-type]
+        )
     verbalizer = _build_verbalizer(
         soma_output_dim=cfg.sensor_output_dim,
         chat_head=chat_head,

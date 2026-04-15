@@ -20,11 +20,13 @@ from soma.core.config import SOMAConfig
 from soma.deploy.cli import (
     DEFAULT_VRAM_SAFETY_FACTOR,
     DTYPE_CHOICES,
+    QUANT_CHOICES,
     TIER_CHOICES,
     add_deploy_arguments,
     dtype_label,
     print_selection,
     resolve_device_dtype_tier,
+    resolve_quantization,
 )
 from soma.deploy.devices import MODEL_TIERS
 
@@ -46,6 +48,10 @@ def test_dtype_choices_are_auto_fp32_fp16() -> None:
     assert set(DTYPE_CHOICES) == {"auto", "fp32", "fp16"}
 
 
+def test_quant_choices_are_none_int8_int4() -> None:
+    assert set(QUANT_CHOICES) == {"none", "int8", "int4"}
+
+
 # ----- argparse defaults ----------------------------------------------------
 
 
@@ -55,6 +61,7 @@ def test_parser_defaults_are_all_auto_or_none() -> None:
     assert args.tier == "auto"
     assert args.device == "auto"
     assert args.dtype == "auto"
+    assert args.quantization == "none"
 
 
 def test_parser_accepts_explicit_tier() -> None:
@@ -80,6 +87,28 @@ def test_parser_rejects_unknown_tier() -> None:
 def test_parser_rejects_unknown_dtype() -> None:
     with pytest.raises(SystemExit):
         _build_test_parser().parse_args(["--dtype", "bf16"])
+
+
+def test_parser_accepts_explicit_quantization_int4() -> None:
+    args = _build_test_parser().parse_args(["--quantization", "int4"])
+    assert args.quantization == "int4"
+    assert resolve_quantization(args) == "int4"
+
+
+def test_parser_accepts_explicit_quantization_int8() -> None:
+    args = _build_test_parser().parse_args(["--quantization", "int8"])
+    assert args.quantization == "int8"
+    assert resolve_quantization(args) == "int8"
+
+
+def test_parser_rejects_unknown_quantization() -> None:
+    with pytest.raises(SystemExit):
+        _build_test_parser().parse_args(["--quantization", "fp4"])
+
+
+def test_resolve_quantization_default_is_none() -> None:
+    args = _build_test_parser().parse_args([])
+    assert resolve_quantization(args) == "none"
 
 
 # ----- resolver: device / dtype pairings -----------------------------------
@@ -185,6 +214,21 @@ def test_print_selection_tier(capsys: pytest.CaptureFixture[str]) -> None:
     out = capsys.readouterr().out
     assert "Selected tier=tiny" in out
     assert MODEL_TIERS["tiny"]["name"] in out
+    # quantization defaults to "none" -> suppressed from output
+    assert "quant=" not in out
+
+
+def test_print_selection_with_quantization(capsys: pytest.CaptureFixture[str]) -> None:
+    """Operators must see ``quant=int4`` so it's clear bnb is active."""
+    print_selection(
+        llm_name=MODEL_TIERS["large"]["name"],
+        tier="large",
+        device=torch.device("cuda"),
+        dtype=torch.float16,
+        quantization="int4",
+    )
+    out = capsys.readouterr().out
+    assert "quant=int4" in out
 
 
 # ----- script-level argparse wiring ----------------------------------------

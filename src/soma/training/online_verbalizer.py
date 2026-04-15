@@ -12,6 +12,7 @@ OnlineVerbalizerTrainer that uses them lives in T3+.
 from __future__ import annotations
 
 import logging
+import math
 import random
 from collections import deque
 from dataclasses import dataclass, field
@@ -125,3 +126,60 @@ class OnlineVerbalizerTrainer:
             return [latest]
         sampled = random.sample(pool, min(remaining, len(pool)))
         return [latest] + [ex.user_text for ex in sampled]
+
+    def step(self, *, user_text: str, response: str) -> None:
+        """Record the exchange and (if not diverged) run one training step.
+
+        The training step runs ``inner.train_step`` on each text in the
+        sampled batch (latest + replays). Mean of FINITE losses is appended
+        to the rolling window; then divergence is checked.
+        """
+        self.record(user_text=user_text, response=response)
+
+        if self.is_diverged:
+            return
+
+        batch = self.sample_batch(batch_size=self.config.online_batch_size)
+        step_losses = []
+        for text in batch:
+            loss = self.inner.train_step(text=text)
+            if math.isfinite(loss):
+                step_losses.append(loss)
+
+        if step_losses:
+            mean_loss = sum(step_losses) / len(step_losses)
+            self._loss_history.append(mean_loss)
+            self._check_divergence()
+
+    def _check_divergence(self) -> None:
+        """Rolling-window rise detector.
+
+        If the loss history is at least ``divergence_window`` long AND
+        ``mean(second half) - mean(first half) > divergence_threshold``,
+        freeze further training and log a warning. Only runs on a FULL
+        window — partial histories are benign.
+        """
+        history = list(self._loss_history)
+        window = self.config.divergence_window
+        if len(history) < window:
+            return
+        half = window // 2
+        mean_first = sum(history[:half]) / half
+        mean_second = sum(history[half:]) / (len(history) - half)
+        rise = mean_second - mean_first
+        if rise > self.config.divergence_threshold:
+            self.is_diverged = True
+            _log.warning(
+                "online verbalizer training diverged: mean(first half)=%.4f "
+                "mean(second half)=%.4f rise=%.4f > threshold=%.4f. "
+                "Further steps frozen; call reset_divergence_guard() to resume.",
+                mean_first,
+                mean_second,
+                rise,
+                self.config.divergence_threshold,
+            )
+
+    def reset_divergence_guard(self) -> None:
+        """Clear the diverged flag and wipe the loss history."""
+        self.is_diverged = False
+        self._loss_history.clear()

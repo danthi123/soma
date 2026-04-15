@@ -1,3 +1,4 @@
+from dataclasses import replace
 from datetime import datetime
 
 import pytest
@@ -279,3 +280,110 @@ def test_sample_batch_size_one_returns_just_latest():
         online.record(user_text=f"u{i}", response=f"r{i}")
     batch = online.sample_batch(batch_size=1)
     assert batch == ["u4"]
+
+
+# --- T5 tests: step() ----------------------------------------------------
+
+
+def test_step_records_and_trains():
+    import torch
+
+    inner = _fresh_inner_trainer()
+    online = OnlineVerbalizerTrainer(inner=inner, config=inner.config)
+
+    before = [p.detach().clone() for p in inner.verbalizer.parameters()]
+    online.step(user_text="hello there", response="hi!")
+    after = [p.detach().clone() for p in inner.verbalizer.parameters()]
+
+    assert len(online.replay_buffer) == 1
+    assert any(not torch.allclose(b, a) for b, a in zip(before, after, strict=True))
+    assert len(online._loss_history) >= 1
+
+
+def test_step_skips_training_when_diverged():
+    """When is_diverged is set, step records but does NOT train."""
+    import torch
+
+    inner = _fresh_inner_trainer()
+    online = OnlineVerbalizerTrainer(inner=inner, config=inner.config)
+    online.is_diverged = True
+
+    before = [p.detach().clone() for p in inner.verbalizer.parameters()]
+    online.step(user_text="hi", response="yo")
+    after = [p.detach().clone() for p in inner.verbalizer.parameters()]
+
+    assert len(online.replay_buffer) == 1  # recorded
+    for b, a in zip(before, after, strict=True):
+        assert torch.equal(b, a), "trained despite is_diverged=True"
+    # And no entry in loss history either.
+    assert len(online._loss_history) == 0
+
+
+def test_step_excludes_non_finite_losses_from_history():
+    """If inner.train_step returns NaN (e.g. guarded by its own NaN check),
+    the mean should be computed over FINITE losses only. If ALL losses are
+    NaN, nothing appends to history.
+    """
+    from unittest.mock import patch
+
+    inner = _fresh_inner_trainer()
+    online = OnlineVerbalizerTrainer(inner=inner, config=inner.config)
+
+    # First record so there's something to sample.
+    online.record(user_text="u0", response="r0")
+
+    # Monkeypatch inner.train_step to always return NaN.
+    with patch.object(inner, "train_step", return_value=float("nan")):
+        online.step(user_text="hi", response="yo")
+
+    # Buffer grew (record happened) but no entry in loss history
+    # because all samples' losses were filtered out.
+    assert len(online.replay_buffer) == 2
+    assert len(online._loss_history) == 0
+
+
+# --- T6 tests: _check_divergence + reset_divergence_guard ----------------
+
+
+def test_divergence_detects_rising_loss():
+    inner = _fresh_inner_trainer()
+    cfg = replace(inner.config, divergence_window=4, divergence_threshold=0.5)
+    online = OnlineVerbalizerTrainer(inner=inner, config=cfg)
+
+    # Inject losses: first half mean 0.5, second half mean 2.0 → rise 1.5
+    online._loss_history.extend([0.4, 0.6, 1.8, 2.2])
+    online._check_divergence()
+    assert online.is_diverged
+
+
+def test_divergence_stable_loss_is_not_flagged():
+    inner = _fresh_inner_trainer()
+    cfg = replace(inner.config, divergence_window=4, divergence_threshold=0.5)
+    online = OnlineVerbalizerTrainer(inner=inner, config=cfg)
+
+    online._loss_history.extend([1.0, 1.05, 0.95, 1.02])
+    online._check_divergence()
+    assert not online.is_diverged
+
+
+def test_divergence_requires_full_window():
+    """Partial history (< window) should not trip the monitor even if
+    the rise is large."""
+    inner = _fresh_inner_trainer()
+    cfg = replace(inner.config, divergence_window=4, divergence_threshold=0.5)
+    online = OnlineVerbalizerTrainer(inner=inner, config=cfg)
+
+    online._loss_history.extend([0.1, 5.0, 10.0])  # only 3 entries
+    online._check_divergence()
+    assert not online.is_diverged
+
+
+def test_reset_divergence_guard_clears_flag_and_history():
+    inner = _fresh_inner_trainer()
+    online = OnlineVerbalizerTrainer(inner=inner, config=inner.config)
+    online.is_diverged = True
+    online._loss_history.extend([10.0] * online.config.divergence_window)
+
+    online.reset_divergence_guard()
+    assert not online.is_diverged
+    assert len(online._loss_history) == 0

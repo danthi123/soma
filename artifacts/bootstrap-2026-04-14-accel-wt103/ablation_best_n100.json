@@ -1,0 +1,16 @@
+{
+  "verbalizer": "artifacts\\bootstrap-2026-04-14-accel-wt103\\verbalizer_best",
+  "llm": "Qwen/Qwen2.5-3B-Instruct",
+  "dtype": "fp16",
+  "eval_samples": 100,
+  "loss": {
+    "real": 3.4413,
+    "zero": 3.4492,
+    "shuffle": 3.4437
+  },
+  "delta_vs_real": {
+    "zero": 0.008,
+    "shuffle": 0.0024
+  },
+  "verdict": "SOMA NOT CONTRIBUTING (zero state matches real)"
+}

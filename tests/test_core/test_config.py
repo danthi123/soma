@@ -36,6 +36,14 @@ class TestDefaults:
         assert config.bootstrap_sample_tokens == 64
         assert config.bootstrap_max_steps == 5000
 
+    def test_online_verbalizer_defaults(self) -> None:
+        config = SOMAConfig()
+        assert config.online_verbalizer_lr == pytest.approx(1e-5)
+        assert config.online_batch_size == 4
+        assert config.replay_buffer_capacity == 64
+        assert config.divergence_window == 20
+        assert config.divergence_threshold == pytest.approx(1.0)
+
     def test_default_modalities_independent(self) -> None:
         """Every ``SOMAConfig()`` must get its own list (no shared defaults)."""
         a = SOMAConfig()
@@ -135,6 +143,23 @@ class TestToYaml:
         assert recovered.verbalizer_checkpoint_interval == 100
         assert recovered.bootstrap_sample_tokens == 32
         assert recovered.bootstrap_max_steps == 1000
+
+    def test_online_verbalizer_fields_round_trip(self, tmp_path: Path) -> None:
+        original = SOMAConfig(
+            online_verbalizer_lr=5e-6,
+            online_batch_size=8,
+            replay_buffer_capacity=128,
+            divergence_window=50,
+            divergence_threshold=2.0,
+        )
+        yaml_path = tmp_path / "online.yaml"
+        original.to_yaml(yaml_path)
+        recovered = SOMAConfig.from_yaml(yaml_path)
+        assert recovered.online_verbalizer_lr == pytest.approx(5e-6)
+        assert recovered.online_batch_size == 8
+        assert recovered.replay_buffer_capacity == 128
+        assert recovered.divergence_window == 50
+        assert recovered.divergence_threshold == pytest.approx(2.0)
 
     def test_to_dict_is_independent(self) -> None:
         config = SOMAConfig()

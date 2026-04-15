@@ -78,6 +78,18 @@ class SOMAConfig:
     bootstrap_sample_tokens: int = 64
     bootstrap_max_steps: int = 5000
 
+    # --- Online verbalizer training (Phase 6) ----------------------------
+    # LR for per-turn online updates during chat. 10× smaller than
+    # bootstrap's 1e-4 because online trains on just the last turn plus a
+    # few replays — noisier signal, so gentler steps.
+    online_verbalizer_lr: float = 1e-5
+    online_batch_size: int = 4  # 1 latest turn + (N-1) random replays
+    replay_buffer_capacity: int = 64
+    divergence_window: int = 20
+    # If mean(last half of window) - mean(first half) > threshold,
+    # online updates freeze until reset_divergence_guard() is called.
+    divergence_threshold: float = 1.0
+
     # --- Growth Thresholds ------------------------------------------------
     activation_threshold: float = 0.1
     synaptogenesis_rate: float = 0.01
@@ -172,6 +184,9 @@ class SOMAConfig:
             "verbalizer_checkpoint_interval",
             "bootstrap_sample_tokens",
             "bootstrap_max_steps",
+            "online_batch_size",
+            "replay_buffer_capacity",
+            "divergence_window",
         ]
         for name in positive_ints:
             value = getattr(self, name)

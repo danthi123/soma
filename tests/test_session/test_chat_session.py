@@ -13,7 +13,10 @@ from soma.session.chat_session import ChatSession, ChatTurn
 from soma.system import SOMA
 
 
-# Reuse Phase 4's mock pattern.
+# Reuse Phase 4's mock pattern. The forward() path mirrors the richer
+# _TinyCausalLM used in test_online_verbalizer.py so the T7 tests that
+# route through VerbalizerTrainer.train_step (→ compute_lm_loss, which
+# needs out.loss) actually exercise training without crashing.
 class _TinyCausalLM(nn.Module):
     def __init__(self, vocab: int = 32, d_model: int = 16) -> None:
         super().__init__()
@@ -24,15 +27,35 @@ class _TinyCausalLM(nn.Module):
     def get_input_embeddings(self) -> nn.Embedding:
         return self.embed
 
-    def forward(self, *, inputs_embeds, attention_mask=None, **_):
-        return self.lm_head(inputs_embeds)
+    def forward(self, *, inputs_embeds, attention_mask=None, labels=None, **_):
+        # Causal cumulative-mean pool so the prefix influences every position
+        # (gives the verbalizer a non-degenerate gradient signal under
+        # teacher-forcing).
+        B, T, D = inputs_embeds.shape
+        cumsum = inputs_embeds.cumsum(dim=1)
+        counts = torch.arange(
+            1, T + 1, dtype=inputs_embeds.dtype, device=inputs_embeds.device
+        ).view(1, T, 1)
+        pooled = cumsum / counts
+        logits = self.lm_head(pooled)
+        if labels is None:
+            return type("Out", (), {"logits": logits, "loss": None})()
+        shift_logits = logits[:, :-1, :].contiguous()
+        shift_labels = labels[:, 1:].contiguous()
+        loss = nn.functional.cross_entropy(
+            shift_logits.view(-1, shift_logits.size(-1)),
+            shift_labels.view(-1),
+            ignore_index=-100,
+        )
+        return type("Out", (), {"logits": logits, "loss": loss})()
 
     @torch.no_grad()
     def generate(self, *, inputs_embeds, attention_mask=None, max_new_tokens=4, **_):
         embeds = inputs_embeds
         out = []
         for _ in range(max_new_tokens):
-            logits = self.forward(inputs_embeds=embeds)
+            res = self.forward(inputs_embeds=embeds)
+            logits = res.logits
             nid = logits[:, -1, :].argmax(dim=-1)
             out.append(nid)
             embeds = torch.cat([embeds, self.embed(nid).unsqueeze(1)], dim=1)
@@ -391,3 +414,226 @@ def test_load_history_rejects_missing_sidecar(tmp_path: Path):
     s = _build_session()
     with pytest.raises(FileNotFoundError, match="chat_history"):
         s.load_history(out_dir=tmp_path)
+
+
+# ---------------------------------------------------------------------------
+# T7 (Phase 6): optional online_trainer integration
+# ---------------------------------------------------------------------------
+
+
+def _build_session_with_online_trainer():
+    """Build a session with an OnlineVerbalizerTrainer attached.
+
+    Reuses _build_session() and wires up an inner VerbalizerTrainer +
+    OnlineVerbalizerTrainer on top of the same components.
+    """
+    from soma.training.online_verbalizer import OnlineVerbalizerTrainer
+    from soma.training.verbalizer_bootstrap import VerbalizerTrainer
+
+    s = _build_session()
+    inner = VerbalizerTrainer(
+        soma=s.soma,
+        verbalizer=s.verbalizer,
+        chat_head=s.chat_head,
+        config=s.soma.config,
+        tokenizer=s.tokenizer,
+        encoder=s.encoder,
+    )
+    online = OnlineVerbalizerTrainer(inner=inner, config=s.soma.config)
+    s.online_trainer = online
+    return s, online
+
+
+def test_session_without_online_trainer_does_not_train_verbalizer():
+    """Pure Phase 5 behavior: verbalizer params are frozen during chat."""
+    s = _build_session()
+    # Explicitly None to be sure.
+    s.online_trainer = None
+    before = [p.detach().clone() for p in s.verbalizer.parameters()]
+    s.respond(user_text="hi")
+    after = [p.detach().clone() for p in s.verbalizer.parameters()]
+    for b, a in zip(before, after, strict=True):
+        assert torch.equal(b, a), "verbalizer drifted without online trainer"
+
+
+def test_session_with_online_trainer_updates_verbalizer_after_respond():
+    s, online = _build_session_with_online_trainer()
+    before = [p.detach().clone() for p in s.verbalizer.parameters()]
+    s.respond(user_text="hi there how are you")
+    after = [p.detach().clone() for p in s.verbalizer.parameters()]
+    assert any(not torch.allclose(b, a) for b, a in zip(before, after, strict=True)), (
+        "verbalizer did not move after respond with online trainer"
+    )
+
+
+def test_session_with_online_trainer_fills_replay_buffer():
+    s, online = _build_session_with_online_trainer()
+    assert len(online.replay_buffer) == 0
+    s.respond(user_text="turn one")
+    assert len(online.replay_buffer) == 1
+    s.respond(user_text="turn two")
+    assert len(online.replay_buffer) == 2
+    # Buffer entry records both user_text and the response.
+    assert online.replay_buffer.entries[0].user_text == "turn one"
+    assert isinstance(online.replay_buffer.entries[0].response, str)
+
+
+def test_session_init_accepts_online_trainer_kwarg():
+    """The __init__ signature should accept online_trainer directly, not
+    just via attribute assignment after construction."""
+    from soma.io.text_encoder import TextEncoder
+    from soma.training.online_verbalizer import OnlineVerbalizerTrainer
+    from soma.training.verbalizer_bootstrap import VerbalizerTrainer
+
+    cfg = _soma_cfg()
+    soma = SOMA(cfg, device=torch.device("cpu"))
+    encoder = TextEncoder(
+        _shared_tokenizer,
+        embed_dim=cfg.text_embed_dim,
+        max_seq_len=cfg.max_input_tokens,
+    )
+    spec = VerbalizerSpec(
+        soma_output_dim=cfg.sensor_output_dim,
+        llm_name="mock",
+        llm_hidden_dim=16,
+        num_prefix_tokens=4,
+        proj_hidden_dim=16,
+    )
+    verbalizer = SomaVerbalizer(spec)
+    chat_head = ChatHead(
+        model=_TinyCausalLM(vocab=32, d_model=16),
+        tokenizer=_TinyTokenizer(),
+    )
+    inner = VerbalizerTrainer(
+        soma=soma,
+        verbalizer=verbalizer,
+        chat_head=chat_head,
+        config=cfg,
+        tokenizer=_shared_tokenizer,
+        encoder=encoder,
+    )
+    online = OnlineVerbalizerTrainer(inner=inner, config=cfg)
+
+    # Pass online_trainer via __init__, not via attribute assignment.
+    session = ChatSession(
+        soma=soma,
+        verbalizer=verbalizer,
+        chat_head=chat_head,
+        tokenizer=_shared_tokenizer,
+        encoder=encoder,
+        online_trainer=online,
+    )
+    assert session.online_trainer is online
+
+
+# ---------------------------------------------------------------------------
+# T9 (Phase 6): save/load online_state.json sidecar
+# ---------------------------------------------------------------------------
+
+
+def test_save_writes_online_state_when_trainer_attached(tmp_path: Path):
+    import json
+
+    s, online = _build_session_with_online_trainer()
+    s.respond(user_text="hi")
+    s.respond(user_text="how are you")
+    s.save(out_dir=tmp_path)
+    state_path = tmp_path / "online_state.json"
+    assert state_path.exists(), "online_state.json missing after save"
+
+    data = json.loads(state_path.read_text())
+    assert "replay_buffer" in data
+    assert "loss_history" in data
+    assert "is_diverged" in data
+    assert len(data["replay_buffer"]) == 2
+    assert data["replay_buffer"][0]["user_text"] == "hi"
+    assert isinstance(data["loss_history"], list)
+    assert len(data["loss_history"]) >= 1
+    assert data["is_diverged"] is False
+
+
+def test_save_skips_online_state_when_trainer_is_none(tmp_path: Path):
+    """If the session has no online_trainer, no online_state.json is written."""
+    s = _build_session()
+    s.respond(user_text="hi")
+    s.save(out_dir=tmp_path)
+    assert not (tmp_path / "online_state.json").exists()
+
+
+def test_load_online_state_restores_buffer_and_history(tmp_path: Path):
+    from soma.training.online_verbalizer import OnlineVerbalizerTrainer
+    from soma.training.verbalizer_bootstrap import VerbalizerTrainer
+
+    # Session A: train + save.
+    s_a, online_a = _build_session_with_online_trainer()
+    s_a.respond(user_text="alpha")
+    s_a.respond(user_text="beta")
+    s_a.respond(user_text="gamma")
+    s_a.save(out_dir=tmp_path)
+
+    assert len(online_a.replay_buffer) == 3
+    assert len(online_a._loss_history) >= 1
+
+    # Session B: fresh online trainer; load the state.
+    s_b = _build_session()
+    inner_b = VerbalizerTrainer(
+        soma=s_b.soma,
+        verbalizer=s_b.verbalizer,
+        chat_head=s_b.chat_head,
+        config=s_b.soma.config,
+        tokenizer=s_b.tokenizer,
+        encoder=s_b.encoder,
+    )
+    online_b = OnlineVerbalizerTrainer(inner=inner_b, config=s_b.soma.config)
+    s_b.online_trainer = online_b
+
+    s_b.load_online_state(out_dir=tmp_path, online_trainer=online_b)
+    assert len(online_b.replay_buffer) == 3
+    user_texts = [ex.user_text for ex in online_b.replay_buffer.entries]
+    assert user_texts == ["alpha", "beta", "gamma"]
+    # Loss history roundtrip.
+    assert list(online_b._loss_history) == list(online_a._loss_history)
+    # is_diverged roundtrip.
+    assert online_b.is_diverged == online_a.is_diverged
+
+
+def test_load_online_state_rejects_missing_sidecar(tmp_path: Path):
+    from soma.training.online_verbalizer import OnlineVerbalizerTrainer
+    from soma.training.verbalizer_bootstrap import VerbalizerTrainer
+
+    s = _build_session()
+    inner = VerbalizerTrainer(
+        soma=s.soma,
+        verbalizer=s.verbalizer,
+        chat_head=s.chat_head,
+        config=s.soma.config,
+        tokenizer=s.tokenizer,
+        encoder=s.encoder,
+    )
+    online = OnlineVerbalizerTrainer(inner=inner, config=s.soma.config)
+    with pytest.raises(FileNotFoundError, match="online_state"):
+        s.load_online_state(out_dir=tmp_path, online_trainer=online)
+
+
+def test_load_online_state_preserves_is_diverged_flag(tmp_path: Path):
+    """Save a session whose trainer is diverged; load into a fresh
+    trainer and verify the flag round-trips."""
+    s_a, online_a = _build_session_with_online_trainer()
+    online_a.is_diverged = True
+    s_a.save(out_dir=tmp_path)
+
+    from soma.training.online_verbalizer import OnlineVerbalizerTrainer
+    from soma.training.verbalizer_bootstrap import VerbalizerTrainer
+
+    s_b = _build_session()
+    inner_b = VerbalizerTrainer(
+        soma=s_b.soma,
+        verbalizer=s_b.verbalizer,
+        chat_head=s_b.chat_head,
+        config=s_b.soma.config,
+        tokenizer=s_b.tokenizer,
+        encoder=s_b.encoder,
+    )
+    online_b = OnlineVerbalizerTrainer(inner=inner_b, config=s_b.soma.config)
+    s_b.load_online_state(out_dir=tmp_path, online_trainer=online_b)
+    assert online_b.is_diverged is True

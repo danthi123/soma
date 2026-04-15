@@ -1329,3 +1329,4 @@ to Stage 5 multimodal).
 - **step:** 1,615,000 | **loss_ema:** 0.01468 | **heldout:** 0.02073 | **nodes:** 36 | **edges:** 128
 - **result:** no_change — training loss still improving; heldout plateau and growth stall noted but available config levers exhausted (both reverted for curiosity drift). Next action: propose watchdog curiosity tolerance tuning via approval queue if plateau persists 3+ more ticks.
 - **pre-tick fix:** committed mypy no-untyped-call suppression on Tensor.backward() (4a00b2d) to unblock safety gate.
+| 1776248896 | 2026-04-15T10:29 | 1640000 | 0.01470 | 0.02059 | 36/119 | no_change | stable slow-convergence; growth config changes blocked by prior reverts |

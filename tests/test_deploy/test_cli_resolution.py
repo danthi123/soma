@@ -16,7 +16,9 @@ import argparse
 import pytest
 import torch
 
+from soma.core.config import SOMAConfig
 from soma.deploy.cli import (
+    DEFAULT_VRAM_SAFETY_FACTOR,
     DTYPE_CHOICES,
     TIER_CHOICES,
     add_deploy_arguments,
@@ -241,3 +243,115 @@ def test_train_verbalizer_bootstrap_parser_rejects_unknown_dtype() -> None:
                 "bf16",
             ]
         )
+
+
+# ----- vram_safety_factor flag --------------------------------------------
+
+
+def test_cli_default_vram_safety_factor_matches_config() -> None:
+    """The CLI default and the SOMAConfig default must stay in sync.
+
+    The CLI duplicates the value (DEFAULT_VRAM_SAFETY_FACTOR) because it
+    doesn't own a SOMAConfig at parse time. This test catches drift if
+    one default changes without the other -- otherwise operators would
+    see different headroom behavior depending on whether they go via
+    chat_repl (CLI default) or load a config (SOMAConfig default)."""
+    assert SOMAConfig().vram_safety_factor == pytest.approx(DEFAULT_VRAM_SAFETY_FACTOR)
+
+
+def test_parser_default_vram_safety_factor() -> None:
+    args = _build_test_parser().parse_args([])
+    assert args.vram_safety_factor == pytest.approx(DEFAULT_VRAM_SAFETY_FACTOR)
+
+
+def test_parser_accepts_explicit_vram_safety_factor() -> None:
+    args = _build_test_parser().parse_args(["--vram-safety-factor", "0.7"])
+    assert args.vram_safety_factor == pytest.approx(0.7)
+
+
+def test_parser_accepts_factor_one() -> None:
+    """factor=1.0 is valid (means 'use full VRAM')."""
+    args = _build_test_parser().parse_args(["--vram-safety-factor", "1.0"])
+    assert args.vram_safety_factor == pytest.approx(1.0)
+
+
+@pytest.mark.parametrize("bad", ["0.0", "-0.1", "1.5", "2.0"])
+def test_parser_rejects_out_of_range_vram_safety_factor(bad: str) -> None:
+    """Out-of-range values must error at argparse time, not propagate."""
+    with pytest.raises(SystemExit):
+        _build_test_parser().parse_args(["--vram-safety-factor", bad])
+
+
+def test_parser_rejects_non_numeric_vram_safety_factor() -> None:
+    with pytest.raises(SystemExit):
+        _build_test_parser().parse_args(["--vram-safety-factor", "garbage"])
+
+
+def test_resolve_applies_vram_safety_factor(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Headroom factor must be applied to detected VRAM before tier
+    selection. A 23 GB raw card with factor=0.9 -> 20 GB effective ->
+    'large' tier, NOT xlarge (which needs 24 effective GB)."""
+
+    class _FakeProps:
+        total_memory = int(23.64 * 1024**3)
+
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+    monkeypatch.setattr(torch.cuda, "get_device_properties", lambda _i: _FakeProps())
+    args = _build_test_parser().parse_args(["--device", "cuda"])
+    _device, _dtype, llm_name, tier = resolve_device_dtype_tier(args)
+    assert tier == "large"
+    assert llm_name == MODEL_TIERS["large"]["name"]
+
+
+def test_resolve_factor_one_picks_xlarge_at_24gb(monkeypatch: pytest.MonkeyPatch) -> None:
+    """factor=1.0 disables headroom: 24 GB raw -> 24 effective -> xlarge."""
+
+    class _FakeProps:
+        total_memory = 24 * 1024**3
+
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+    monkeypatch.setattr(torch.cuda, "get_device_properties", lambda _i: _FakeProps())
+    args = _build_test_parser().parse_args(["--device", "cuda", "--vram-safety-factor", "1.0"])
+    _device, _dtype, llm_name, tier = resolve_device_dtype_tier(args)
+    assert tier == "xlarge"
+    assert llm_name == MODEL_TIERS["xlarge"]["name"]
+
+
+def test_resolve_aggressive_factor_demotes_tier(monkeypatch: pytest.MonkeyPatch) -> None:
+    """factor=0.5 on a 24 GB card -> 12 effective -> still 'large' (12 is the
+    boundary). Operator can demote further with a smaller factor or by
+    forcing --tier explicitly."""
+
+    class _FakeProps:
+        total_memory = 24 * 1024**3
+
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+    monkeypatch.setattr(torch.cuda, "get_device_properties", lambda _i: _FakeProps())
+    args = _build_test_parser().parse_args(["--device", "cuda", "--vram-safety-factor", "0.5"])
+    _device, _dtype, _llm_name, tier = resolve_device_dtype_tier(args)
+    assert tier == "large"
+
+
+def test_resolve_explicit_tier_ignores_factor(monkeypatch: pytest.MonkeyPatch) -> None:
+    """When --tier is explicit, the factor is irrelevant -- the operator
+    has overridden tier selection entirely."""
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+    args = _build_test_parser().parse_args(["--tier", "xlarge", "--vram-safety-factor", "0.1"])
+    _device, _dtype, llm_name, tier = resolve_device_dtype_tier(args)
+    assert tier == "xlarge"
+    assert llm_name == MODEL_TIERS["xlarge"]["name"]
+
+
+def test_resolve_works_without_vram_safety_factor_attr(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Backward compat: a hand-built Namespace without vram_safety_factor
+    must still resolve. Tests the getattr() default fallback in
+    resolve_device_dtype_tier."""
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+    args = argparse.Namespace(llm_name=None, tier="auto", device="auto", dtype="auto")
+    _device, _dtype, llm_name, tier = resolve_device_dtype_tier(args)
+    # No CUDA -> tiny regardless of factor. The point is the resolver
+    # didn't crash on a missing attribute.
+    assert tier == "tiny"
+    assert llm_name == MODEL_TIERS["tiny"]["name"]

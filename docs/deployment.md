@@ -236,10 +236,29 @@ print(head.generate_text(prompt="Hello!", max_new_tokens=10))
 ```
 
 CLI: pass `--gguf-path /path/to/model.gguf` to deploy scripts. The flag
-overrides `--tier` and `--llm-name`. `scripts/demo_chat.py` and
-`scripts/chat_repl.py` are not yet wired to consume it — that requires a
-soft-prompt -> hard-prompt conversion path for the verbalizer prefix
-and is deferred to a future phase.
+overrides `--tier` and `--llm-name`.
+
+### Using GGUF with chat_repl / demo_chat
+
+Both frontends now accept the GGUF backend. Verbalizer construction is
+skipped entirely -- user text is fed directly to `llama.cpp` as a string
+prompt, so **online verbalizer training is not possible in this mode**
+(the `ChatSession(gguf_head=..., online_trainer=...)` pairing raises at
+construction).
+
+```bash
+# REPL with an explicit GGUF path:
+python scripts/chat_repl.py \
+    --soma-checkpoint artifacts/brain-bundle/ \
+    --gguf-path ~/.cache/lm-studio/models/.../model.gguf
+
+# Zero-arg demo, opt in via env var:
+SOMA_GGUF_PATH=/path/to/model.gguf python scripts/demo_chat.py
+```
+
+SOMA's graph still runs (state evolves per turn), but its OUTPUT
+activations are NOT projected into soft-prompt tokens. Operators who
+want soft-prompt guidance should stay on the HF backend.
 
 ---
 

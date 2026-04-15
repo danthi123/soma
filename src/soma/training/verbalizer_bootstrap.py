@@ -199,14 +199,26 @@ def compute_lm_loss(
     batch_size, num_prefix, _ = prefix.shape
     _, num_tokens = token_ids.shape
 
+    # Align token_ids to the LLM's device before embedding (HF tokenizers
+    # return CPU tensors regardless of where the model lives). Mirrors
+    # the Phase 7 T6 fix in ChatSession.respond / SOMA.chat.
+    llm_device = chat_head.model.get_input_embeddings().weight.device
+    if token_ids.device != llm_device:
+        token_ids = token_ids.to(llm_device)
+
     token_embeds = chat_head.model.get_input_embeddings()(token_ids)
+    # Align prefix dtype to the LLM's token embeddings (Phase 7 T3 fix).
+    # Otherwise an fp16 LLM silently upcasts the whole concat to fp32.
+    # ``.to(dtype=...)`` is autograd-safe so verbalizer gradients still flow.
+    if prefix.dtype != token_embeds.dtype:
+        prefix = prefix.to(dtype=token_embeds.dtype)
     inputs_embeds = torch.cat([prefix, token_embeds], dim=1)
 
     prefix_labels = torch.full(
         (batch_size, num_prefix),
         -100,
         dtype=torch.long,
-        device=token_ids.device,
+        device=llm_device,
     )
     labels = torch.cat([prefix_labels, token_ids], dim=1)
 
@@ -214,7 +226,7 @@ def compute_lm_loss(
         batch_size,
         num_prefix + num_tokens,
         dtype=torch.long,
-        device=token_ids.device,
+        device=llm_device,
     )
 
     out = chat_head.model(

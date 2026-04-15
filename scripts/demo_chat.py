@@ -16,9 +16,21 @@ Because the SomaVerbalizer is freshly constructed with near-zero-init
 weights (no bootstrap training inside the demo), responses are
 grammatically-shaped but semantically empty. The point is to prove the
 pipeline works, not that the untrained projector has anything to say.
+
+GGUF opt-in
+-----------
+Setting ``SOMA_GGUF_PATH=/path/to/model.gguf`` switches the demo to the
+inference-only GGUF backend (via llama-cpp-python). Verbalizer
+construction is SKIPPED in that mode — user text is fed directly to the
+llama.cpp runtime as a string prompt. The SOMA graph still runs for
+state evolution across turns. Keeps demo_chat zero-arg; no CLI surface
+change for operators who never set the env var.
 """
 
 from __future__ import annotations
+
+import os
+from pathlib import Path
 
 from soma.core.config import SOMAConfig
 from soma.deploy.chat_head_factory import build_chat_head
@@ -30,6 +42,7 @@ from soma.deploy.devices import (
     effective_vram_gb,
     select_device_and_dtype,
 )
+from soma.deploy.gguf_backend import build_gguf_chat_head
 from soma.io.text_encoder import TextEncoder, train_bpe_tokenizer
 from soma.io.verbalizer import SomaVerbalizer, VerbalizerSpec
 from soma.session.chat_session import ChatSession
@@ -51,11 +64,9 @@ DEMO_QUESTIONS: list[str] = [
 ]
 
 
-def main() -> None:
-    # 0. Build the SOMA config first -- the demo SOMA uses small CPU-friendly
-    # dims, but the vram_safety_factor is independent of those, so it's the
-    # one knob worth surfacing up front.
-    cfg = SOMAConfig(
+def _build_demo_cfg() -> SOMAConfig:
+    """Demo-shaped SOMA config. Small CPU-friendly dims."""
+    return SOMAConfig(
         sensor_output_dim=16,
         associator_input_dim=16,
         associator_hidden_dim=32,
@@ -79,6 +90,28 @@ def main() -> None:
         seed=0,
     )
 
+
+def _read_gguf_env() -> Path | None:
+    """Return the GGUF path from ``SOMA_GGUF_PATH`` if it points at a real file.
+
+    Missing env var -> ``None`` (HF flow). Set-but-nonexistent -> raise
+    so a typo surfaces immediately instead of silently falling back to
+    the HF download path and redoing a several-GB pull.
+    """
+    raw = os.environ.get("SOMA_GGUF_PATH")
+    if not raw:
+        return None
+    path = Path(raw)
+    if not path.exists():
+        raise FileNotFoundError(
+            f"SOMA_GGUF_PATH points to a non-existent file: {path}. "
+            "Unset the env var to fall back to the HF download path."
+        )
+    return path
+
+
+def _build_session_hf(cfg: SOMAConfig) -> ChatSession:
+    """Build the HF-backed demo session (downloads a tier model on first run)."""
     # 1. Detect hardware + pick a tier. Apply the headroom factor so an
     # RTX 3090 (raw 23 GB floor) gets 20 effective GB and lands in the
     # 'large' tier instead of bouncing on the 23/24 boundary.
@@ -103,24 +136,15 @@ def main() -> None:
     # 3. Build the frozen LLM-backed ChatHead.
     chat_head = build_chat_head(tier=tier, device=device, dtype=dtype)
 
-    # 4. SOMA construction (cfg built above so vram_safety_factor was
-    # available for the auto-detect step).
+    # 4. SOMA + tokenizer + encoder + verbalizer (see individual comments).
     soma = SOMA(cfg, device=device)
-
-    # 5. Train a tiny BPE tokenizer on the bundled seed corpus.
     tokenizer = train_bpe_tokenizer(iter(SEED_TEXTS), vocab_size=cfg.vocab_size)
-
-    # 6. Text encoder matching the tokenizer + config dims. ``device`` keeps
-    # embedding tables on the same device as SOMA so per-token feeds avoid
-    # CPU<->GPU roundtrips.
     encoder = TextEncoder(
         tokenizer,
         embed_dim=cfg.text_embed_dim,
         max_seq_len=cfg.max_input_tokens,
         device=device,
     )
-
-    # 7. Fresh verbalizer — near-zero init, no bootstrap in the demo.
     verbalizer_spec = VerbalizerSpec(
         soma_output_dim=cfg.sensor_output_dim,
         llm_name=spec["name"],
@@ -129,8 +153,7 @@ def main() -> None:
     )
     verbalizer = SomaVerbalizer(verbalizer_spec).to(device)
 
-    # 8. Wire everything into a ChatSession.
-    session = ChatSession(
+    return ChatSession(
         soma=soma,
         verbalizer=verbalizer,
         chat_head=chat_head,
@@ -138,9 +161,58 @@ def main() -> None:
         encoder=encoder,
     )
 
-    # 9. Four-turn demo. ``min_new_tokens=3`` avoids the untrained-projector
+
+def _build_session_gguf(cfg: SOMAConfig, gguf_path: Path) -> ChatSession:
+    """Build a GGUF-backed demo session. Skips verbalizer construction.
+
+    Keeps the SOMA graph + tokenizer + encoder identical to the HF path
+    so state evolution behaves the same across turns. Only the LLM
+    surface swaps.
+    """
+    # GGUF manages its own device placement (n_gpu_layers=-1 offloads
+    # everything). SOMA still wants a torch device — honour the same
+    # auto-detection the HF path uses.
+    device, _dtype = select_device_and_dtype()
+    print(f"Using GGUF backend: {gguf_path}")
+    print(f"Device (SOMA): {device}")
+    print("Verbalizer: skipped (GGUF mode feeds user_text directly to llama.cpp)")
+    print()
+
+    gguf_head = build_gguf_chat_head(gguf_path=gguf_path)
+
+    soma = SOMA(cfg, device=device)
+    tokenizer = train_bpe_tokenizer(iter(SEED_TEXTS), vocab_size=cfg.vocab_size)
+    encoder = TextEncoder(
+        tokenizer,
+        embed_dim=cfg.text_embed_dim,
+        max_seq_len=cfg.max_input_tokens,
+        device=device,
+    )
+
+    return ChatSession(
+        soma=soma,
+        verbalizer=None,
+        chat_head=None,
+        gguf_head=gguf_head,
+        tokenizer=tokenizer,
+        encoder=encoder,
+    )
+
+
+def main() -> None:
+    cfg = _build_demo_cfg()
+
+    # GGUF opt-in via SOMA_GGUF_PATH env var. Missing env var -> HF flow.
+    gguf_path = _read_gguf_env()
+    if gguf_path is not None:
+        session = _build_session_gguf(cfg, gguf_path)
+    else:
+        session = _build_session_hf(cfg)
+
+    # Four-turn demo. ``min_new_tokens=3`` avoids the untrained-projector
     # edge case where SmolLM2-Instruct emits <|im_end|> at t=0 (decodes to
-    # an empty string under skip_special_tokens).
+    # an empty string under skip_special_tokens). GGUFChatHead silently
+    # ignores ``min_new_tokens`` / ``do_sample`` kwargs via **_ignored.
     for q in DEMO_QUESTIONS:
         response = session.respond(
             user_text=q,

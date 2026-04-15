@@ -123,6 +123,50 @@ def _build_parser() -> argparse.ArgumentParser:
             "(single-file checkpoint path only; default: config.vocab_size)."
         ),
     )
+    p.add_argument(
+        "--grad-accum-steps",
+        type=int,
+        default=1,
+        help=(
+            "Accumulate gradients over this many micro-batches before each "
+            "optim.step. Default 1 (no accumulation)."
+        ),
+    )
+    p.add_argument(
+        "--cosine-lr",
+        action="store_true",
+        help=(
+            "Enable half-cosine LR decay to zero with optional linear warmup "
+            "(see --warmup-steps). Default: constant config.verbalizer_lr."
+        ),
+    )
+    p.add_argument(
+        "--warmup-steps",
+        type=int,
+        default=0,
+        help=(
+            "Linear warmup length (only used with --cosine-lr). Default 0 "
+            "(full base LR from step 1)."
+        ),
+    )
+    p.add_argument(
+        "--eval-interval",
+        type=int,
+        default=1000,
+        help=(
+            "Micro-step period between held-out eval runs during training. "
+            "Default 1000. Only fires when eval_texts are available."
+        ),
+    )
+    p.add_argument(
+        "--loss-log",
+        type=Path,
+        default=None,
+        help=(
+            "Optional CSV path for per-step loss logging "
+            "(columns: step,train_loss,eval_loss,lr). Written incrementally."
+        ),
+    )
     return p
 
 
@@ -292,6 +336,12 @@ def main() -> None:
         corpus=iter(train_texts),
         max_steps=cfg.bootstrap_max_steps,
         out_dir=args.out_dir,
+        eval_texts=eval_texts if eval_texts else None,
+        eval_interval=args.eval_interval,
+        grad_accum_steps=args.grad_accum_steps,
+        cosine_lr=args.cosine_lr,
+        warmup_steps=args.warmup_steps,
+        loss_log_path=args.loss_log,
     )
 
     if losses:

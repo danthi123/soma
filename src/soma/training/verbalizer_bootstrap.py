@@ -8,6 +8,7 @@ contract — enforced at trainer init).
 
 from __future__ import annotations
 
+import json
 import logging
 import math
 from collections.abc import Iterable
@@ -19,6 +20,17 @@ import torch
 from soma.core.config import SOMAConfig
 
 _log = logging.getLogger(__name__)
+
+
+def _cosine_lr(step: int, base_lr: float, max_steps: int, warmup_steps: int) -> float:
+    """Linear warmup to ``base_lr`` over ``warmup_steps``, then half-cosine
+    decay to zero by ``max_steps``. ``step`` is 1-based."""
+    if warmup_steps > 0 and step <= warmup_steps:
+        return base_lr * step / warmup_steps
+    decay_total = max(max_steps - warmup_steps, 1)
+    progress = (step - warmup_steps) / decay_total
+    progress = min(max(progress, 0.0), 1.0)
+    return base_lr * 0.5 * (1.0 + math.cos(math.pi * progress))
 
 
 class VerbalizerTrainer:
@@ -65,16 +77,13 @@ class VerbalizerTrainer:
             lr=config.verbalizer_lr,
         )
 
-    def train_step(self, *, text: str) -> float:
-        """One forward + backward + optim.step. Returns scalar loss as float.
+    def _step_loss(self, *, text: str) -> tuple[torch.Tensor, float]:
+        """Forward pass: produce LM loss tensor + its scalar value.
 
-        Gradient flows only through the verbalizer's two Linear layers.
-        SOMA is wrapped in ``torch.no_grad`` inside ``text_to_state`` (T4);
-        ChatHead is frozen via the invariant enforced at ``__init__`` (T2).
+        No ``zero_grad``, no ``backward``, no ``optim.step`` — caller owns
+        those. Shared plumbing between ``train_step`` (one sample per
+        optim step) and ``train`` (supports gradient accumulation).
         """
-        self.verbalizer.train()
-        self.optim.zero_grad()
-
         state = text_to_state(
             text=text,
             soma=self.soma,
@@ -92,8 +101,20 @@ class VerbalizerTrainer:
             prefix=prefix,
             token_ids=token_ids,
         )
+        return loss, float(loss.item())
 
-        loss_value = float(loss.item())
+    def train_step(self, *, text: str) -> float:
+        """One forward + backward + optim.step. Returns scalar loss as float.
+
+        Gradient flows only through the verbalizer's two Linear layers.
+        SOMA is wrapped in ``torch.no_grad`` inside ``text_to_state`` (T4);
+        ChatHead is frozen via the invariant enforced at ``__init__`` (T2).
+        """
+        self.verbalizer.train()
+        self.optim.zero_grad()
+
+        loss, loss_value = self._step_loss(text=text)
+
         # Skip backward + optim.step on non-finite loss so a single
         # degenerate sample (NaN/inf SOMA state, exploding logits, etc.)
         # cannot corrupt Adam's running moments and silently poison every
@@ -118,33 +139,169 @@ class VerbalizerTrainer:
         corpus: Iterable[str],
         max_steps: int,
         out_dir: Path,
+        eval_texts: list[str] | None = None,
+        eval_interval: int = 1000,
+        grad_accum_steps: int = 1,
+        cosine_lr: bool = False,
+        warmup_steps: int = 0,
+        loss_log_path: Path | None = None,
     ) -> list[float]:
-        """Run up to ``max_steps`` train_step calls over ``corpus``.
+        """Run up to ``max_steps`` micro-batches over ``corpus``.
 
-        Saves an intermediate verbalizer checkpoint every
-        ``self.config.verbalizer_checkpoint_interval`` steps (directory named
-        ``verbalizer_step_N``), plus a final checkpoint named
-        ``verbalizer_final``. Returns the per-step loss list.
+        Default behaviour matches the pre-improvements contract: one sample
+        per optim step, constant LR, periodic ``verbalizer_step_N/`` saves
+        every ``config.verbalizer_checkpoint_interval`` micro-steps, plus a
+        final ``verbalizer_final/``. Returns per-micro-step loss values.
 
-        Exits early if the corpus iterator is exhausted before ``max_steps``;
-        the final checkpoint is still written to mark where training stopped.
+        Parameters
+        ----------
+        corpus:
+            Text iterator. Exits early on ``StopIteration``.
+        max_steps:
+            Maximum number of micro-batches.
+        out_dir:
+            Destination directory for verbalizer checkpoints.
+        eval_texts:
+            If provided, runs ``eval_lm_loss(texts=eval_texts)`` every
+            ``eval_interval`` micro-steps. When eval loss improves over the
+            prior best, the verbalizer is saved to ``out_dir/verbalizer_best``
+            alongside an ``out_dir/best_info.json`` pointing at the winning
+            step + loss.
+        eval_interval:
+            Micro-step period between eval runs (only used if ``eval_texts``
+            is non-empty). Default 1000.
+        grad_accum_steps:
+            Accumulate gradients over this many micro-batches before calling
+            ``optim.step``. Per-micro-batch loss is divided by
+            ``grad_accum_steps`` so the effective gradient magnitude matches
+            a single-pass batch. Default 1 (no accumulation).
+        cosine_lr:
+            If True, drive the optimiser's LR with a linear warmup to
+            ``config.verbalizer_lr`` over ``warmup_steps`` steps, then a
+            half-cosine decay to zero by ``max_steps``. Default False
+            (constant LR).
+        warmup_steps:
+            Warmup length used when ``cosine_lr`` is True.
+        loss_log_path:
+            Optional CSV path. One row per micro-step:
+            ``step,train_loss,eval_loss,lr``. ``eval_loss`` is empty on
+            non-eval steps. Flushed per row for crash-safety.
         """
+        if grad_accum_steps < 1:
+            raise ValueError(f"grad_accum_steps must be >= 1, got {grad_accum_steps}")
+        if warmup_steps < 0:
+            raise ValueError(f"warmup_steps must be >= 0, got {warmup_steps}")
+        if cosine_lr and warmup_steps > max_steps:
+            raise ValueError(
+                f"warmup_steps ({warmup_steps}) must not exceed max_steps ({max_steps})"
+            )
+
         out_dir.mkdir(parents=True, exist_ok=True)
         losses: list[float] = []
         corpus_iter = iter(corpus)
         interval = self.config.verbalizer_checkpoint_interval
+        base_lr = self.config.verbalizer_lr
 
-        for step in range(1, max_steps + 1):
-            try:
-                text = next(corpus_iter)
-            except StopIteration:
-                break
-            loss = self.train_step(text=text)
-            losses.append(loss)
-            if step % interval == 0:
-                self.verbalizer.save(out_dir / f"verbalizer_step_{step}")
+        loss_log_fh: Any = None
+        if loss_log_path is not None:
+            loss_log_path.parent.mkdir(parents=True, exist_ok=True)
+            loss_log_fh = loss_log_path.open("w", encoding="utf-8")
+            loss_log_fh.write("step,train_loss,eval_loss,lr\n")
+            loss_log_fh.flush()
 
-        self.verbalizer.save(out_dir / "verbalizer_final")
+        best_eval_loss = float("inf")
+        best_step: int | None = None
+
+        try:
+            self.verbalizer.train()
+            self.optim.zero_grad()
+            accumulated = 0
+
+            for step in range(1, max_steps + 1):
+                try:
+                    text = next(corpus_iter)
+                except StopIteration:
+                    break
+
+                # Apply LR schedule first so a NaN micro-batch doesn't pause
+                # the cosine decay (it also keeps the CSV log honest).
+                if cosine_lr:
+                    lr_now = _cosine_lr(step, base_lr, max_steps, warmup_steps)
+                    for pg in self.optim.param_groups:
+                        pg["lr"] = lr_now
+                else:
+                    lr_now = base_lr
+
+                loss, loss_value = self._step_loss(text=text)
+
+                if math.isfinite(loss_value):
+                    (loss / grad_accum_steps).backward()
+                    accumulated += 1
+                    if accumulated >= grad_accum_steps:
+                        self.optim.step()
+                        self.optim.zero_grad()
+                        accumulated = 0
+                else:
+                    # Non-finite loss would corrupt any prior accumulated
+                    # grads via the shared autograd buffer, so zero the
+                    # bucket and start fresh. Still run eval / log below
+                    # so cosine LR + eval cadence keep ticking.
+                    _log.warning(
+                        "verbalizer train skipped: non-finite loss %r on "
+                        "text=%r — discarding %d accumulated micro-batch(es).",
+                        loss_value,
+                        text[:60],
+                        accumulated,
+                    )
+                    self.optim.zero_grad()
+                    accumulated = 0
+
+                losses.append(loss_value)
+
+                eval_loss: float | None = None
+                if eval_texts and eval_interval > 0 and step % eval_interval == 0:
+                    eval_loss = self.eval_lm_loss(texts=eval_texts)
+                    if eval_loss < best_eval_loss:
+                        best_eval_loss = eval_loss
+                        best_step = step
+                        self.verbalizer.save(out_dir / "verbalizer_best")
+                        (out_dir / "best_info.json").write_text(
+                            json.dumps(
+                                {"step": step, "eval_loss": round(eval_loss, 6)},
+                                indent=2,
+                            ),
+                            encoding="utf-8",
+                        )
+
+                if step % interval == 0:
+                    self.verbalizer.save(out_dir / f"verbalizer_step_{step}")
+
+                if loss_log_fh is not None:
+                    train_field = (
+                        f"{loss_value:.6f}" if math.isfinite(loss_value) else "nan"
+                    )
+                    eval_field = f"{eval_loss:.6f}" if eval_loss is not None else ""
+                    loss_log_fh.write(
+                        f"{step},{train_field},{eval_field},{lr_now:.6g}\n"
+                    )
+                    loss_log_fh.flush()
+
+            # Flush any leftover grads from a partial accumulation bucket.
+            if accumulated > 0:
+                self.optim.step()
+                self.optim.zero_grad()
+
+            self.verbalizer.save(out_dir / "verbalizer_final")
+        finally:
+            if loss_log_fh is not None:
+                loss_log_fh.close()
+
+        if best_step is not None:
+            _log.info(
+                "best verbalizer saved at step %d with eval_loss=%.4f",
+                best_step,
+                best_eval_loss,
+            )
         return losses
 
     @torch.no_grad()

@@ -13,6 +13,7 @@ from soma.io.verbalizer import SomaVerbalizer, VerbalizerSpec
 from soma.system import SOMA
 from soma.training.verbalizer_bootstrap import (
     VerbalizerTrainer,
+    _cosine_lr,
     compute_lm_loss,
     text_to_state,
 )
@@ -683,6 +684,216 @@ def test_eval_lm_loss_handles_empty_texts():
 # from late steps. Without this guard, a NaN gradient would corrupt Adam's
 # running moments and silently poison every subsequent update.
 # ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# Trainer improvements: cosine LR, grad accumulation, save-best, CSV logging
+# ---------------------------------------------------------------------------
+
+
+def test_cosine_lr_warmup_ramps_from_zero_to_base():
+    """Linear warmup: lr(1) ≈ base/warmup, lr(warmup) ≈ base."""
+    base = 1e-3
+    warmup = 10
+    max_steps = 100
+    # Step 1 of 10-step warmup → base * 1/10.
+    assert abs(_cosine_lr(1, base, max_steps, warmup) - base * 0.1) < 1e-9
+    # End of warmup → full base.
+    assert abs(_cosine_lr(warmup, base, max_steps, warmup) - base) < 1e-9
+
+
+def test_cosine_lr_decays_to_zero_at_max_steps():
+    """Half-cosine decay: lr(warmup) = base, lr(max_steps) = 0."""
+    base = 1e-3
+    warmup = 10
+    max_steps = 100
+    lr_end = _cosine_lr(max_steps, base, max_steps, warmup)
+    assert lr_end < 1e-9, f"expected lr near 0 at max_steps, got {lr_end}"
+    # Midpoint of decay → half of base.
+    mid = warmup + (max_steps - warmup) // 2
+    lr_mid = _cosine_lr(mid, base, max_steps, warmup)
+    assert abs(lr_mid - base * 0.5) < 1e-3
+
+
+def test_cosine_lr_no_warmup_starts_at_base():
+    """warmup_steps=0 → step 1 should already be near base_lr (no ramp)."""
+    base = 1e-3
+    max_steps = 100
+    lr_start = _cosine_lr(1, base, max_steps, 0)
+    # Half-cosine at t=1/100 is very close to base.
+    assert lr_start > base * 0.99
+
+
+def test_train_cosine_lr_changes_over_time(tmp_path: Path):
+    """With cosine_lr=True, optimizer LR should differ between early/late steps."""
+    t = _fresh_trainer()
+    lr_trace: list[float] = []
+    original_step = t.optim.step
+
+    def _record_step() -> None:
+        lr_trace.append(t.optim.param_groups[0]["lr"])
+        original_step()
+
+    t.optim.step = _record_step  # type: ignore[method-assign]
+    t.train(
+        corpus=iter(["sample"] * 20),
+        max_steps=10,
+        out_dir=tmp_path,
+        cosine_lr=True,
+        warmup_steps=2,
+    )
+    # LR should monotonically decrease from step 2 onward (post-warmup).
+    assert lr_trace[2] > lr_trace[-1], (
+        f"cosine LR did not decrease: first={lr_trace[0]}, last={lr_trace[-1]}"
+    )
+
+
+def test_train_constant_lr_by_default(tmp_path: Path):
+    """Default call (cosine_lr=False) keeps LR at config.verbalizer_lr throughout."""
+    t = _fresh_trainer()
+    base_lr = t.config.verbalizer_lr
+    t.train(corpus=iter(["sample"] * 5), max_steps=3, out_dir=tmp_path)
+    assert t.optim.param_groups[0]["lr"] == base_lr
+
+
+def test_train_grad_accum_defers_optim_step(tmp_path: Path):
+    """With grad_accum_steps=3, optim.step fires after every 3rd micro-batch."""
+    t = _fresh_trainer()
+    calls: list[int] = []
+    original_step = t.optim.step
+
+    def _counting_step() -> None:
+        calls.append(len(calls) + 1)
+        original_step()
+
+    t.optim.step = _counting_step  # type: ignore[method-assign]
+
+    t.train(
+        corpus=iter(["sample"] * 10),
+        max_steps=6,
+        out_dir=tmp_path,
+        grad_accum_steps=3,
+    )
+    # 6 micro-steps / 3 per optim = 2 optim.step calls.
+    assert len(calls) == 2, f"expected 2 optim steps, got {len(calls)}"
+
+
+def test_train_grad_accum_partial_bucket_flushed(tmp_path: Path):
+    """Leftover grads from a non-full accumulation bucket must still be applied."""
+    t = _fresh_trainer()
+    calls: list[int] = []
+    original_step = t.optim.step
+
+    def _counting_step() -> None:
+        calls.append(len(calls) + 1)
+        original_step()
+
+    t.optim.step = _counting_step  # type: ignore[method-assign]
+
+    # 5 micro-batches with grad_accum=3: one full bucket (step 3), then
+    # leftover bucket of 2 flushed at end → 2 optim.step calls total.
+    t.train(
+        corpus=iter(["sample"] * 10),
+        max_steps=5,
+        out_dir=tmp_path,
+        grad_accum_steps=3,
+    )
+    assert len(calls) == 2, f"expected 2 optim steps (1 full + 1 flush), got {len(calls)}"
+
+
+def test_train_rejects_bad_grad_accum(tmp_path: Path):
+    t = _fresh_trainer()
+    with pytest.raises(ValueError, match="grad_accum_steps"):
+        t.train(
+            corpus=iter(["sample"]),
+            max_steps=1,
+            out_dir=tmp_path,
+            grad_accum_steps=0,
+        )
+
+
+def test_train_saves_best_on_eval_improvement(tmp_path: Path):
+    """With eval_texts + eval_interval, a verbalizer_best/ checkpoint must
+    appear after the first eval step (eval_loss starts at +inf, any real
+    value improves it)."""
+    cfg = replace(_soma_cfg(), verbalizer_lr=0.01)
+    soma = SOMA(cfg, device=torch.device("cpu"))
+    spec = VerbalizerSpec(
+        soma_output_dim=cfg.sensor_output_dim,
+        llm_name="mock",
+        llm_hidden_dim=16,
+        num_prefix_tokens=4,
+        proj_hidden_dim=16,
+    )
+    verbalizer = SomaVerbalizer(spec)
+    chat_head = ChatHead(
+        model=_TinyCausalLM(vocab=32, d_model=16),
+        tokenizer=_TinyTokenizer(),
+    )
+    encoder = TextEncoder(
+        _shared_bpe_tokenizer,
+        embed_dim=cfg.text_embed_dim,
+        max_seq_len=cfg.max_input_tokens,
+    )
+    t = VerbalizerTrainer(
+        soma=soma,
+        verbalizer=verbalizer,
+        chat_head=chat_head,
+        config=cfg,
+        tokenizer=_shared_bpe_tokenizer,
+        encoder=encoder,
+    )
+    t.train(
+        corpus=iter(["the quick brown fox"] * 20),
+        max_steps=10,
+        out_dir=tmp_path,
+        eval_texts=["some eval text"],
+        eval_interval=2,
+    )
+    assert (tmp_path / "verbalizer_best").exists(), "best checkpoint not saved"
+    assert (tmp_path / "verbalizer_best" / "weights.pt").exists()
+    assert (tmp_path / "best_info.json").exists()
+    import json as _json
+
+    meta = _json.loads((tmp_path / "best_info.json").read_text(encoding="utf-8"))
+    assert "step" in meta and "eval_loss" in meta
+
+
+def test_train_no_best_without_eval_texts(tmp_path: Path):
+    """Without eval_texts, no verbalizer_best/ should be created."""
+    t = _fresh_trainer()
+    t.train(
+        corpus=iter(["sample"] * 5),
+        max_steps=3,
+        out_dir=tmp_path,
+    )
+    assert not (tmp_path / "verbalizer_best").exists()
+    assert not (tmp_path / "best_info.json").exists()
+
+
+def test_train_writes_loss_log_csv(tmp_path: Path):
+    """With loss_log_path set, a CSV with per-step rows must be produced."""
+    t = _fresh_trainer()
+    log_path = tmp_path / "loss_log.csv"
+    t.train(
+        corpus=iter(["sample"] * 5),
+        max_steps=4,
+        out_dir=tmp_path,
+        eval_texts=["eval one"],
+        eval_interval=2,
+        loss_log_path=log_path,
+    )
+    assert log_path.exists()
+    lines = log_path.read_text(encoding="utf-8").splitlines()
+    assert lines[0] == "step,train_loss,eval_loss,lr"
+    assert len(lines) == 5, f"expected header + 4 rows, got {len(lines)}"
+    # Row 2 (step=2) is an eval step — eval_loss field must be populated.
+    row_eval = lines[2].split(",")
+    assert row_eval[0] == "2"
+    assert row_eval[2] != "", "eval_loss missing on eval step"
+    # Row 1 (step=1) is not an eval step — eval_loss field must be empty.
+    row_noeval = lines[1].split(",")
+    assert row_noeval[2] == "", "eval_loss should be empty on non-eval step"
 
 
 def test_train_step_skips_when_loss_is_non_finite(monkeypatch: pytest.MonkeyPatch):

@@ -1338,3 +1338,5 @@ to Stage 5 multimodal).
 | 1776257546 | 1700000 | no_change | loss_ema=0.0153 kl=17.70 nodes=36 edges=120 | stable, KL drop needs observation |
 | 1776259770 | 1720000 | 0.01507 | 0.00159 | 36/127 | no_change | stable plateau, curiosity low but transient; recent growth configs reverted |
 | 1776262011 | 2026-04-15T14:10:16Z | 1750000 | no_change | loss_ema=0.01448 heldout=0.02087 nodes=36 edges=130 | stable plateau, no safe intervention |
+
+| 1776266429 | 1800000 | no_change | loss_ema=0.01446, kl=20.84, nodes=36, edges=138 | Training stable plateau; no safe intervention available |

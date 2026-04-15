@@ -1343,3 +1343,4 @@ to Stage 5 multimodal).
 | 1776273230 | 2026-04-15T17:16:33Z | step=1845000 loss_ema=0.0156 heldout=0.0209 | no_change | Training stable, consecutive_failures=2, waiting |
 | 1776279746 | 1910000 | no_change | loss_ema=0.01439 heldout=0.02086 nodes=36 edges=140 | stable plateau, no intervention warranted |
 | 1776281961 | 1940000 | no_change | loss_ema=0.01500 heldout=0.02094 kl=20.84 nodes=36 edges=141 | Stable plateau; growth stalled; prior config interventions reverted; architecture-scope changes needed |
+- tick 1776286397 step=2005000 loss_ema=0.01473 heldout=0.02099 kl=20.71 nodes=36 edges=153 class=null reason="stable plateau; no viable auto-scope intervention"

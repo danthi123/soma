@@ -13,8 +13,10 @@ prompt pre-warm.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any, Literal, cast
 
 _VALID_ROLES = ("user", "assistant")
@@ -144,3 +146,52 @@ class ChatSession:
         self.history.append(ChatTurn(role="user", text=user_text))
         self.history.append(ChatTurn(role="assistant", text=response))
         return response
+
+    def save(self, *, out_dir: Path) -> None:
+        """Persist a full session bundle to ``out_dir``.
+
+        Writes:
+            - SOMA brain bundle via ``soma.save_bundle`` (brain.pt,
+              manifest.json, tokenizer.json, encoder.pt, verbalizer/).
+            - ``chat_history.json`` sidecar with the conversation log.
+
+        The SOMA's current weights + WM/episodic state are captured at
+        save time, so loading this bundle yields a SOMA whose internal
+        state reflects everything that's happened up to the save point —
+        no need to replay the history through SOMA on load.
+        """
+        out_dir.mkdir(parents=True, exist_ok=True)
+        self.soma.save_bundle(
+            out_dir,
+            tokenizer=self.tokenizer,
+            encoder=self.encoder,
+            verbalizer=self.verbalizer,
+        )
+        history_path = out_dir / "chat_history.json"
+        history_path.write_text(
+            json.dumps(
+                [{"role": t.role, "text": t.text, "ts": t.ts.isoformat()} for t in self.history],
+                indent=2,
+            )
+        )
+
+    def load_history(self, *, out_dir: Path) -> None:
+        """Load a previously-saved chat history into ``self.history``.
+
+        Overwrites any existing history. Does NOT reload SOMA / verbalizer /
+        chat_head — the caller is responsible for constructing those
+        (matching the save-time configuration) and passing them to
+        ``ChatSession.__init__`` before calling this method.
+        """
+        history_path = out_dir / "chat_history.json"
+        if not history_path.exists():
+            raise FileNotFoundError(f"chat_history.json missing at {history_path}")
+        raw = json.loads(history_path.read_text())
+        self.history = [
+            ChatTurn(
+                role=item["role"],
+                text=item["text"],
+                ts=datetime.fromisoformat(item["ts"]),
+            )
+            for item in raw
+        ]

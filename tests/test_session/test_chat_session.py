@@ -1,4 +1,5 @@
 from datetime import datetime
+from pathlib import Path
 
 import pytest
 import torch
@@ -338,3 +339,55 @@ def test_history_grows_two_per_respond_call():
         "assistant",
     ]
     assert [t.text for t in s.history if t.role == "user"] == ["a", "b", "c"]
+
+
+# ---------------------------------------------------------------------------
+# T7: save (SOMA bundle + chat_history sidecar) + load_history
+# ---------------------------------------------------------------------------
+
+
+def test_save_writes_chat_history_json(tmp_path: Path):
+    import json
+
+    s = _build_session()
+    s.respond(user_text="hello")
+    s.respond(user_text="world")
+    s.save(out_dir=tmp_path)
+    history_path = tmp_path / "chat_history.json"
+    assert history_path.exists()
+    data = json.loads(history_path.read_text())
+    assert isinstance(data, list)
+    assert len(data) == 4  # 2 turns × (user + assistant)
+    assert all(item["role"] in ("user", "assistant") for item in data)
+    assert all("text" in item for item in data)
+    assert all("ts" in item for item in data)
+
+
+def test_save_writes_soma_bundle_core_files(tmp_path: Path):
+    """Verify save() delegates to SOMA.save_bundle — brain.pt + manifest."""
+    s = _build_session()
+    s.save(out_dir=tmp_path)
+    assert (tmp_path / "brain.pt").exists()
+    assert (tmp_path / "manifest.json").exists()
+
+
+def test_load_history_round_trips(tmp_path: Path):
+    """Save from session A, load into a fresh session B, history matches."""
+    s_a = _build_session()
+    s_a.respond(user_text="hi")
+    s_a.respond(user_text="how are you")
+    s_a.save(out_dir=tmp_path)
+
+    s_b = _build_session()
+    s_b.load_history(out_dir=tmp_path)
+    assert len(s_b.history) == 4
+    assert s_b.history[0].text == s_a.history[0].text
+    assert s_b.history[0].role == s_a.history[0].role
+    assert s_b.history[3].role == "assistant"
+
+
+def test_load_history_rejects_missing_sidecar(tmp_path: Path):
+    """If chat_history.json doesn't exist, load_history raises."""
+    s = _build_session()
+    with pytest.raises(FileNotFoundError, match="chat_history"):
+        s.load_history(out_dir=tmp_path)

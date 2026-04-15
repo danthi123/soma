@@ -109,6 +109,7 @@ Key flags (run with `--help` for the full list):
 | `--device`        | `auto`  | `auto`, `cuda`, `cpu`, or a torch device string.             |
 | `--dtype`         | `auto`  | `auto`, `fp16`, `fp32`. Pairs with `--device auto`.          |
 | `--llm-name`      | (none)  | Bypass the tier registry (e.g. Llama-3-8B, Mistral-7B).      |
+| `--quantization`  | `none`  | `none`/`int8`/`int4`. See "Quantization" section below.      |
 | `--max-new-tokens`| `64`    | Max tokens per assistant response.                           |
 
 Explicit `--llm-name` wins over `--tier`. Use it when you want a model
@@ -139,6 +140,45 @@ is typically slower than fp32 on consumer CPUs without AVX-512-fp16. Use
 **`hidden_dim mismatch` at chat-head load.** A registered tier's HF model
 changed shape (likely deprecated or renamed upstream). File an issue;
 update `MODEL_TIERS` in `src/soma/deploy/devices.py`.
+
+---
+
+## Quantization (optional)
+
+For 7B models on 8GB-class GPUs, install the optional `bitsandbytes`
+backend and pass `--quantization int4`:
+
+```bash
+pip install -e ".[quant]"
+python scripts/chat_repl.py --soma-checkpoint path/to/bundle \
+    --tier large --quantization int4
+```
+
+| Mode    | 7B VRAM   | Fits 8GB? | Quality vs fp16 |
+|---------|-----------|-----------|-----------------|
+| `none`  | ~14.5 GB  | no        | reference       |
+| `int8`  | ~7-8 GB   | tight     | near-identical  |
+| `int4`  | ~4-5 GB   | yes       | small drop      |
+
+int4 uses `nf4` + double-quant via bitsandbytes. Crucially, only the
+linear weights are quantised — `model.get_input_embeddings()` stays in
+the requested compute_dtype (fp16/bf16), so the verbalizer's gradient
+flow through input embeddings is preserved and bootstrap training still
+converges.
+
+**Compatibility.** bitsandbytes is **CUDA-only** — `--quantization`
+on `--device cpu` raises `ValueError`. Windows wheels are historically
+flaky; if `pip install` fails, run under WSL.
+
+**Known limitations.**
+
+- int4 compute_dtype must match the verbalizer prefix dtype after the
+  Phase 7 T3 cast — pair `--quantization int4` with `--dtype fp16` on
+  CUDA. Mixing int4 + fp32 verbalizer is unsupported.
+- int8 gives slightly better generation quality than int4 but uses ~2x
+  the VRAM. Prefer int4 unless quality drift is observed.
+- The explicit `--llm-name` path does not currently honor
+  `--quantization`; use `--tier` instead.
 
 ---
 

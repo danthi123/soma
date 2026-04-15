@@ -32,9 +32,11 @@ class ModelTierSpec(TypedDict):
 # - xlarge: Qwen3.5-9B, dense ~9B param multimodal model, ~18GB fp16.
 #   Needs the full 24GB to leave room for KV cache + SOMA prefix tensors.
 #
-# The 16/24 GB boundary is a deliberate trade: anyone with a 16-23GB card
-# (4080, A4000, 3090-Ti-laptop) gets the more-headroom Gemma; anyone with
-# a true 24GB+ card (3090, 4090, A5000) defaults up to dense Qwen3.5-9B.
+# The 12/24 GB boundary is a deliberate trade: anyone with a 12-23GB card
+# (3060, 4070, 4080, A4000, 3090-Ti-laptop) gets the more-headroom Gemma;
+# anyone with a true 24GB+ card (3090, 4090, A5000) defaults up to dense
+# Qwen3.5-9B. (12 was chosen over 16 because Gemma-4-E4B-it's E4B-active
+# Matformer footprint is well under the previous Qwen2.5-7B's 14.5 GB.)
 MODEL_TIERS: dict[str, ModelTierSpec] = {
     "tiny": {
         "name": "HuggingFaceTB/SmolLM2-360M-Instruct",

@@ -39,6 +39,22 @@ DTYPE_CHOICES = ["auto", "fp32", "fp16"]
 DEFAULT_VRAM_SAFETY_FACTOR = 0.9
 
 
+def _parse_vram_safety_factor(raw: str) -> float:
+    """argparse type-converter for ``--vram-safety-factor``.
+
+    Wraps the float() conversion so we can reject 0.0 / negative / >1.0
+    values at parse time with a friendly ``argparse`` error instead of
+    letting them through and crashing later in :func:`effective_vram_gb`.
+    """
+    try:
+        value = float(raw)
+    except ValueError as e:
+        raise argparse.ArgumentTypeError(f"invalid float: {raw!r}") from e
+    if not 0.0 < value <= 1.0:
+        raise argparse.ArgumentTypeError(f"--vram-safety-factor must be in (0, 1], got {value!r}")
+    return value
+
+
 def add_deploy_arguments(parser: argparse.ArgumentParser) -> None:
     """Register --llm-name / --tier / --device / --dtype on ``parser``.
 
@@ -90,22 +106,6 @@ def add_deploy_arguments(parser: argparse.ArgumentParser) -> None:
             "is large. Must be in (0, 1]."
         ),
     )
-
-
-def _parse_vram_safety_factor(raw: str) -> float:
-    """argparse type-converter for ``--vram-safety-factor``.
-
-    Wraps the float() conversion so we can reject 0.0 / negative / >1.0
-    values at parse time with a friendly ``argparse`` error instead of
-    letting them through and crashing later in :func:`effective_vram_gb`.
-    """
-    try:
-        value = float(raw)
-    except ValueError as e:
-        raise argparse.ArgumentTypeError(f"invalid float: {raw!r}") from e
-    if not 0.0 < value <= 1.0:
-        raise argparse.ArgumentTypeError(f"--vram-safety-factor must be in (0, 1], got {value!r}")
-    return value
 
 
 def resolve_device_dtype_tier(

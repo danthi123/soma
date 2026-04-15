@@ -9,6 +9,17 @@ working memory evolves. Next turn sees the updated state.
 
 Phase 5 Task 1: dataclasses + __init__ skeleton with optional system-
 prompt pre-warm.
+
+Track D (Phase 7+): a second ``gguf_head`` backend is available for
+operators who want to consume a local GGUF (e.g. from the LM Studio
+cache) without re-downloading HF safetensors. GGUF mode deliberately
+SKIPS the verbalizer — ``user_text`` is fed directly to
+:meth:`GGUFChatHead.generate_text` as a string prompt. The SOMA graph
+still runs (state evolves across turns) but its OUTPUT activations are
+NOT projected into soft-prompt tokens. Online verbalizer training is
+refused in GGUF mode because ``llama.cpp`` does not expose gradients.
+Pick the HF backend (``chat_head``) if you want soft-prompt guidance
+or training.
 """
 
 from __future__ import annotations
@@ -48,22 +59,68 @@ class ChatSession:
     importing it would introduce an import cycle via
     ``verbalizer_bootstrap``; same pattern as the other session
     ``Any``-typed kwargs.
+
+    Backend selection (Track D): exactly one of ``chat_head`` (HF causal
+    LM) or ``gguf_head`` (llama.cpp-backed :class:`GGUFChatHead`) must
+    be provided. The HF path runs the Phase-5 verbalizer-prefix pipeline;
+    the GGUF path skips the verbalizer and feeds ``user_text`` directly
+    to the llama.cpp runtime as a string prompt. SOMA state still
+    evolves across turns in both modes. When ``gguf_head`` is active,
+    ``verbalizer`` and ``online_trainer`` must both be ``None`` — GGUF
+    cannot expose gradients and online training needs them.
     """
 
     def __init__(
         self,
         *,
         soma: Any,
-        verbalizer: Any,
         chat_head: Any,
         tokenizer: Any,
         encoder: Any,
+        verbalizer: Any = None,
+        gguf_head: Any = None,
         system_prompt: str | None = None,
         online_trainer: Any = None,
     ) -> None:
+        # Backend selection: exactly one of chat_head / gguf_head. Refuse
+        # both-set and neither-set up front — the downstream respond()
+        # branches would otherwise fail much later with a confusing
+        # AttributeError on the wrong object.
+        if chat_head is None and gguf_head is None:
+            raise ValueError(
+                "ChatSession requires exactly one of chat_head (HF backend) "
+                "or gguf_head (GGUFChatHead); neither was provided."
+            )
+        if chat_head is not None and gguf_head is not None:
+            raise ValueError(
+                "ChatSession requires exactly one of chat_head / gguf_head; "
+                "both were provided. Pick one backend per session."
+            )
+        if gguf_head is not None and online_trainer is not None:
+            raise ValueError(
+                "online verbalizer training requires the HF backend; "
+                "GGUFChatHead does not expose gradients."
+            )
+        if gguf_head is not None and verbalizer is not None:
+            # The verbalizer has no consumer in GGUF mode -- refusing it
+            # here keeps the "GGUF bypasses verbalizer" contract explicit.
+            raise ValueError(
+                "gguf_head + verbalizer is an invalid pairing: GGUF mode "
+                "skips the verbalizer entirely. Pass verbalizer=None when "
+                "using gguf_head."
+            )
+        if chat_head is not None and verbalizer is None:
+            # HF-backend respond() dereferences verbalizer.spec and calls
+            # verbalizer(pooled); without it the pipeline has nothing to
+            # project SOMA state into soft-prompt tokens.
+            raise ValueError(
+                "chat_head requires a verbalizer (the soft-prompt projector); got verbalizer=None."
+            )
+
         self.soma = soma
         self.verbalizer = verbalizer
         self.chat_head = chat_head
+        self.gguf_head = gguf_head
         self.tokenizer = tokenizer
         self.encoder = encoder
         self.system_prompt = system_prompt
@@ -84,15 +141,27 @@ class ChatSession:
         return value is discarded — we only care about side effects on
         SOMA's WM and ``Node.last_activation``. T2 will harden this with
         explicit tests.
+
+        The pooling dim has to match SOMA's OUTPUT-node output_dim. When
+        a verbalizer is attached we use ``verbalizer.spec.soma_output_dim``
+        so any future spec-side reshape stays the single source of truth;
+        in GGUF mode (no verbalizer) we fall back to
+        ``soma.config.sensor_output_dim`` which today equals the OUTPUT
+        output_dim (see SOMA._initialize_seed_graph).
         """
         from soma.training.verbalizer_bootstrap import text_to_state
+
+        if self.verbalizer is not None:
+            soma_output_dim = int(self.verbalizer.spec.soma_output_dim)
+        else:
+            soma_output_dim = int(self.soma.config.sensor_output_dim)
 
         text_to_state(
             text=text,
             soma=self.soma,
             tokenizer=self.tokenizer,
             encoder=self.encoder,
-            soma_output_dim=self.verbalizer.spec.soma_output_dim,
+            soma_output_dim=soma_output_dim,
         )
 
     def respond(
@@ -104,7 +173,7 @@ class ChatSession:
     ) -> str:
         """Generate an assistant response to ``user_text``.
 
-        Pipeline:
+        HF backend pipeline (``chat_head`` set):
             1. Feed user_text into SOMA (per-token, no_grad, eval_mode).
             2. Pool OUTPUT activations -> verbalizer -> soft-prompt prefix.
             3. Tokenize user_text via the LLM tokenizer (NOT the SOMA one).
@@ -112,13 +181,73 @@ class ChatSession:
             5. ChatHead.generate_text(...) -> response string.
             6. Feed the response back through SOMA so next turn sees it.
             7. Append (user, assistant) turns to ``self.history``.
+
+        GGUF backend pipeline (``gguf_head`` set):
+            1. Feed user_text into SOMA (state still evolves per-turn).
+            2. Call ``gguf_head.generate_text(prompt=user_text, ...)`` —
+               verbalizer + soft-prompt prefix are deliberately SKIPPED
+               because llama.cpp only accepts text prompts.
+            3. Feed the response back through SOMA.
+            4. Append (user, assistant) turns to ``self.history``.
+
+        Unknown ``gen_kwargs`` (e.g. ``do_sample`` / ``min_new_tokens``)
+        are forwarded verbatim. HF generate() honours them; GGUFChatHead
+        silently ignores them via its ``**_ignored`` swallow.
+        """
+        self._feed_text_through_soma(user_text)
+
+        if self.gguf_head is not None:
+            response = self._respond_gguf(
+                user_text=user_text,
+                max_new_tokens=max_new_tokens,
+                **gen_kwargs,
+            )
+        else:
+            response = self._respond_hf(
+                user_text=user_text,
+                max_new_tokens=max_new_tokens,
+                **gen_kwargs,
+            )
+
+        # Close the loop: feed the assistant's response back through SOMA so
+        # working memory and last_activation reflect what we just said. The
+        # next respond() call will see updated state. This is the load-bearing
+        # change vs. Phase 3's single-turn SOMA.chat.
+        self._feed_text_through_soma(response)
+
+        self.history.append(ChatTurn(role="user", text=user_text))
+        self.history.append(ChatTurn(role="assistant", text=response))
+
+        # Phase 6 T7: optional online training hook. History is appended
+        # BEFORE the training step so a trainer exception can't desync the
+        # conversation log from what was actually generated — the turn
+        # succeeded regardless of whether the post-turn weight update does.
+        # NOTE: online_trainer is guaranteed None in GGUF mode (refused at
+        # __init__), so this branch only fires on the HF path.
+        if self.online_trainer is not None:
+            self.online_trainer.step(user_text=user_text, response=response)
+
+        return response
+
+    def _respond_hf(
+        self,
+        *,
+        user_text: str,
+        max_new_tokens: int,
+        **gen_kwargs: Any,
+    ) -> str:
+        """HF-backend respond core: verbalizer prefix + inputs_embeds generate.
+
+        Split out of :meth:`respond` so the two backend branches are
+        obviously-separate code paths. ``user_text`` has already been fed
+        through SOMA by the caller — this method only builds the prefix,
+        embeds, and calls ``chat_head.generate_text``. The response-back-
+        loop and history append happen in :meth:`respond`.
         """
         import torch  # local import — keeps module-top imports lean
 
         from soma.io.chat_head import build_attention_mask_from_pad, build_position_ids
         from soma.io.verbalizer import SomaAggregator
-
-        self._feed_text_through_soma(user_text)
 
         output_acts = self.soma._current_output_activations()
         pooled = SomaAggregator.collapse(
@@ -163,7 +292,7 @@ class ChatSession:
             llm_device
         )
 
-        response = cast(
+        return cast(
             str,
             self.chat_head.generate_text(
                 inputs_embeds=inputs_embeds,
@@ -174,23 +303,29 @@ class ChatSession:
             ),
         )
 
-        # Close the loop: feed the assistant's response back through SOMA so
-        # working memory and last_activation reflect what we just said. The
-        # next respond() call will see updated state. This is the load-bearing
-        # change vs. Phase 3's single-turn SOMA.chat.
-        self._feed_text_through_soma(response)
+    def _respond_gguf(
+        self,
+        *,
+        user_text: str,
+        max_new_tokens: int,
+        **gen_kwargs: Any,
+    ) -> str:
+        """GGUF-backend respond core: direct string-prompt generate.
 
-        self.history.append(ChatTurn(role="user", text=user_text))
-        self.history.append(ChatTurn(role="assistant", text=response))
-
-        # Phase 6 T7: optional online training hook. History is appended
-        # BEFORE the training step so a trainer exception can't desync the
-        # conversation log from what was actually generated — the turn
-        # succeeded regardless of whether the post-turn weight update does.
-        if self.online_trainer is not None:
-            self.online_trainer.step(user_text=user_text, response=response)
-
-        return response
+        The SOMA graph has already been fed ``user_text`` by
+        :meth:`respond`, so state evolves for the next turn even though
+        we don't consume the OUTPUT activations here. ``llama.cpp`` only
+        accepts text prompts; we therefore bypass the verbalizer /
+        inputs_embeds path entirely.
+        """
+        return cast(
+            str,
+            self.gguf_head.generate_text(
+                prompt=user_text,
+                max_new_tokens=max_new_tokens,
+                **gen_kwargs,
+            ),
+        )
 
     def save(self, *, out_dir: Path) -> None:
         """Persist a full session bundle to ``out_dir``.

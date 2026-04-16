@@ -65,7 +65,7 @@ def test_retrieve_emits_single_json_line_with_schema(
     assert rec.has_where is False
     assert rec.hybrid_alpha is None
     assert rec.rerank_top_n is None
-    assert rec.backend == "linear"
+    assert rec.backend == "inproc"
     assert isinstance(rec.n_hits, int) and rec.n_hits <= 2
     assert isinstance(rec.latency_ms, (int, float)) and rec.latency_ms >= 0
     assert rec.cache_miss is False
@@ -94,7 +94,7 @@ def test_retrieve_log_is_valid_json_via_formatter(
     assert data["event"] == "retrieve"
     assert data["bundle"] == "json_fmt_test"
     assert data["k"] == 1
-    assert data["backend"] == "linear"
+    assert data["backend"] == "inproc"
     assert "latency_ms" in data
 
 

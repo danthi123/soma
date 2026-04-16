@@ -84,20 +84,20 @@ def test_retrieve_observes_latency() -> None:
     for t in ["alpha", "beta", "gamma"]:
         mem.store(t)
     before_total = _counter_val(
-        RETRIEVE_TOTAL.labels(bundle="test_retrieve_lat", backend="linear")
+        RETRIEVE_TOTAL.labels(bundle="test_retrieve_lat", backend="inproc")
     )
-    labels = {"bundle": "test_retrieve_lat", "backend": "linear"}
+    labels = {"bundle": "test_retrieve_lat", "backend": "inproc"}
     before_count = _histogram_count(RETRIEVE_LATENCY, labels)
     mem.retrieve("alpha-ish", k=2)
     after_total = _counter_val(
-        RETRIEVE_TOTAL.labels(bundle="test_retrieve_lat", backend="linear")
+        RETRIEVE_TOTAL.labels(bundle="test_retrieve_lat", backend="inproc")
     )
     after_count = _histogram_count(RETRIEVE_LATENCY, labels)
     assert after_total - before_total == 1
     assert after_count - before_count == 1
 
 
-def test_retrieve_backend_label_linear() -> None:
+def test_retrieve_backend_label_matches_adapter() -> None:
     from soma.memory.api import MemoryLayer
     from soma.metrics import RETRIEVE_TOTAL
 
@@ -106,11 +106,11 @@ def test_retrieve_backend_label_linear() -> None:
     mem.store("one")
     mem.store("two")
     before = _counter_val(
-        RETRIEVE_TOTAL.labels(bundle="linear_bundle", backend="linear")
+        RETRIEVE_TOTAL.labels(bundle="linear_bundle", backend="inproc")
     )
     mem.retrieve("anything", k=1)
     after = _counter_val(
-        RETRIEVE_TOTAL.labels(bundle="linear_bundle", backend="linear")
+        RETRIEVE_TOTAL.labels(bundle="linear_bundle", backend="inproc")
     )
     assert after - before == 1
 

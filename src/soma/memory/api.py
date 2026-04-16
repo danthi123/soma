@@ -32,8 +32,11 @@ import portalocker
 import torch
 from torch.nn import functional as F  # noqa: N812
 
+import numpy as np
+
 from soma import metrics as _m
 from soma.io.text_encoder import TextEncoder, load_tokenizer
+from soma.memory.backend import FilterPushdownUnsupported, VectorBackend
 from soma.memory.wal import WAL, WalRecord
 
 logger = logging.getLogger("soma.memory")
@@ -118,6 +121,29 @@ def _atomic_torch_save(obj: Any, path: Path) -> None:
         raise
 
 EmbedFn = Callable[[str], torch.Tensor]
+
+
+def _vec_to_np(v: torch.Tensor) -> np.ndarray:
+    """Convert a (dim,) torch tensor into a (1, dim) float32 ndarray.
+
+    Protocol-boundary shim — every backend expects numpy float32, not
+    torch tensors. Centralized here so the torch→numpy round-trip is
+    consistent on every call site.
+    """
+    return v.detach().cpu().numpy().astype(np.float32).reshape(1, -1)
+
+
+def _batch_to_np(vs: list[torch.Tensor]) -> np.ndarray:
+    """Stack a list of (dim,) tensors into a (N, dim) float32 array."""
+    if not vs:
+        return np.empty((0, 0), dtype=np.float32)
+    return (
+        torch.stack(vs, dim=0)
+        .detach()
+        .cpu()
+        .numpy()
+        .astype(np.float32)
+    )
 
 
 # ----------------------------------------------------------------------
@@ -236,6 +262,7 @@ class MemoryLayer:
         graph_rerank_stable_capture: bool = True,
         bundle_path: str | Path | None = None,
         durability: Literal["sync", "batch", "async"] = "sync",
+        backend: VectorBackend | None = None,
     ) -> None:
         if embed_fn is None and encoder is None:
             raise ValueError("MemoryLayer needs either (tokenizer + encoder) or embed_fn")
@@ -265,12 +292,11 @@ class MemoryLayer:
         self._soma_tokenizer: Any = None
         self._soma_encoder: Any = None
 
-        # FAISS ANN index, built on-demand when store size >= threshold.
-        # Set threshold=0 to disable. The linear backend stays as fallback
-        # for related() (which needs exclude-self) and small stores.
-        # Index type: "flat" (exact, IndexFlatIP — SIMD linear scan) or
-        # "hnsw" (approximate, IndexHNSWFlat — much faster at large N at
-        # the cost of imperfect recall).
+        # FAISS ANN params are propagated into the default InProcBackend.
+        # Kept as kwargs on MemoryLayer so the old call sites (and the
+        # bundle-save path, which reads them into backend.json) don't
+        # have to be rewritten — the defaults match the pre-Phase-6
+        # behavior.
         if faiss_index_type not in ("flat", "hnsw"):
             raise ValueError(f"faiss_index_type must be 'flat' or 'hnsw', got {faiss_index_type!r}")
         self._faiss_threshold: int = faiss_threshold
@@ -278,25 +304,43 @@ class MemoryLayer:
         self._faiss_hnsw_m: int = int(faiss_hnsw_m)
         self._faiss_hnsw_ef_search: int = int(faiss_hnsw_ef_search)
         self._faiss_hnsw_ef_construction: int = int(faiss_hnsw_ef_construction)
-        self._faiss_index: Any = None
         self._auto_consolidate_every: int = auto_consolidate_every
         self._stores_since_consolidation: int = 0
 
         # Parallel storage. Order is preserved across save/load so
-        # ``get_recent`` stays stable.
+        # ``get_recent`` stays stable. The vector matrix lives in the
+        # backend — MemoryLayer only keeps the id/text/metadata side.
         self._ids: list[str] = []
         self._id_to_idx: dict[str, int] = {}
         self._texts: list[str] = []
         self._metadatas: list[dict[str, Any]] = []
         self._timestamps: list[int] = []
-        # (N, embed_dim) — lazily rebuilt from _embeddings_list when persisting
-        # so we don't pay stack cost on every store.
-        self._embeddings_list: list[torch.Tensor] = []
         # SOMA output activations captured during consolidate(), keyed by
         # node_id. Used for graph-aware re-ranking when SOMA is attached.
         # Keyed by id (not list position) so backends that soft-delete or
         # reorder can't desync us — see Phase 6 task 3.
         self._soma_activations: dict[str, torch.Tensor | None] = {}
+
+        # VectorBackend adapter. Default = in-process FAISS for zero
+        # behavior change; callers that opt in to Qdrant (or any other
+        # adapter) pass backend= explicitly.
+        if backend is None:
+            from soma.memory.backends.inproc import InProcBackend
+
+            backend = InProcBackend(
+                dim=self._embed_dim,
+                faiss_threshold=self._faiss_threshold,
+                faiss_index_type=self._faiss_index_type,
+                faiss_hnsw_m=self._faiss_hnsw_m,
+                faiss_hnsw_ef_search=self._faiss_hnsw_ef_search,
+                faiss_hnsw_ef_construction=self._faiss_hnsw_ef_construction,
+            )
+        if backend.dim != self._embed_dim:
+            raise ValueError(
+                f"backend dim {backend.dim} != embed_dim {self._embed_dim}"
+            )
+        self._backend: VectorBackend = backend
+        self._backend.open()
 
         self._step: int = 0
         self._graph_rerank_alpha: float = float(graph_rerank_alpha)
@@ -486,7 +530,8 @@ class MemoryLayer:
                 applied += 1
             self._last_wal_offset = current_size
             if applied:
-                self._faiss_index = None  # invalidate on any change
+                # Backend already invalidated on each add/remove inside
+                # _apply_record; we just emit the reload metric here.
                 _m.RELOAD_TOTAL.labels(bundle=self._bundle_name).inc()
             return applied
 
@@ -503,7 +548,7 @@ class MemoryLayer:
             self._timestamps.append(int(rec.timestamp_step))
             emb = rec.embedding
             assert emb is not None
-            self._embeddings_list.append(emb.to(self._device))
+            self._backend.add([rec.node_id], _vec_to_np(emb))
             self._soma_activations[rec.node_id] = None
             self._step = max(self._step, int(rec.timestamp_step) + 1)
         elif rec.op == "forget":
@@ -514,7 +559,7 @@ class MemoryLayer:
             self._texts.pop(idx)
             self._metadatas.pop(idx)
             self._timestamps.pop(idx)
-            self._embeddings_list.pop(idx)
+            self._backend.remove([rec.node_id])
             self._soma_activations.pop(rec.node_id, None)
             for later_id in self._ids[idx:]:
                 self._id_to_idx[later_id] -= 1
@@ -540,6 +585,9 @@ class MemoryLayer:
         thread = self._compaction_thread
         if thread is not None and thread.is_alive():
             thread.join(timeout=30.0)
+        # Backend.close is idempotent — safe to call every time.
+        with contextlib.suppress(Exception):
+            self._backend.close()
         if self._wal is None:
             return
         with self._bundle_lock():
@@ -626,7 +674,12 @@ class MemoryLayer:
                 texts_snap = list(self._texts)
                 meta_snap = [dict(m) for m in self._metadatas]
                 ts_snap = list(self._timestamps)
-                embs_snap = list(self._embeddings_list)
+                # Pull vectors out of the backend while still under the
+                # lock so the snapshot is coherent with the id list.
+                if ids_snap:
+                    emb_np_snap = self._backend.get_vectors(ids_snap)
+                else:
+                    emb_np_snap = np.empty((0, self._embed_dim), dtype=np.float32)
                 step_snap = self._step
                 has_encoder = self._encoder is not None
                 encoder_state = (
@@ -647,8 +700,8 @@ class MemoryLayer:
                 self._encoder.save_tokenizer(bundle / "tokenizer.json")
                 assert encoder_state is not None
                 _atomic_torch_save(encoder_state, bundle / "encoder.pt")
-            if embs_snap:
-                stacked = torch.stack(embs_snap, dim=0).detach().cpu()
+            if emb_np_snap.size > 0:
+                stacked = torch.from_numpy(emb_np_snap.copy())
             else:
                 stacked = torch.empty((0, self._embed_dim))
             _atomic_torch_save(stacked, bundle / "memory_embeddings.pt")
@@ -756,10 +809,9 @@ class MemoryLayer:
             self._texts.append(text)
             self._metadatas.append(meta_dict)
             self._timestamps.append(ts_step)
-            self._embeddings_list.append(embedding)
+            self._backend.add([node_id], _vec_to_np(embedding))
             self._soma_activations[node_id] = None
             self._step += 1
-            self._faiss_index = None  # invalidate; rebuilt on next retrieve
             self._stores_since_consolidation += 1
             if self._wal is not None:
                 self._last_wal_offset = self._wal.ops_size_on_disk()
@@ -825,11 +877,13 @@ class MemoryLayer:
                 self._texts.append(text)
                 self._metadatas.append(meta_dict)
                 self._timestamps.append(ts_step)
-                self._embeddings_list.append(embeddings[i])
                 self._soma_activations[nid] = None
                 self._step += 1
                 node_ids.append(nid)
-            self._faiss_index = None
+            # One batch insert into the backend — cheaper than
+            # N individual add() calls when the backend builds/rebuilds
+            # an index per call.
+            self._backend.add(node_ids, _batch_to_np(embeddings))
             self._stores_since_consolidation += len(texts)
             if self._wal is not None:
                 self._last_wal_offset = self._wal.ops_size_on_disk()
@@ -890,8 +944,7 @@ class MemoryLayer:
         if hybrid_alpha is not None and not 0.0 <= hybrid_alpha <= 1.0:
             raise ValueError(f"hybrid_alpha must be in [0,1], got {hybrid_alpha}")
 
-        self._maybe_build_faiss()
-        backend = self._backend_label()
+        backend = self._backend.name
         started = time.monotonic()
         q_vec = self._embed(query)
         has_graph_signal = (
@@ -903,21 +956,18 @@ class MemoryLayer:
         # Pre-rerank candidate pool: hybrid > graph rerank > plain cosine.
         candidate_k = rerank_top_n if rerank_top_n else k
         if where is not None:
-            # Pre-filter mode: skip FAISS, brute-force cosine on the
-            # subset passing the metadata filter. Keeps top-k honest
-            # on selective filters.
-            filter_idx = [
-                i for i, meta in enumerate(self._metadatas)
-                if _matches_where(meta, where)
-            ]
-            if not filter_idx:
-                candidates = []
-            else:
-                candidates = self._rank_subset(q_vec, filter_idx, k=candidate_k)
-                if hybrid_alpha is not None:
-                    candidates = self._blend_bm25_subset(
-                        query, candidates, filter_idx, alpha=hybrid_alpha, k=candidate_k
-                    )
+            # Filter-pushdown dispatch: backends that can translate the
+            # Chroma-style ``where`` clause into their native filter
+            # language run the query server-side in one round-trip. If
+            # the backend rejects an operator we fall through to the
+            # Python pre-filter + subset path that every backend can do.
+            candidates = self._retrieve_with_filter(
+                query,
+                q_vec,
+                where=where,
+                k=candidate_k,
+                hybrid_alpha=hybrid_alpha,
+            )
         elif hybrid_alpha is not None:
             candidates = self._retrieve_hybrid(
                 query, q_vec, k=candidate_k, alpha=hybrid_alpha
@@ -965,11 +1015,14 @@ class MemoryLayer:
 
     def related(self, node_id: str, k: int = 5) -> list[MemoryHit]:
         """Return up to k entries most similar to the entry at ``node_id``."""
-        idx = self._id_to_idx.get(node_id)
-        if idx is None:
+        if node_id not in self._id_to_idx:
             raise KeyError(f"node_id {node_id!r} not found in MemoryLayer")
-        q_vec = self._embeddings_list[idx]
-        return self._rank(q_vec, k=k, exclude_idx=idx)
+        # Fetch the stored vector from the backend and use it as the
+        # query. For HTTP adapters this is one extra round-trip; we
+        # accept that for v1 (see plan §Risks).
+        q_np = self._backend.get_vectors([node_id])[0]
+        pairs = self._backend.search(q_np, k=k, exclude_ids={node_id})
+        return [self._hit_for_id(nid, score=s) for nid, s in pairs]
 
     # ------------------------------------------------------------------
     # Recall boosters — hybrid lexical + cross-encoder re-ranking
@@ -1075,19 +1128,18 @@ class MemoryLayer:
     def _rank_subset(
         self, q_vec: torch.Tensor, indices: list[int], *, k: int
     ) -> list[MemoryHit]:
-        """Brute-force cosine over a pre-filtered subset of entries."""
+        """Brute-force cosine over a pre-filtered subset of entries.
+
+        Delegates the numeric work to ``backend.search_subset`` so the
+        operation stays adapter-agnostic. Translates list-positions to
+        node_ids on the way in and back again on the way out.
+        """
         if not indices:
             return []
-        # Stack the subset's embeddings into one tensor, compute cosine
-        # against q_vec, sort.
-        emb_subset = torch.stack([self._embeddings_list[i] for i in indices])
-        q = q_vec.unsqueeze(0)
-        sims = F.cosine_similarity(q, emb_subset, dim=1)
-        scores = sims.detach().cpu().tolist()
-        order = sorted(range(len(indices)), key=lambda j: -scores[j])[:k]
-        return [
-            self._hit_for_index(indices[j], score=float(scores[j])) for j in order
-        ]
+        candidate_ids = [self._ids[i] for i in indices]
+        q_np = _vec_to_np(q_vec).reshape(-1)
+        pairs = self._backend.search_subset(q_np, candidate_ids, k=k)
+        return [self._hit_for_id(nid, score=s) for nid, s in pairs]
 
     def _blend_bm25_subset(
         self,
@@ -1217,7 +1269,7 @@ class MemoryLayer:
             self._texts.pop(idx)
             self._metadatas.pop(idx)
             self._timestamps.pop(idx)
-            self._embeddings_list.pop(idx)
+            self._backend.remove([node_id])
             self._soma_activations.pop(node_id, None)
             for later_id in self._ids[idx:]:
                 self._id_to_idx[later_id] -= 1
@@ -1225,7 +1277,6 @@ class MemoryLayer:
             # texts list, and forget() just shrank that list by one.
             if self._consolidation_cursor > len(self._texts):
                 self._consolidation_cursor = len(self._texts)
-            self._faiss_index = None  # invalidate
             if self._wal is not None:
                 self._last_wal_offset = self._wal.ops_size_on_disk()
             self._maybe_compact()
@@ -1356,8 +1407,11 @@ class MemoryLayer:
             # we route through the atomic wrapper.
             self._encoder.save_tokenizer(out / "tokenizer.json")
             _atomic_torch_save(self._encoder.state_dict(), out / "encoder.pt")
-        if self._embeddings_list:
-            stacked = torch.stack(self._embeddings_list, dim=0).detach().cpu()
+        if self._ids:
+            # Pull stacked vectors out of the backend in id order so
+            # snapshot rows line up with memory_index.json entries.
+            stacked_np = self._backend.get_vectors(self._ids)
+            stacked = torch.from_numpy(stacked_np.copy())
         else:
             stacked = torch.empty((0, self._embed_dim))
         _atomic_torch_save(stacked, out / "memory_embeddings.pt")
@@ -1490,13 +1544,17 @@ class MemoryLayer:
             )
 
         # --- Replay snapshot (if any). ------------------------------------
-        target_device = instance._device
         if has_snapshot:
             assert index is not None
             instance._step = int(index.get("step", 0))
             embeddings = torch.load(
                 embeddings_path, map_location=device or "cpu", weights_only=True
             )
+            # Batch-insert into the backend in one call so adapters that
+            # build per-call indices only do it once. Populate the
+            # MemoryLayer lists in parallel.
+            snap_ids: list[str] = []
+            snap_vecs: list[torch.Tensor] = []
             for entry, vec in zip(index["entries"], embeddings, strict=True):
                 nid = str(entry["node_id"])
                 instance._id_to_idx[nid] = len(instance._ids)
@@ -1504,8 +1562,11 @@ class MemoryLayer:
                 instance._texts.append(str(entry["text"]))
                 instance._metadatas.append(dict(entry.get("metadata", {})))
                 instance._timestamps.append(int(entry.get("timestamp_step", 0)))
-                instance._embeddings_list.append(vec.to(target_device))
                 instance._soma_activations[nid] = None
+                snap_ids.append(nid)
+                snap_vecs.append(vec)
+            if snap_ids:
+                instance._backend.add(snap_ids, _batch_to_np(snap_vecs))
 
         # --- Replay WAL on top of snapshot. -------------------------------
         # The WAL was opened during __init__; replay re-reads from disk.
@@ -1523,7 +1584,7 @@ class MemoryLayer:
                     instance._timestamps.append(int(rec.timestamp_step))
                     emb = rec.embedding
                     assert emb is not None
-                    instance._embeddings_list.append(emb.to(target_device))
+                    instance._backend.add([rec.node_id], _vec_to_np(emb))
                     instance._soma_activations[rec.node_id] = None
                     instance._step = max(
                         instance._step, int(rec.timestamp_step) + 1
@@ -1536,7 +1597,7 @@ class MemoryLayer:
                     instance._texts.pop(idx)
                     instance._metadatas.pop(idx)
                     instance._timestamps.pop(idx)
-                    instance._embeddings_list.pop(idx)
+                    instance._backend.remove([rec.node_id])
                     instance._soma_activations.pop(rec.node_id, None)
                     for later_id in instance._ids[idx:]:
                         instance._id_to_idx[later_id] -= 1
@@ -1553,7 +1614,6 @@ class MemoryLayer:
                     instance._step = max(
                         instance._step, int(rec.timestamp_step) + 1
                     )
-        instance._faiss_index = None  # fresh replay invalidates any prior index
         # Mark where we've caught up to; reload_if_stale() starts scanning
         # from here so a peer writer's tail appends are cheap to detect.
         if instance._wal is not None:
@@ -1563,16 +1623,6 @@ class MemoryLayer:
     # ------------------------------------------------------------------
     # Internals
     # ------------------------------------------------------------------
-    def _backend_label(self) -> str:
-        """Label the active retrieve path for Prometheus series keys.
-
-        Returns ``"faiss"`` when a FAISS index is built (exact flat or
-        HNSW) and the next ``_rank()`` call will take the FAISS branch,
-        ``"linear"`` otherwise. Callers inspect the label *after*
-        ``_maybe_build_faiss`` so it reflects the path actually used.
-        """
-        return "faiss" if self._faiss_index is not None else "linear"
-
     def _embed(self, text: str) -> torch.Tensor:
         """Embed ``text`` into a (embed_dim,) vector."""
         with _m.EMBED_LATENCY.labels(batch_size_bucket=_m.batch_bucket(1)).time():
@@ -1615,11 +1665,10 @@ class MemoryLayer:
         """Two-stage retrieval: cosine candidates → graph-score re-rank."""
         from soma.training.verbalizer_bootstrap import text_to_state
 
-        candidates = self._rank_linear(
-            query_vec,
-            k=min(k * oversample, len(self._ids)),
-            exclude_idx=None,
-        )
+        q_np = _vec_to_np(query_vec).reshape(-1)
+        pool_k = min(k * oversample, len(self._ids))
+        pairs = self._backend.search(q_np, k=pool_k)
+        candidates = [self._hit_for_id(nid, score=s) for nid, s in pairs]
         if not candidates:
             return []
 
@@ -1669,92 +1718,58 @@ class MemoryLayer:
         k: int,
         exclude_idx: int | None,
     ) -> list[MemoryHit]:
-        if self._faiss_index is not None and exclude_idx is None:
-            return self._rank_faiss(query_vec, k=k)
-        return self._rank_linear(query_vec, k=k, exclude_idx=exclude_idx)
+        """Delegate ranking to the backend.
 
-    def _rank_linear(
-        self,
-        query_vec: torch.Tensor,
-        *,
-        k: int,
-        exclude_idx: int | None,
-    ) -> list[MemoryHit]:
-        matrix = torch.stack(self._embeddings_list, dim=0)
-        sims = F.cosine_similarity(query_vec.unsqueeze(0), matrix, dim=-1)
+        ``exclude_idx`` is kept as a parameter for call-site back-compat
+        (older ``related``/``_retrieve_with_rerank`` passed it); we
+        translate it to the id set the backend expects. New call sites
+        should prefer passing ``exclude_idx=None`` and letting the
+        caller filter if needed.
+        """
+        exclude_ids: set[str] | None = None
         if exclude_idx is not None:
-            sims = sims.clone()
-            sims[exclude_idx] = float("-inf")
-        eligible = (sims > float("-inf")).sum().item()
-        k = int(min(k, eligible))
-        if k <= 0:
-            return []
-        top = torch.topk(sims, k=k)
-        return [
-            self._hit_for_index(int(i.item()), score=float(s.item()))
-            for i, s in zip(top.indices, top.values, strict=True)
-        ]
+            exclude_ids = {self._ids[exclude_idx]}
+        q_np = _vec_to_np(query_vec).reshape(-1)
+        pairs = self._backend.search(q_np, k=k, exclude_ids=exclude_ids)
+        return [self._hit_for_id(nid, score=s) for nid, s in pairs]
 
-    def _rank_faiss(
+    def _retrieve_with_filter(
         self,
-        query_vec: torch.Tensor,
+        query: str,
+        q_vec: torch.Tensor,
         *,
+        where: dict[str, Any],
         k: int,
+        hybrid_alpha: float | None,
     ) -> list[MemoryHit]:
-        import numpy as np
+        """Run a ``where``-filtered retrieve.
 
-        assert self._faiss_index is not None
-        q = query_vec.detach().cpu().numpy().reshape(1, -1).astype(np.float32)
-        _faiss_module = _import_faiss()
-        _faiss_module.normalize_L2(q)
-        actual_k = min(k, self._faiss_index.ntotal)
-        if actual_k <= 0:
-            return []
-        scores, indices = self._faiss_index.search(q, actual_k)
-        return [
-            self._hit_for_index(int(idx), score=float(score))
-            for idx, score in zip(indices[0], scores[0], strict=True)
-            if idx >= 0
+        Attempts filter pushdown first when the backend declares
+        support; on :class:`FilterPushdownUnsupported` falls back to
+        the Python pre-filter path that every backend can do.
+        """
+        if self._backend.supports_filter_pushdown and hybrid_alpha is None:
+            try:
+                q_np = _vec_to_np(q_vec).reshape(-1)
+                pairs = self._backend.search(q_np, k=k, where=where)
+                return [self._hit_for_id(nid, score=s) for nid, s in pairs]
+            except FilterPushdownUnsupported:
+                pass  # fall through to Python pre-filter
+        # Python pre-filter path: restrict to entries matching ``where``
+        # then brute-force cosine (and optionally BM25) over the subset.
+        filter_idx = [
+            i
+            for i, meta in enumerate(self._metadatas)
+            if _matches_where(meta, where)
         ]
-
-    def _maybe_build_faiss(self) -> None:
-        if self._faiss_threshold <= 0:
-            return
-        if len(self._ids) < self._faiss_threshold:
-            self._faiss_index = None
-            _m.FAISS_INDEX_SIZE.labels(bundle=self._bundle_name).set(0)
-            return
-        if self._faiss_index is not None:
-            return
-        self._rebuild_faiss()
-
-    def _rebuild_faiss(self) -> None:
-        import numpy as np
-
-        faiss = _import_faiss()
-        with _m.FAISS_REBUILD_SECONDS.time():
-            matrix = (
-                torch.stack(self._embeddings_list, dim=0)
-                .detach()
-                .cpu()
-                .numpy()
-                .astype(np.float32)
+        if not filter_idx:
+            return []
+        candidates = self._rank_subset(q_vec, filter_idx, k=k)
+        if hybrid_alpha is not None:
+            candidates = self._blend_bm25_subset(
+                query, candidates, filter_idx, alpha=hybrid_alpha, k=k
             )
-            faiss.normalize_L2(matrix)
-            if self._faiss_index_type == "hnsw":
-                index = faiss.IndexHNSWFlat(
-                    self._embed_dim,
-                    self._faiss_hnsw_m,
-                    faiss.METRIC_INNER_PRODUCT,
-                )
-                index.hnsw.efConstruction = self._faiss_hnsw_ef_construction
-                index.hnsw.efSearch = self._faiss_hnsw_ef_search
-            else:
-                index = faiss.IndexFlatIP(self._embed_dim)
-            index.add(matrix)
-            self._faiss_index = index
-        _m.FAISS_REBUILD_TOTAL.labels(index_type=self._faiss_index_type).inc()
-        _m.FAISS_INDEX_SIZE.labels(bundle=self._bundle_name).set(index.ntotal)
+        return candidates
 
     def _hit_for_index(self, idx: int, *, score: float) -> MemoryHit:
         return MemoryHit(
@@ -1765,13 +1780,12 @@ class MemoryLayer:
             timestamp_step=self._timestamps[idx],
         )
 
-
-def _import_faiss() -> Any:
-    try:
-        import faiss
-
-        return faiss
-    except ImportError as exc:
-        raise ImportError(
-            "FAISS backend requires faiss-cpu or faiss-gpu. Install with: pip install faiss-cpu"
-        ) from exc
+    def _hit_for_id(self, node_id: str, *, score: float) -> MemoryHit:
+        idx = self._id_to_idx[node_id]
+        return MemoryHit(
+            node_id=node_id,
+            text=self._texts[idx],
+            score=float(score),
+            metadata=dict(self._metadatas[idx]),
+            timestamp_step=self._timestamps[idx],
+        )

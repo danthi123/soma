@@ -670,10 +670,12 @@ def test_faiss_activates_at_threshold() -> None:
     mem = MemoryLayer(embed_fn=_hash_embed, embed_dim=16, faiss_threshold=5)
     for i in range(4):
         mem.store(f"fact {i}")
-    assert mem._faiss_index is None
+    # The InProcBackend is the default; its FAISS index stays None
+    # until we cross the threshold.
+    assert mem._backend._faiss_index is None  # type: ignore[attr-defined]
     mem.store("fact 4")
     mem.retrieve("trigger rebuild", k=1)
-    assert mem._faiss_index is not None
+    assert mem._backend._faiss_index is not None  # type: ignore[attr-defined]
 
 
 def test_faiss_retrieve_matches_linear() -> None:
@@ -693,9 +695,11 @@ def test_faiss_invalidated_on_forget() -> None:
     mem = MemoryLayer(embed_fn=_hash_embed, embed_dim=16, faiss_threshold=3)
     ids = [mem.store(f"fact {i}") for i in range(5)]
     mem.retrieve("trigger rebuild", k=1)
-    assert mem._faiss_index is not None
+    assert mem._backend._faiss_index is not None  # type: ignore[attr-defined]
     mem.forget(ids[0])
-    assert mem._faiss_index is None
+    # forget invalidates the backend's cached index so the next search
+    # rebuilds rather than returning a ghost row for the removed id.
+    assert mem._backend._faiss_index is None  # type: ignore[attr-defined]
 
 
 def test_store_batch_matches_store(embedder) -> None:
@@ -836,3 +840,58 @@ def test_update_metadata_reload_if_stale_picks_up_peer_writes(
         assert hit.metadata == {"version": 2}
     finally:
         reader.close()
+
+
+# ----------------------------------------------------------------------
+# Phase 6 — backend wiring
+# ----------------------------------------------------------------------
+def test_memory_layer_default_backend_is_inproc(embedder) -> None:
+    """Default construction installs an InProcBackend so nothing else
+    has to change for existing users."""
+    tok, enc = embedder
+    mem = MemoryLayer(tokenizer=tok, encoder=enc)
+    assert mem._backend.name == "inproc"
+    # Backend dim matches the encoder's embed_dim.
+    assert mem._backend.dim == enc.embed_dim
+
+
+def test_memory_layer_accepts_explicit_inproc_backend(embedder) -> None:
+    """Passing backend= explicitly should produce identical behavior
+    to the default."""
+    from soma.memory.backends.inproc import InProcBackend
+
+    tok, enc = embedder
+    backend = InProcBackend(dim=enc.embed_dim, faiss_threshold=10_000)
+    mem = MemoryLayer(tokenizer=tok, encoder=enc, backend=backend)
+    assert mem._backend is backend
+    nid = mem.store("hello world")
+    hits = mem.retrieve("hello", k=1)
+    assert hits and hits[0].node_id == nid
+
+
+def test_retrieve_routes_through_backend(embedder) -> None:
+    """Store, then retrieve — the backend is the only thing doing
+    similarity math. Swap in a stub backend and observe the call."""
+    from soma.memory.backend import VectorBackend
+
+    tok, enc = embedder
+    mem = MemoryLayer(tokenizer=tok, encoder=enc)
+    assert isinstance(mem._backend, VectorBackend)
+    nid = mem.store("alpha example")
+    mem.store("beta example")
+    mem.store("gamma example")
+
+    # related() must round-trip through backend.get_vectors +
+    # backend.search.
+    related = mem.related(nid, k=2)
+    assert len(related) == 2
+    assert all(h.node_id != nid for h in related)
+
+
+def test_forget_removes_from_backend(embedder) -> None:
+    tok, enc = embedder
+    mem = MemoryLayer(tokenizer=tok, encoder=enc)
+    nid = mem.store("entry to remove")
+    assert mem._backend.ntotal == 1
+    assert mem.forget(nid)
+    assert mem._backend.ntotal == 0

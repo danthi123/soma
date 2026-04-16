@@ -156,11 +156,25 @@ def _lancedb_factory(dim: int, tmp_path: Path) -> Any:
     )
 
 
+def _chroma_factory(dim: int, tmp_path: Path) -> Any:
+    pytest.importorskip("chromadb")
+    from soma.memory.backends.chroma import ChromaBackend
+
+    # Chroma collection names must be 3-63 chars; the ``contract_``
+    # prefix keeps the dim suffix unambiguous across test params.
+    return ChromaBackend(
+        path=str(tmp_path / f"chroma_{dim}"),
+        collection_name=f"contract_{dim}",
+        dim=dim,
+    )
+
+
 @pytest.fixture(
     params=[
         pytest.param("inproc", id="inproc"),
         pytest.param("qdrant", id="qdrant"),
         pytest.param("lancedb", id="lancedb"),
+        pytest.param("chroma", id="chroma"),
     ]
 )
 def shipped_backend(request: pytest.FixtureRequest, tmp_path: Path) -> BackendFactory:
@@ -174,6 +188,8 @@ def shipped_backend(request: pytest.FixtureRequest, tmp_path: Path) -> BackendFa
         return lambda d: _qdrant_factory(d)
     if kind == "lancedb":
         return lambda d: _lancedb_factory(d, tmp_path)
+    if kind == "chroma":
+        return lambda d: _chroma_factory(d, tmp_path)
     raise AssertionError(f"unhandled backend param {kind!r}")
 
 

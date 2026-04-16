@@ -158,6 +158,16 @@ def _matches_where(meta: dict[str, Any], where: dict[str, Any]) -> bool:
                     if actual in expected:
                         return False
                 elif op in _COMPARE_OPS:
+                    # Special case: comparing explicitly against None / missing.
+                    # {"f": {"$eq": None}} matches entries missing the field OR
+                    # entries that have field=None (both are "no value here").
+                    # {"f": {"$ne": None}} matches entries with a concrete value.
+                    if expected is None:
+                        if op == "$eq" and actual is not None:
+                            return False
+                        if op == "$ne" and actual is None:
+                            return False
+                        continue
                     fn = _COMPARE_OPS[op]
                     if actual is None:
                         return False

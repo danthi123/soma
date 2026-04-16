@@ -33,9 +33,13 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from soma.llm.backends import LLMBackend
-    from soma.memory.api import MemoryLayer
+    from soma.memory.api import MemoryHit, MemoryLayer
 
-from soma.memory.conversational_prompts import EXTRACT_PROMPT, RECONCILE_PROMPT
+from soma.memory.conversational_prompts import (
+    EXTRACT_PROMPT,
+    RECONCILE_PROMPT,
+    SUMMARY_PROMPT,
+)
 
 logger = logging.getLogger("soma.memory")
 
@@ -476,7 +480,7 @@ class ConversationalMemory:
                 },
             )
             return new_id
-        # Unknown op — log and fall back to ADD so we don't lose the fact.
+        # Unknown op - log and fall back to ADD so we don't lose the fact.
         logger.warning(
             "reconcile: unknown op %r; falling back to ADD",
             op,
@@ -486,3 +490,196 @@ class ConversationalMemory:
             },
         )
         return self._add_fact(fact.text, category=fact.category)
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
+    def add_message(
+        self,
+        role: str,
+        text: str,
+        *,
+        metadata: dict[str, object] | None = None,
+    ) -> None:
+        """Ingest one conversational turn.
+
+        Pipeline:
+          1. Store the raw turn with ``metadata.type="turn"`` so
+             LoCoMo-style evaluations that expect raw turns stay
+             compatible.
+          2. If ``role == "user"`` (or if ``extract_assistant=True``),
+             extract atomic facts via the LLM and reconcile each.
+          3. Advance the turn counter; every ``summary_every`` turns
+             roll a summary entry with ``metadata.type="summary"``.
+
+        ``metadata`` is merged into the raw turn's metadata. The
+        ``session_id``, ``type``, ``role`` keys are always set by this
+        method and will override anything the caller passes.
+        """
+        if not text or not text.strip():
+            return
+        turn_meta: dict[str, object] = {}
+        if metadata:
+            turn_meta.update(metadata)
+        turn_meta.update(
+            {
+                "session_id": self._session_id,
+                "type": "turn",
+                "role": role,
+                "turn_index": self._turn_counter,
+            }
+        )
+        self._memory.store(text, metadata=turn_meta)
+
+        should_extract = role == "user" or self._extract_assistant
+        if should_extract:
+            facts = self._extract_facts(text)
+            for f in facts:
+                self._reconcile(f)
+
+        self._turn_counter += 1
+        if (
+            self._summary_every > 0
+            and self._turn_counter % self._summary_every == 0
+        ):
+            self._roll_summary()
+
+    def _roll_summary(self) -> None:
+        """Summarize the last ``summary_every`` raw turns, store as a
+        ``type=summary`` entry.
+
+        The turns block is formatted as ``role: text`` lines in order.
+        The resulting summary is stored with ``metadata.type=summary``
+        so :meth:`get_summary` and :meth:`retrieve` can find it.
+        """
+        recent_turns = self._session_entries(type_filter="turn")
+        # Last N turns, by insertion order.
+        tail = recent_turns[-self._summary_every :]
+        if not tail:
+            return
+        turns_block = "\n".join(
+            f"{h.metadata.get('role', '?')}: {h.text}" for h in tail
+        )
+        prompt = SUMMARY_PROMPT.format(turns=turns_block)
+        summary_text = self._llm.generate(prompt, max_tokens=512).strip()
+        if not summary_text:
+            return
+        self._memory.store(
+            summary_text,
+            metadata={
+                "session_id": self._session_id,
+                "type": "summary",
+                "summarized_turn_start": tail[0].metadata.get("turn_index"),
+                "summarized_turn_end": tail[-1].metadata.get("turn_index"),
+            },
+        )
+
+    def retrieve(
+        self,
+        query: str,
+        k: int = 5,
+        *,
+        include_superseded: bool = False,
+    ) -> list[MemoryHit]:
+        """Retrieve the top-k relevant entries for ``query``.
+
+        Scoped to this session by default. Already-superseded facts are
+        filtered out unless ``include_superseded=True``. Facts,
+        summaries, and raw turns compete on cosine score.
+        """
+        where: dict[str, object] = {"session_id": self._session_id}
+        if not include_superseded:
+            where["superseded_by"] = {"$eq": None}
+        return self._memory.retrieve(query, k=k, where=where)
+
+    def list_facts(self) -> list[MemoryHit]:
+        """All fact entries for this session (excludes superseded)."""
+        entries = self._session_entries(type_filter="fact")
+        return [e for e in entries if e.metadata.get("superseded_by") is None]
+
+    def get_summary(self) -> MemoryHit | None:
+        """Return the most recent summary entry for this session, or None."""
+        summaries = self._session_entries(type_filter="summary")
+        if not summaries:
+            return None
+        return summaries[-1]
+
+    def supersede(self, old_node_id: str, new_text: str) -> str:
+        """Public helper: supersede an existing entry with ``new_text``.
+
+        Writes the same ``supersedes`` / ``superseded_by`` pointer pair
+        as the internal SUPERSEDE reconcile op, and returns the new
+        entry's id.
+        """
+        if old_node_id not in self._memory:
+            raise KeyError(f"node_id {old_node_id!r} not found in memory")
+        new_id = self._add_fact(
+            new_text,
+            category="other",
+            extra_meta={"supersedes": old_node_id},
+        )
+        self._memory.update_metadata(
+            old_node_id,
+            {
+                "superseded_by": new_id,
+                "superseded_at_step": self._memory._step,
+            },
+        )
+        return new_id
+
+    def clear_session(self, *, keep_summaries: bool = True) -> int:
+        """Delete all turns + facts for this session.
+
+        Summaries are preserved by default so the long-term memory
+        skeleton of the session survives a reset. Pass
+        ``keep_summaries=False`` for a full wipe. Returns the number of
+        entries removed.
+
+        Superseded entries ARE removed here — they're scoped to the
+        session being cleared, and retention is a separate concern
+        (see docs/plans/... follow-up on GDPR-grade forgetting).
+        """
+        to_delete: list[str] = []
+        for nid in list(self._memory._ids):
+            hit = self._memory.get(nid)
+            if hit is None:
+                continue
+            if hit.metadata.get("session_id") != self._session_id:
+                continue
+            ent_type = hit.metadata.get("type")
+            if ent_type == "summary" and keep_summaries:
+                continue
+            to_delete.append(nid)
+        removed = 0
+        for nid in to_delete:
+            if self._memory.forget(nid):
+                removed += 1
+        return removed
+
+    def flush(self) -> None:
+        """Durability hand-off. In sync mode this is a no-op — the
+        underlying MemoryLayer has already fsynced on every write.
+        Stage 2's async/batch mode overrides this to drain pending work.
+        """
+        # Pass through to the MemoryLayer so an attached bundle fsyncs
+        # any batched-mode state on callers' orderly shutdown.
+        self._memory.flush()
+
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
+    def _session_entries(
+        self, *, type_filter: str | None = None
+    ) -> list[MemoryHit]:
+        """Return this session's entries in insertion order, filtered by type."""
+        out: list[MemoryHit] = []
+        for nid in self._memory._ids:
+            hit = self._memory.get(nid)
+            if hit is None:
+                continue
+            if hit.metadata.get("session_id") != self._session_id:
+                continue
+            if type_filter is not None and hit.metadata.get("type") != type_filter:
+                continue
+            out.append(hit)
+        return out

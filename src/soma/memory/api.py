@@ -941,7 +941,10 @@ class MemoryLayer:
             stacked = torch.empty((0, self._embed_dim))
         _atomic_torch_save(stacked, out / "memory_embeddings.pt")
         index: dict[str, Any] = {
-            "schema_version": 1,
+            # v1 = snapshot-only (pre-WAL). v2 = snapshot + optional WAL
+            # sidecar. We emit v2 unconditionally now; v1 bundles still
+            # load because load() accepts both.
+            "schema_version": 2,
             "embed_dim": self._embed_dim,
             "embed_type": "text_encoder" if has_encoder else "custom",
             "step": self._step,

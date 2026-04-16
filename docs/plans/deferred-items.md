@@ -20,7 +20,7 @@ Things that came up during the 2026-04-16 gap-closing push (Phases 1-7b) but wer
 - **Async extraction mode** (`extraction_mode="async"` with `ThreadPoolExecutor`, `flush()` drains). Phase 2 Stage 2.5. ~1 day. Source: `docs/plans/2026-04-16-phase-2-conversational-memory.md`.
 - **Batch extraction mode** (accumulate K turns, one LLM call). Phase 2 Stage 3. ~1 day.
 - ✅ ~~**`extractor_llm=` kwarg**~~ Shipped in Phase 11 (`34320b4`, `9ca76e1`).
-- **Summary re-summarization from raw turns** every M × `summary_every` to prevent compounding drift. Phase 2 Risks §4. ~4 h.
+- ✅ ~~**Summary re-summarization from raw turns**~~ Shipped in Phase 17 (`5124d4c`, `325029f`). New `resummarize_every` kwarg (default 5); every Mth summary re-derives from raw turns to prevent compounding drift. Cookbook §18 covers tuning.
 - **GDPR-grade forgetting** — scrub derived facts + summaries that reference a piece of info. Goes well beyond `clear_session`. ~1 week.
 - ✅ ~~**Multi-user scoping**~~ Shipped in Phase 12 (`cc334d4`, `5216872`). `user_id` kwarg on ConversationalMemory with per-call override; retrieval auto-scopes; supersede enforces ownership. REST pattern via metadata field (no new endpoint).
 
@@ -35,9 +35,9 @@ Things that came up during the 2026-04-16 gap-closing push (Phases 1-7b) but wer
 
 - **Refresh-token endpoint.** Punted as OAuth-flow complexity. Source: Phase 4 plan §6. ~1 d if we build it.
 - **Per-token rate limiting.** Punted to reverse proxy. A lightweight in-proc limiter would be ~1 d.
-- **Hashed-token store.** Defence-in-depth for the secret at rest. Stores the jti as `sha256(jti)` so the blocklist file is safe to exfiltrate. Only matters once blocklist size grows enough to leak signal. ~3 h. Source: `docs/plans/2026-04-16-jwt-revocation.md`.
+- ✅ ~~**Hashed-token store.**~~ Shipped in Phase 18 (`69d8e1a`, `632ea15`). Opt-in via `FileBlocklist(path, hashed=True)` or `SOMA_JWT_BLOCKLIST_HASHED=1` env. Dual-schema reader accepts legacy + new records so operators can flip without migration.
 - **Redis-backed revocation blocklist.** Optional extra `soma[redis-revocation]`. Instant propagation across workers + automatic TTL from `exp`. For multi-host / k8s deploys where the file-backed store's 30 s poll lag is too slow. ~1 d. Source: `docs/plans/2026-04-16-jwt-revocation.md`.
-- **Audience claim (`aud`)** — useful for multi-server fleets. Not needed for single-tenant.
+- ✅ ~~**Audience claim (`aud`)**~~ Shipped in Phase 18 (`708800b`, `40f9907`). `issue_token(..., audience=...)` + `verify_token(..., expected_audience=...)` + `soma auth issue --audience` + `SOMA_JWT_AUDIENCE` env.
 
 ## Tier 2 — backends (Phase 6 follow-ups)
 
@@ -45,7 +45,7 @@ Things that came up during the 2026-04-16 gap-closing push (Phases 1-7b) but wer
 - **Weaviate adapter.** Light client, heavy server. ~2 d.
 - **pgvector adapter.** High demand; filter pushdown over JSONB is its own design pass. ~3 d.
 - **Chroma-as-backend.** Migration story: let Chroma users get SOMA features on top of their existing Chroma dbs. ~2 d, mostly adapter + tests.
-- **`backend.search_near_id(node_id, k)`** — optional faster path for `related()` over HTTP backends. Avoids the get-vectors round-trip. ~4 h.
+- ✅ ~~**`backend.search_near_id(node_id, k)`**~~ Shipped in Phase 16 (`4825cd3`..`9437ff6`). Default impl delegates to `get_vectors + search`; Qdrant overrides via `recommend` API; LanceDB via Arrow-native self-join. `MemoryLayer.related()` routed through it.
 - **Async Qdrant client (`AsyncQdrantClient`)** — waits for FastAPI routes to go async. No ETA.
 - **Per-bundle vs shared Qdrant collection.** Per-bundle is v1; shared collection with bundle_name tag scales to 1000+ bundles. Decision deferred to demand.
 - **Snapshot version-compat tests** across Qdrant versions — today the adapter writes `qdrant_version` in `backend.json` but we don't test cross-version restore. ~1 d.

@@ -78,6 +78,84 @@ All notable changes to SOMA are documented here.
 - **README feature comparison**: Pluggable-vector-backends row now
   reads *yes (InProc + Qdrant + LanceDB)*.
 
+### Added — backend perf (Phase 16)
+
+- **`VectorBackend.search_near_id(node_id, k, exclude_self=True)`**:
+  new Protocol method for "given a stored node_id, find its k
+  nearest neighbours" in one round-trip. Replaces the pre-Phase-16
+  pattern where `MemoryLayer.related()` did `get_vectors([id]) →
+  search(vector, k+1) → strip self`, paying two HTTP round-trips on
+  remote backends.
+- **Default impl** (`_default_search_near_id` in `backend.py`)
+  preserves today's behaviour — adapters with no fast path delegate
+  and the Protocol surface stays pure. InProc uses the default
+  (in-RAM; round-trip is meaningless).
+- **Qdrant override** calls `client.recommend(positive=[point_id],
+  limit=k)` — server-native for this exact operation. The recommend
+  API always omits the positive points from results, so
+  `exclude_self=True` is the cheap default path; `exclude_self=False`
+  synthesises a top self-hit with score 1.0 for contract uniformity
+  with InProc.
+- **LanceDB override** pulls the pivot row via `to_arrow` (stays in
+  Arrow, no Python ser/deser) then feeds the FixedSizeList straight
+  into `table.search`. Self-exclusion pushed down as `WHERE id != ?`
+  so the planner skips the pivot before distance computation.
+- **`MemoryLayer.related()` routed through the new method** — one-line
+  change because the default impl matches today's behaviour.
+- **+21 tests** covering the contract across all three shipped
+  adapters (via the parametrized `shipped_backend` fixture) plus
+  Qdrant-specific mock-based fast-path verification (proves the
+  override takes exactly one `recommend` call, zero `retrieve`/`search`).
+
+### Added — ConversationalMemory drift control (Phase 17)
+
+- **`resummarize_every` kwarg** on `ConversationalMemory` (default 5):
+  every Mth summary is re-derived from raw turns (via new
+  `RESUMMARY_PROMPT`) instead of chaining off the previous summary.
+  Prevents compounding hallucinations and omissions on long-lived
+  sessions. `resummarize_every=0` disables (always chain — today's
+  behaviour).
+- **New `RESUMMARY_PROMPT`** (`src/soma/memory/conversational_prompts.py`)
+  explicitly instructs the LLM not to reference prior summaries,
+  focuses on stable facts (names, locations, preferences, goals) +
+  decisions / commitments.
+- **`metadata["resummary"] = bool`** on every stored summary so the
+  audit trail distinguishes chained vs re-derived rolls.
+- **Cookbook recipe** in `docs/cookbook.md` §18 on when to tune the
+  cadence (shorter M for chatty agents; 0 for cost-constrained
+  local-LLM deploys).
+- **+5 tests**. Backward-compat: existing
+  `ConversationalMemory(memory=..., llm=...)` callers gain the new
+  kwarg with a sensible default; no adapter changes needed.
+
+### Added — auth hardening (Phase 18)
+
+- **Hashed-token blocklist** — `FileBlocklist(path, hashed=True)`
+  stores `sha256(jti)` instead of the plain jti. The revocation
+  file becomes safe to exfiltrate: it leaks *whether* a jti is
+  revoked, not *which*. Default remains `hashed=False` (byte-
+  identical output to pre-Phase-18). Dual-schema reader accepts
+  both legacy `{"jti": ...}` and new `{"jti_key": ...}` records on
+  load so operators can flip the flag without migrating existing
+  files. `gc_expired` preserves whichever key scheme each record
+  originally used.
+- **`SOMA_JWT_BLOCKLIST_HASHED=1`** env var wires the hashed flag
+  through `blocklist_from_env`.
+- **Audience claim (`aud`)**: `issue_token(..., audience="svc-A")`
+  populates the claim; `verify_token(..., expected_audience="svc-A")`
+  enforces it. Both kwargs default to `None` so existing callers
+  behave identically. Unlocks multi-server fleets sharing one JWT
+  signing secret without cross-service token replay.
+- **pyjwt pin**: pyjwt 2.x actively *rejects* tokens carrying `aud`
+  when the verifier passes `audience=None` (raises `InvalidAudienceError`).
+  Worked around by forcing `options={"verify_aud": expected_audience
+  is not None}` so unset-on-verify means "skip the check", matching
+  the invariant the rest of the code contract expects.
+- **`soma auth issue --audience svc-A`** CLI flag.
+- **`SOMA_JWT_AUDIENCE=svc-A`** env var on the server, plumbed into
+  `verify_token` via `require_auth`.
+- **+12 tests** across revocation / auth-core / CLI / serve.
+
 ### Changed — docs refresh (Phase 14)
 
 - **README rewrite** for the post-push feature set. Replaced the

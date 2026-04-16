@@ -16,7 +16,7 @@ Run::
     # smoke (fast): 10K, InProc only
     python -m benchmarks.run_backend_matrix --n 10000 --smoke
 
-    # full: InProc flat/hnsw + Qdrant local
+    # full: InProc flat/hnsw + Qdrant local + LanceDB flat/hnsw
     python -m benchmarks.run_backend_matrix --n 100000
 
     # add HTTP comparison
@@ -117,9 +117,7 @@ def _embed_fn_from_cache(vecs: np.ndarray) -> Any:
             return torch.from_numpy(vec.copy())
         h = hash(text) & 0xFFFFFFFF
         rng = np.random.default_rng(h)
-        return torch.from_numpy(
-            rng.standard_normal(vecs.shape[1]).astype(np.float32)
-        )
+        return torch.from_numpy(rng.standard_normal(vecs.shape[1]).astype(np.float32))
 
     return _embed
 
@@ -191,11 +189,7 @@ def _run_backend(
             recall_at_10 = sum(inters) / len(inters)
 
     p50 = statistics.median(retrieve_times_ms) if retrieve_times_ms else 0.0
-    p95 = (
-        statistics.quantiles(retrieve_times_ms, n=20)[18]
-        if len(retrieve_times_ms) >= 20
-        else p50
-    )
+    p95 = statistics.quantiles(retrieve_times_ms, n=20)[18] if len(retrieve_times_ms) >= 20 else p50
 
     row = MatrixRow(
         backend=name,
@@ -251,9 +245,7 @@ def run_matrix(
     print("[matrix] running InProcHNSW")
     bundle = Path(tempfile.mkdtemp(prefix="soma_bench_inproc_hnsw_"))
     try:
-        backend = InProcBackend(
-            dim=dim, faiss_index_type="hnsw", faiss_threshold=500
-        )
+        backend = InProcBackend(dim=dim, faiss_index_type="hnsw", faiss_threshold=500)
         mem = MemoryLayer(
             embed_fn=_embed_fn_from_cache(vecs),
             embed_dim=dim,
@@ -281,9 +273,7 @@ def run_matrix(
             print("[matrix] qdrant-client not installed; skipping Qdrant rows")
         else:
             print("[matrix] running QdrantLocal")
-            bundle = Path(
-                tempfile.mkdtemp(prefix="soma_bench_qdrant_local_")
-            )
+            bundle = Path(tempfile.mkdtemp(prefix="soma_bench_qdrant_local_"))
             try:
                 qpath = bundle / "qdrant_data"
                 backend = QdrantBackend(
@@ -312,7 +302,55 @@ def run_matrix(
             finally:
                 shutil.rmtree(bundle, ignore_errors=True)
 
-    # 4. Qdrant HTTP (only when env set)
+    # 4. LanceDB flat + HNSW
+    try:
+        from soma.memory.backends.lancedb import LanceDBBackend
+    except ImportError:
+        print("[matrix] lancedb not installed; skipping LanceDB rows")
+    else:
+        for label, kwargs in [
+            ("LanceDBFlat", {"index_type": "flat"}),
+            (
+                "LanceDBHNSW",
+                {
+                    "index_type": "hnsw",
+                    "auto_index_threshold": 500,
+                    "num_partitions": 16,
+                    "m": 16,
+                },
+            ),
+        ]:
+            print(f"[matrix] running {label}")
+            bundle = Path(tempfile.mkdtemp(prefix=f"soma_bench_{label.lower()}_"))
+            try:
+                lpath = bundle / "lancedb"
+                backend = LanceDBBackend(
+                    path=lpath,
+                    dim=dim,
+                    table_name="bench",
+                    recreate=True,
+                    **kwargs,
+                )
+                mem = MemoryLayer(
+                    embed_fn=_embed_fn_from_cache(vecs),
+                    embed_dim=dim,
+                    backend=backend,
+                )
+                row = _run_backend(
+                    label,
+                    mem,
+                    texts,
+                    vecs,
+                    reference_positions=ref_positions,
+                    bundle_path=lpath,
+                )
+                row.extras.pop("returned_rows", None)
+                rows.append(row)
+                mem.close()
+            finally:
+                shutil.rmtree(bundle, ignore_errors=True)
+
+    # 5. Qdrant HTTP (only when env set)
     http_url = os.environ.get("SOMA_QDRANT_TEST_URL")
     if include_qdrant_http and http_url:
         try:
@@ -358,9 +396,7 @@ def render_report(rows: list[MatrixRow], *, n: int) -> str:
     ]
     for r in rows:
         store_s = (
-            f"{r.store_total_s:.1f}s"
-            if r.store_total_s < 60
-            else f"{r.store_total_s / 60:.1f}min"
+            f"{r.store_total_s:.1f}s" if r.store_total_s < 60 else f"{r.store_total_s / 60:.1f}min"
         )
         lines.append(
             f"| {r.backend} | {store_s} | {r.retrieve_p50_ms:.2f} "
@@ -388,9 +424,7 @@ def render_report(rows: list[MatrixRow], *, n: int) -> str:
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--n", type=int, default=10_000, help="corpus size")
-    p.add_argument(
-        "--smoke", action="store_true", help="InProcFlat only (fast)"
-    )
+    p.add_argument("--smoke", action="store_true", help="InProcFlat only (fast)")
     p.add_argument(
         "--no-qdrant-local",
         action="store_true",
@@ -401,9 +435,7 @@ def main() -> None:
         action="store_true",
         help="include QdrantHTTP (requires SOMA_QDRANT_TEST_URL env)",
     )
-    p.add_argument(
-        "--out", type=Path, default=None, help="report path"
-    )
+    p.add_argument("--out", type=Path, default=None, help="report path")
     args = p.parse_args()
 
     rows = run_matrix(

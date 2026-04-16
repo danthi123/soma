@@ -4,6 +4,44 @@ All notable changes to SOMA are documented here.
 
 ## [Unreleased] — 2026-04-16
 
+### Added — backends
+
+- **Pluggable LanceDB backend** (`src/soma/memory/backends/lancedb.py`,
+  optional `pip install soma[lancedb]`): embedded, arrow-native vector
+  store (10M+ scale). Third adapter, filling the "local-first past
+  Qdrant-local's 20K cap, no server" niche between InProc (RAM-bound)
+  and Qdrant HTTP (requires infra). `supports_filter_pushdown=True`
+  via `lancedb_filter.to_lancedb_where` (SQL-style predicates for
+  `$eq` / `$ne` / `$gt` / `$gte` / `$lt` / `$lte` / `$in` / `$nin`).
+  Snapshot = copy the LanceDB table directory into the bundle;
+  restore = inverse. Schema-error-on-filter path converts to
+  `FilterPushdownUnsupported` so MemoryLayer cleanly falls back to
+  its Python pre-filter + `search_subset` path when the schema
+  doesn't carry the referenced column.
+- **Parametrized protocol contract suite**
+  (`tests/test_memory/test_backend_protocol.py`): every shipped
+  adapter is forced through the same basic-invariants gate (ntotal /
+  dim / add / search / get_vectors / remove / clear / snapshot /
+  restore / protocol isinstance). Missing optional deps skip the row.
+  New adapters land with one factory entry.
+- **`LanceDBBackend` adapter tests**
+  (`tests/test_memory/test_lancedb_backend.py`): 30 tests covering
+  identity, round-trips, filter pushdown (per operator + unsupported
+  op), snapshot/restore, directory persistence, recreate semantics,
+  ImportError path, and a MemoryLayer end-to-end round-trip.
+- **`lancedb_filter.to_lancedb_where`** translator + 18 unit tests
+  covering every operator, literal rendering (strings / numbers /
+  booleans / None), apostrophe escaping, empty-list edge cases, and
+  unsupported-op rejection.
+- **Benchmark matrix extension**: `LanceDBFlat` and `LanceDBHNSW`
+  rows added to `benchmarks/run_backend_matrix.py` and regenerated
+  at 100K. Numbers land in `benchmarks/reports/backend_matrix.md`.
+- **Docs**: extended `docs/backends.md` with a LanceDB section
+  between InProc and Qdrant — pitch, index-type choice table,
+  bundle layout, filter-pushdown semantics + fallback, tradeoffs.
+- **README feature comparison**: Pluggable-vector-backends row now
+  reads *yes (InProc + Qdrant + LanceDB)*.
+
 ### Added — pluggable vector backends (Phase 6)
 
 - **`VectorBackend` protocol** (`src/soma/memory/backend.py`):

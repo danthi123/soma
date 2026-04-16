@@ -1,12 +1,13 @@
-# Backend Matrix — N = 1,000
+# Backend Matrix — N = 100,000
 
 ## Results
 
 | Backend | Store total | Retrieve p50 (ms) | Retrieve p95 (ms) | Disk (MB) | Recall@10 |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| InProcFlat | 0.0s | 0.75 | 1.12 | 0.0 | 1.000 |
-| InProcHNSW | 0.0s | 0.27 | 0.34 | 0.0 | 0.974 |
-| QdrantLocal | 10.7s | 1.53 | 2.07 | 4.0 | 1.000 |
+| InProcFlat | 6.7s | 7.71 | 12.91 | 0.0 | 1.000 |
+| InProcHNSW | 6.6s | 0.45 | 0.80 | 0.0 | 0.714 |
+| LanceDBFlat | 16.6s | 39.90 | 44.26 | 156.6 | 1.000 |
+| LanceDBHNSW | 17.9s | 6.54 | 9.33 | 212.6 | 0.676 |
 
 ## Notes
 

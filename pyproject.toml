@@ -60,6 +60,23 @@ gguf = [
     # unaffected; GGUF cannot be used for verbalizer gradient flow.
     "llama-cpp-python>=0.2.70",
 ]
+sbert = [
+    "sentence-transformers>=2.2.0",
+]
+serve = [
+    "fastapi>=0.100",
+    "uvicorn>=0.20",
+    "sentence-transformers>=2.2.0",
+]
+ann = [
+    "faiss-cpu>=1.7.0",
+]
+langchain = [
+    "langchain-core>=0.1.0",
+]
+llamaindex = [
+    "llama-index-core>=0.10.0",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -101,5 +118,11 @@ module = [
     "safetensors", "safetensors.*",
     "bitsandbytes", "bitsandbytes.*",
     "llama_cpp", "llama_cpp.*",
+    "sentence_transformers", "sentence_transformers.*",
+    "langchain_core", "langchain_core.*",
+    "llama_index", "llama_index.*",
+    "fastapi", "fastapi.*",
+    "uvicorn", "uvicorn.*",
+    "faiss", "faiss.*",
 ]
 ignore_missing_imports = true

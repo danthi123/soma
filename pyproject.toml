@@ -114,6 +114,29 @@ chroma = [
     # 0.4.x API would require an adapter-side version switch.
     "chromadb>=0.5",
 ]
+pgvector = [
+    # PgvectorBackend adapter — optional extra. Covers the
+    # "we already run Postgres; don't give us another database to
+    # operate" slot: point MemoryLayer at a pgvector-enabled Postgres
+    # (managed RDS / Cloud SQL / Supabase, or a self-hosted cluster)
+    # and SOMA's memory layer composes on top. psycopg v3 driver —
+    # async-ready, much faster than v2. pgvector>=0.3 introduced the
+    # ``vector(n)`` type alongside the legacy array form. Install with
+    # `pip install soma[pgvector]`. See docs/backends.md.
+    "psycopg[binary]>=3",
+    "pgvector>=0.3",
+]
+pgvector-test = [
+    # Integration tests for PgvectorBackend spin up a real
+    # pgvector/pgvector:pg16 container via testcontainers-python and
+    # exercise the full adapter surface against live SQL. Gated behind
+    # `SOMA_PGVECTOR_INTEGRATION=1` and the `slow_pgvector` pytest
+    # marker so the default test run stays fast and Docker-free.
+    # Mirrors the qdrant-test extra. See docs/backends.md.
+    "testcontainers>=4",
+    "psycopg[binary]>=3",
+    "pgvector>=0.3",
+]
 langchain = [
     "langchain-core>=0.1.0",
 ]
@@ -168,6 +191,7 @@ markers = [
     "cuda: requires a CUDA GPU to run (deselect with '-m \"not cuda\"')",
     "quant: requires bitsandbytes and CUDA for weight quantization tests",
     "slow_qdrant: cross-version Qdrant snapshot/restore tests via testcontainers (Phase 24); gated by SOMA_QDRANT_VERSION_MATRIX=1",
+    "slow_pgvector: pgvector integration tests via testcontainers (Phase 29); gated by SOMA_PGVECTOR_INTEGRATION=1",
 ]
 
 [tool.mypy]
@@ -200,6 +224,8 @@ module = [
     "qdrant_client", "qdrant_client.*",
     "lancedb", "lancedb.*",
     "chromadb", "chromadb.*",
+    "psycopg", "psycopg.*",
+    "pgvector", "pgvector.*",
     "pyarrow", "pyarrow.*",
     "redis", "redis.*",
     "fakeredis", "fakeredis.*",

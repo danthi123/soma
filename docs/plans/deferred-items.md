@@ -41,12 +41,12 @@ Things that came up during the 2026-04-16 gap-closing push (Phases 1-7b) but wer
 
 ## Tier 2 — backends (Phase 6 follow-ups)
 
-- **Milvus adapter.** Heavier dep surface (pymilvus + server). Overlaps Qdrant's niche. ~2 d.
-- **Weaviate adapter.** Light client, heavy server. ~2 d.
+- **Milvus adapter.** Build when asked. Heavier dep surface (pymilvus + server); overlaps Qdrant's niche almost entirely. ~2 d of work, but adds permanent maintenance surface (another version-compat test matrix, another filter translator). Skip unless a real Milvus shop shows up wanting SOMA on top.
+- **Weaviate adapter.** Build when asked. Light client, heavy server. Low demand in the agent-memory space compared to pgvector/Chroma. ~2 d. Same reasoning as Milvus.
 - ✅ ~~**pgvector adapter.**~~ Shipped in Phase 29 (`9a549e4`, `ff6be31`, `624ab8b`, `ed7ed3c`, `e150827`). `PgvectorBackend` via psycopg v3 + `pgvector>=0.3`; JSONB filter translator ($eq as `@> ::jsonb`, comparisons via `(metadata->>'f')::float`, $in as `ANY(%s)`, multi-field via AND; SQL-injection safe by parameter binding); snapshot via COPY+gzip; always-on unit tests + gated integration via testcontainers (`SOMA_PGVECTOR_INTEGRATION=1`).
 - ✅ ~~**Chroma-as-backend.**~~ Shipped in Phase 27 (`d5d2c08`, `b4738c2`, `0da7d44`, `47041bb`). `ChromaBackend` adapter + `chroma_filter.to_chroma_where` translator ($eq/$ne/$gt/$gte/$lt/$lte/$in/$nin with $and wrapping for multi-field); `pip install "soma[chroma]"`; protocol contract suite row; snapshot/restore via dir copy; Windows sqlite-lock fix in close/restore.
 - ✅ ~~**`backend.search_near_id(node_id, k)`**~~ Shipped in Phase 16 (`4825cd3`..`9437ff6`). Default impl delegates to `get_vectors + search`; Qdrant overrides via `recommend` API; LanceDB via Arrow-native self-join. `MemoryLayer.related()` routed through it.
-- **Async Qdrant client (`AsyncQdrantClient`)** — waits for FastAPI routes to go async. No ETA.
+- **Async Qdrant client (`AsyncQdrantClient`)** — build when asked. The real work is not the Qdrant swap — it's making every FastAPI route `async def`, which ripples through every endpoint, background task, and test. Once that lands, async Qdrant + async LLM calls let one worker serve ~10× the concurrent chats (since LLM + vector calls are I/O-bound). Cost: 1-2 weeks. Value: meaningful only for high-concurrency deploys (many simultaneous users per worker). Single-user or low-QPS doesn't benefit. No user has asked; revisit when someone's hitting the sync-worker ceiling.
 - **Per-bundle vs shared Qdrant collection.** Per-bundle is v1; shared collection with bundle_name tag scales to 1000+ bundles. Decision deferred to demand.
 - ✅ ~~**Snapshot version-compat tests** across Qdrant versions~~ Shipped in Phase 24 (`45c099c`, `3b5d703`, `74dcfc3`). testcontainers-driven 3×3 matrix across `1.11.3` / `1.12.4` / `1.13.5`; gated by `SOMA_QDRANT_VERSION_MATRIX=1` + `slow_qdrant` marker + `soma[qdrant-test]` extra; docs section in `docs/backends.md`. Weekly Gitea Actions workflow deferred until the runner has Docker available.
 
@@ -59,12 +59,12 @@ Things that came up during the 2026-04-16 gap-closing push (Phases 1-7b) but wer
 
 ## Tier 2 — k8s / cloud
 
-- **HPA templates** in the Helm chart. Locked off until Phase 6's external-backend story matures (single-writer WAL blocks multi-replica). Revisit when Qdrant HTTP backend is the documented scale path.
-- **`SomaCluster` CRD operator.** Attractive once multi-tenant sharding matures. Phase 8+ territory. Big effort (~3 weeks for a minimal operator).
+- **HPA templates** in the Helm chart. Build when asked. Technically unblocked now — S3/GCS bundles (Phase 30-33) + Qdrant HTTP backend together mean multi-replica is safe. Cost: 1-2 days. Value: low until someone actually runs SOMA on k8s with a Qdrant cluster — no such user today. Ships a capability nobody's asked for.
+- **`SomaCluster` CRD operator.** Build when asked — and probably not even then. A k8s operator managing SOMA + Qdrant + backup cron + monitoring as one declarative resource would be a genuine enterprise selling point (declarative upgrades, DR, per-tenant isolation). But that's a different product from "local-first agent memory." Cost: ~3 weeks minimal, months for production-grade. Value: high IF we're pitching enterprise k8s; low if the product story stays local-first. Don't ship until enterprise is actually on the roadmap.
 - **S3/GCS bundle backend** — unlocks Cloud Run / App Runner (scale-to-zero platforms) by moving bundle state off local disk. ~1 week.
 - **`soma cloud deploy` CLI** — one-command managed deploy via Fly/Render API. ~3 d. Only meaningful if we host a real managed service.
 - **Helm 4 migration** — stay on 3.x for v1; migrate when the ecosystem settles. No ETA.
-- **Topology spread vs anti-affinity production hardening** — stubs in `values.yaml`; no tested defaults.
+- **Topology spread vs anti-affinity production hardening** — build when asked. Stubs in `values.yaml`; no tested defaults. Picking defaults without a real multi-replica deploy to measure against would be guesswork.
 
 ## Tier 2 — benchmark polish
 
@@ -98,3 +98,15 @@ Things that came up during the 2026-04-16 gap-closing push (Phases 1-7b) but wer
 1. When a deferred item becomes a real user ask → promote to a dated plan under `docs/plans/`.
 2. When a deferred item becomes impossible or irrelevant → delete with a one-line git commit message.
 3. Review at least every quarter; items staler than two quarters with no ask are probably not happening — delete them.
+
+### "Build-when-asked" philosophy
+
+Several entries below carry the "build when asked" note. These are
+items where the *capability* would be valuable to some audience but
+*nobody has asked yet*. Shipping them speculatively adds maintenance
+surface (more adapters to version-compat-test, more docs to keep in
+sync, more deps to update) without a user whose concrete need
+disciplines the design. The pattern is: write the capability down,
+keep the rationale current, and build it when a real user's request
+can shape the scope. Cost estimates stay attached so a future
+prioritization pass can act without re-researching.

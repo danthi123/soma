@@ -11,6 +11,7 @@ script, point it at your data, swap the embedder/LLM if you want.
 | [`demo_chat_persistent.py`](#3-persistent-conversation) | Save chat history, reload, recall earlier facts | yes (or `--dry-run`) |
 | [`demo_memory_inspect.py`](#4-inspect-and-search-a-bundle) | Browse / search / filter / dump any saved bundle | no |
 | [`demo_related_browser.py`](#5-graph-walk-via-related) | Walk the entry-to-entry graph from any starting node | no |
+| [`demo_web_ui.py`](#6-browser-based-chat-ui-gradio) | Gradio chat UI over any bundle | yes (or `--dry-run`) |
 
 All demos work CPU-only. The LLM-backed ones load a small local model
 (`soma.deploy.chat_head_factory`, tier `auto` picks Qwen2.5 / Phi-3 /
@@ -127,6 +128,29 @@ python scripts/demo_related_browser.py --bundle artifacts/wiki-brain \
 
 At each step the cursor entry is shown with its k nearest neighbors.
 Pick a neighbor by number to move the cursor, `0` to quit.
+
+## 6. Browser-based chat UI (Gradio)
+
+One-file web UI for non-Python users — a chat box over any bundle,
+with retrieved sources displayed inline. Uses the same
+`backend_from_env` path as the CLI so any LLM works.
+
+```bash
+pip install gradio
+
+# Auto-pick LLM + simple chat:
+python scripts/demo_web_ui.py --bundle my-brain/
+
+# With recall boosters:
+python scripts/demo_web_ui.py --bundle my-brain/ \
+  --hybrid-alpha 0.3 --rerank-top-n 20
+
+# No LLM — just inspect what gets retrieved:
+python scripts/demo_web_ui.py --bundle my-brain/ --dry-run
+```
+
+Opens at `http://127.0.0.1:7860`. Pass `--share` for a public Gradio
+share link (useful for quick demos).
 
 ---
 

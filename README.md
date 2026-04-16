@@ -209,6 +209,7 @@ python scripts/demo_chat_persistent.py --dry-run  # persistent conversation
 python scripts/demo_wiki_chat.py --wiki-dir docs/ --bundle artifacts/wiki-brain --index --chat --dry-run
 python scripts/demo_memory_inspect.py stats --bundle artifacts/wiki-brain
 python scripts/demo_related_browser.py --bundle artifacts/wiki-brain --seed "consolidation"
+python scripts/demo_web_ui.py --bundle artifacts/wiki-brain --dry-run  # gradio chat UI
 ```
 
 Walkthrough: [`docs/demos.md`](docs/demos.md).

@@ -108,29 +108,38 @@ class ForgetPreview:
 class ForgetResult:
     """Outcome of a :meth:`ConversationalMemory.forget` call with ``dry_run=False``.
 
-    Phase 35 wires the actual deletion behind the Phase 34 inventory
-    path. Returned by the default (``dry_run=False``) branch so callers
-    can confirm what went away — useful for GDPR audit logs and for
-    composing higher-level "forget user X" workflows.
+    Phase 35 wired the actual deletion for turns + facts; Phase 36
+    finishes the cascade by handling summaries. A summary whose turn
+    range is fully covered by the delete set is dropped; one with
+    surviving turns is regenerated from the survivors (the MemoryLayer
+    has no in-place text update, so regen is a delete + re-add —
+    :attr:`regenerated_summaries` holds the **new** node ids).
 
     - :attr:`deleted_turns` — node ids of raw turns that were removed.
     - :attr:`deleted_facts` — node ids of derived facts that were
       removed. Facts are deleted **before** turns so the brief window
       during which ``source_turn_id`` would dangle never exists.
-    - :attr:`deleted_summaries` — always ``[]`` in Phase 35. The field
-      is declared now so Phase 36's summary-cascade wiring doesn't
-      churn the dataclass shape. Until then, summaries that overlap
-      matched turns are surfaced by :class:`ForgetPreview` but left
-      untouched by the delete path — callers who want them gone must
-      call :meth:`clear_session` or delete them explicitly.
+    - :attr:`deleted_summaries` — node ids of summaries dropped
+      outright: either because every turn in their range was in the
+      delete set, or because the regeneration LLM call raised and the
+      fallback is to over-delete rather than leave stale text. The
+      original pre-regen id is also NOT listed here — its replacement
+      appears in :attr:`regenerated_summaries`.
+    - :attr:`regenerated_summaries` — node ids of summaries that were
+      rewritten to reflect the surviving turns. These are **new** ids
+      issued when the regenerated text was stored; the pre-regen ids
+      were forgotten as part of the swap. Not counted by
+      :attr:`total_deleted` — a regen is a mutation, not a deletion.
     - :attr:`total_deleted` — ``len(deleted_turns) + len(deleted_facts)
-      + len(deleted_summaries)``; the single integer most audit logs
-      actually care about.
+      + len(deleted_summaries)``. Regenerated summaries are excluded
+      on purpose: the stored summary still exists, just with new text
+      and a new id.
     """
 
     deleted_turns: list[str]
     deleted_facts: list[str]
     deleted_summaries: list[str]
+    regenerated_summaries: list[str]
     total_deleted: int
 
 
@@ -1355,20 +1364,178 @@ class ConversationalMemory:
         deleted_turns: list[str] = [
             tid for tid in preview.raw_turns if self._memory.forget(tid)
         ]
-        # Phase 36 will populate deleted_summaries when the cascade-
-        # rewrite lands. For now the preview surfaces overlapping
-        # summaries for audit, but the delete path leaves them alone.
+        # Phase 36: summaries last, so the surviving-turn set used to
+        # decide regenerate-vs-drop reflects the post-delete state.
+        deleted_turn_set = set(deleted_turns)
         deleted_summaries: list[str] = []
+        regenerated_summaries: list[str] = []
+        for sid in preview.summaries:
+            outcome = self._cascade_summary(
+                sid, deleted_turn_ids=deleted_turn_set,
+            )
+            if outcome is None:
+                # Summary disappeared between preview and cascade
+                # (concurrent delete, or already not present). Skip.
+                continue
+            kind, resulting_id = outcome
+            if kind == "deleted":
+                deleted_summaries.append(sid)
+            else:  # "regenerated"
+                regenerated_summaries.append(resulting_id)
         return ForgetResult(
             deleted_turns=deleted_turns,
             deleted_facts=deleted_facts,
             deleted_summaries=deleted_summaries,
+            regenerated_summaries=regenerated_summaries,
+            # Regenerated summaries are mutations, not deletions, so
+            # they are deliberately excluded from total_deleted.
             total_deleted=(
                 len(deleted_turns)
                 + len(deleted_facts)
                 + len(deleted_summaries)
             ),
         )
+
+    def _cascade_summary(
+        self,
+        summary_id: str,
+        *,
+        deleted_turn_ids: set[str],
+    ) -> tuple[Literal["deleted", "regenerated"], str] | None:
+        """Drop or regenerate ``summary_id`` based on surviving turns in its range.
+
+        Returns a ``(kind, resulting_id)`` pair:
+        - ``("deleted", summary_id)`` — summary was dropped outright.
+          The caller records the original id in ``deleted_summaries``.
+        - ``("regenerated", new_id)`` — the summary was replaced with
+          a fresh entry carrying the regenerated text. Because
+          :class:`MemoryLayer` has no in-place text update, a regen is
+          ``forget(old) + store(new)``; the caller records ``new_id``
+          in ``regenerated_summaries``.
+        - ``None`` — the summary entry was already gone (concurrent
+          delete, or the preview is stale). Caller skips.
+
+        Regeneration is a best-effort LLM call. On any exception the
+        fallback is to drop the summary and log at WARNING — under a
+        user request to forget, prefer over-deletion to silent
+        retention of derived content that might still reference the
+        scrubbed subject.
+        """
+        hit = self._memory.get(summary_id)
+        if hit is None:
+            return None
+        meta = hit.metadata
+        start = meta.get("summarized_turn_start")
+        end = meta.get("summarized_turn_end")
+        # Fall back to a straight drop when the range metadata is
+        # malformed — without a range we can't re-derive from survivors.
+        if not isinstance(start, int) or not isinstance(end, int):
+            if self._memory.forget(summary_id):
+                return ("deleted", summary_id)
+            return None
+
+        survivors = self._surviving_turns_in_range(
+            start=start,
+            end=end,
+            user_id=meta.get("user_id") if isinstance(meta.get("user_id"), str)
+            else None,
+            deleted_turn_ids=deleted_turn_ids,
+        )
+        if not survivors:
+            # Fully covered: no raw turns left in [start, end]. Drop.
+            if self._memory.forget(summary_id):
+                return ("deleted", summary_id)
+            return None
+
+        # Partial coverage: regenerate from survivors.
+        turns_block = "\n".join(
+            f"{h.metadata.get('role', '?')}: {h.text}" for h in survivors
+        )
+        prompt = SUMMARY_PROMPT.format(turns=turns_block)
+        try:
+            new_text = self._llm.generate(prompt, max_tokens=512).strip()
+        except Exception as exc:  # noqa: BLE001 — any LLM failure falls back
+            logger.warning(
+                "forget: summary %s regen failed (%s); dropping",
+                summary_id,
+                exc,
+                extra={
+                    "event": "forget_summary_regen_failure",
+                    "session_id": self._session_id,
+                    "summary_id": summary_id,
+                },
+            )
+            if self._memory.forget(summary_id):
+                return ("deleted", summary_id)
+            return None
+
+        if not new_text:
+            # Empty reply is effectively a failed regen — fall back to
+            # deletion so the user's forget request isn't undermined
+            # by a summary that still holds the old text.
+            logger.warning(
+                "forget: summary %s regen returned empty text; dropping",
+                summary_id,
+                extra={
+                    "event": "forget_summary_regen_empty",
+                    "session_id": self._session_id,
+                    "summary_id": summary_id,
+                },
+            )
+            if self._memory.forget(summary_id):
+                return ("deleted", summary_id)
+            return None
+
+        # Delete the original + re-store with the regen text. New id
+        # because MemoryLayer exposes no in-place text/embedding
+        # update; callers get the new id in regenerated_summaries so
+        # they can re-point any external references.
+        new_meta: dict[str, object] = {
+            k: v for k, v in meta.items() if k != "superseded_by"
+        }
+        # Preserve type / range / user_id / session_id; stamp a back-
+        # pointer so audit can follow the regen chain.
+        new_meta["regenerated_from"] = summary_id
+        self._memory.forget(summary_id)
+        new_id = self._memory.store(new_text, metadata=new_meta)
+        return ("regenerated", new_id)
+
+    def _surviving_turns_in_range(
+        self,
+        *,
+        start: int,
+        end: int,
+        user_id: str | None,
+        deleted_turn_ids: set[str],
+    ) -> list[MemoryHit]:
+        """Return turns in ``[start, end]`` that were not just deleted.
+
+        Ordered by ``turn_index`` ascending so the regen prompt sees a
+        chronological survivor list. Scoped to this session, and to
+        ``user_id`` when the summary had one stamped (so a multi-tenant
+        bundle doesn't pull another tenant's turns into the regen).
+        """
+        out: list[tuple[int, MemoryHit]] = []
+        for nid in self._memory._ids:
+            if nid in deleted_turn_ids:
+                continue
+            hit = self._memory.get(nid)
+            if hit is None:
+                continue
+            meta = hit.metadata
+            if meta.get("session_id") != self._session_id:
+                continue
+            if meta.get("type") != "turn":
+                continue
+            if user_id is not None and meta.get("user_id") != user_id:
+                continue
+            ti = meta.get("turn_index")
+            if not isinstance(ti, int):
+                continue
+            if start <= ti <= end:
+                out.append((ti, hit))
+        out.sort(key=lambda pair: pair[0])
+        return [h for _ti, h in out]
 
     def _compute_forget_preview(
         self,

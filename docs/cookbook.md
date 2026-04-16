@@ -610,6 +610,74 @@ Notes:
 
 ---
 
+## 22. Bundles on S3 or GCS (scale-to-zero deploys)
+
+Point `MemoryLayer.save` / `load` at a URL and the bundle lives in
+object storage instead of local disk. Unlocks Cloud Run / AWS Lambda
+/ Fly Machines / any platform where local disk is ephemeral.
+
+```python
+from soma.memory import MemoryLayer
+
+mem = MemoryLayer(...)
+mem.add(["hello"], embedding)
+
+mem.save("s3://my-bucket/soma/bundle")   # S3 (boto3 + AWS creds)
+mem.save("gs://my-bucket/soma/bundle")   # GCS (ADC chain)
+mem.save("file:///abs/local/bundle")     # explicit local URL
+mem.save("/abs/local/bundle")            # plain path still works
+
+restored = MemoryLayer.load("s3://my-bucket/soma/bundle")
+```
+
+S3 endpoint override (MinIO, Cloudflare R2, DigitalOcean Spaces):
+
+```python
+from soma.storage import S3ObjectStore
+store = S3ObjectStore(
+    bucket="b", prefix="p",
+    endpoint_url="https://<account>.r2.cloudflarestorage.com",
+)
+mem.save(store)
+```
+
+Install `pip install "soma[s3]"` or `pip install "soma[gcs]"`.
+Full deploy recipes (Dockerfile, IAM, env vars) in [`docs/cloud.md`](cloud.md).
+
+## 23. GDPR-grade forgetting with audit trail
+
+Beyond `clear_session`: cascade-delete raw turns + derived facts +
+summaries (regenerated from surviving turns when possible, else dropped).
+
+```python
+from soma.memory.conversational import ConversationalMemory
+from soma.forget_audit import ForgetAuditSink
+
+audit = ForgetAuditSink.from_env()   # reads SOMA_FORGET_AUDIT_PATH
+cm = ConversationalMemory(memory=mem, llm=llm, audit_sink=audit)
+
+# Preview first — always a safe dry-run
+preview = cm.forget(text_matches="gardening", dry_run=True)
+print(f"Would delete {preview.total_vectors} vectors "
+      f"({len(preview.raw_turns)} turns, "
+      f"{len(preview.derived_facts)} facts, "
+      f"{len(preview.summaries)} summaries)")
+
+# Commit the delete
+result = cm.forget(text_matches="gardening")
+print(f"Deleted {result.total_deleted}, regenerated "
+      f"{len(result.regenerated_summaries)} summaries")
+
+# Conservative: always drop partial-coverage summaries (no LLM call)
+result = cm.forget(text_matches="gardening", summary_strategy="drop")
+```
+
+Over REST: `POST /forget` with `{"text_matches": "gardening",
+"dry_run": true}` — requires `write` scope. Full docs including the
+compliance posture at [`docs/gdpr.md`](gdpr.md).
+
+---
+
 Missing a recipe you want? Open an issue with the use case — most
 agent-memory patterns are 5–20 lines of glue around `store` /
 `retrieve` / `related` / `get_recent` / `forget`.

@@ -294,6 +294,112 @@ All notable changes to SOMA are documented here.
   vars, when to prefer the in-proc limiter vs a reverse proxy,
   per-token vs per-subject tradeoff.
 
+### Added — object-storage bundle layer (Phases 30–33)
+
+- **`ObjectStore` Protocol** (`src/soma/storage/base.py`) with
+  `LocalFSObjectStore` (Phase 30), `S3ObjectStore` (Phase 31), and
+  `GCSObjectStore` (Phase 32). Unified interface across
+  `get_bytes` / `put_bytes` / `get_stream` / `put_stream` /
+  `list_prefix` / `delete` / `exists`, raising `KeyError` on missing.
+- **`MemoryLayer.save/load` accept URLs**: `file:///path`,
+  `s3://bucket/prefix`, `gs://bucket/prefix`, or a plain `Path`
+  (back-compat). Parser in `src/soma/storage/urls.py` dispatches.
+  Windows-specific drive-letter, UNC, and odd two-slash forms
+  handled explicitly.
+- **Atomic writes on local FS** via `.tmp + os.replace` in
+  `LocalFSObjectStore.put_bytes` / `put_stream`. S3 + GCS PUT are
+  atomic per-key natively; `.tmp` siblings skipped in `list_prefix`
+  for cross-adapter consistency.
+- **Staging pattern for remote stores**: both S3 + GCS adapters
+  expose a `local_root` property — lazy temp dir, download-on-first-
+  access, `close()` / `atexit` uploads back. Lets the WAL +
+  `bundle.lock` sidecar work against a real local directory on
+  cloud deploys. `_store_local_root(store)` in `api.py` duck-types
+  on `local_root` / `root` attrs.
+- **`s3 = ["boto3>=1.34"]` + `s3-test = ["moto[s3]>=5"]` +
+  `gcs = ["google-cloud-storage>=2.10"]` +
+  `gcs-test = ["gcp-storage-emulator>=2024.8"]`** optional extras.
+  All tests run without real cloud credentials — moto for S3,
+  `gcp-storage-emulator` for GCS.
+- **Gated real-cloud integration** via `SOMA_S3_INTEGRATION_BUCKET`
+  + `SOMA_GCS_INTEGRATION_BUCKET` env vars. `slow_s3` / `slow_gcs`
+  pytest markers registered.
+- **Cloud-deploy guide** at `docs/cloud.md` (594 lines, 11 sections):
+  URL schemes, bundle layout, three deploy recipes (AWS Lambda + S3,
+  Cloud Run + GCS, Fly Machines + Cloudflare R2 with
+  `AWS_DEFAULT_REGION=auto` and account-scoped endpoint gotchas),
+  warm-start latency table, save-is-batch caveat, cost notes.
+  Standalone moto-backed `examples/cloud_s3_demo.py` runs end-to-end
+  in ~58 ms.
+- **+78 tests** across `tests/test_storage/` (46 unit + 8 URL + 9
+  gated integration) + `tests/test_memory/` (end-to-end S3 and GCS
+  round-trips). Baseline 504 → 608 passed in the storage+memory
+  combined suite.
+- **Known gap**: `get_stream` on S3 + GCS returns a pre-loaded
+  `BytesIO` (not a true stream) because `torch.load` needs seek +
+  raw C IO. Large-blob callers should use `get_bytes` or the
+  `local_root` staging path. Documented in each adapter's
+  `get_stream` docstring.
+
+### Added — GDPR-grade forgetting (Phases 34–37)
+
+- **`ConversationalMemory.forget(...)`** (Phase 34 inventory, Phase
+  35 actual delete, Phase 36 summary cascade, Phase 37 audit +
+  endpoint). Matches raw turns by `text_matches=` (case-insensitive
+  default, `case_sensitive=True` opt-in), extracted facts by
+  `subject=`, or scope-wide by `user_id=`; criteria compose via
+  intersection. Empty-criteria call raises `ValueError` (no accidental
+  "forget everything").
+- **`ForgetPreview` (dry-run) and `ForgetResult` (delete)** — typing.
+  overload split so literal `dry_run=True`/`False` gets a precise
+  return type. `ForgetResult` fields: `deleted_turns`,
+  `deleted_facts`, `deleted_summaries`, `regenerated_summaries`,
+  `total_deleted` (excludes regenerated).
+- **Cascade order**: facts deleted first (they reference turns by
+  `source_turn_id` metadata — avoids the orphan window), then
+  turns, then summaries. Summaries that are fully covered by the
+  deletion set are dropped; partially covered summaries are
+  regenerated from surviving turns via the existing `SUMMARY_PROMPT`.
+  New id minted on regeneration (MemoryLayer has no in-place update);
+  `regenerated_from` metadata back-pointer preserved for audit.
+  LLM-unavailable regen falls back to drop with WARNING log —
+  under a user's forget request, over-deletion beats silent retention.
+- **`summary_strategy = "regen" | "drop"`** kwarg (default
+  `"regen"`). `"drop"` forces drop even when survivors exist and
+  short-circuits *before* the LLM call, so it's safe when the
+  extractor is down.
+- **Extraction-mode interaction**: `async` mode flushes in-flight
+  extractions FIRST so they land + get swept by the delete. `batch`
+  mode drops `_pending_batch` without extracting (matches
+  `clear_session` semantics).
+- **`ForgetAuditSink`** (`src/soma/forget_audit.py`): append-only
+  JSONL with `flush()` after each record. Enabled via
+  `SOMA_FORGET_AUDIT_PATH`; disabled via
+  `SOMA_FORGET_AUDIT_DISABLE=1`. Record carries `ts` (ISO-8601 UTC
+  ms-precision), `user_id` (caller principal), `target_user_id`
+  (subject when admin forgets another user's data), `criteria`
+  dict, `dry_run` bool, `result` with counts-only (under POSIX
+  `PIPE_BUF` for atomic append). `ConversationalMemory.__init__`
+  gains `audit_sink=` kwarg; `forget()` gains `actor=` kwarg
+  threaded by the REST wrapper.
+- **`POST /forget` endpoint** (extends the Phase-4 legacy
+  `{"node_id"}` form in-place — legacy clients unchanged). New
+  criterion fields route through `ConversationalMemory` when
+  configured, else 501 with clear detail. Protected by
+  `require_auth(None, "write")`; on empty criteria returns 400.
+  `_get_conversational_memory(name=None)` hook lets a future phase
+  populate managed conversational mode on the server.
+- **`docs/gdpr.md`** — right-to-erasure workflow, audit schema,
+  env-var reference, summary-strategy guidance, explicit scope of
+  what SOMA guarantees (capability, not compliance certification;
+  operator retains responsibility for authenticating data-subject
+  requests + legal-hold coordination).
+- **+53 tests** across `test_conversational_forget_preview.py` (16),
+  `test_conversational_forget_delete.py` (14 fact cascade + 8
+  summary cascade), `test_forget_audit.py` (16 sink + 4
+  summary_strategy), `test_forget_endpoint.py` (11). Zero
+  regressions in memory + serve suites.
+
 ### Added — pgvector backend adapter (Phase 29)
 
 - **`PgvectorBackend`** (`src/soma/memory/backends/pgvector.py`,

@@ -73,7 +73,9 @@ For the end-to-end agent flow — `soma serve`, JWT issue + revoke, `Conversatio
 | Per-bundle JWT auth + revocation blocklist     | no     | partial    | yes      | **yes**  |
 | Crash-safe WAL + auto-compaction               | partial| yes        | yes      | **yes**  |
 | Prometheus metrics + importable Grafana dashboards | no | no         | partial  | **yes**  |
-| Pluggable vector backends (adapter protocol)   | no     | no         | no       | **yes** (InProc + Qdrant + LanceDB) |
+| Pluggable vector backends (adapter protocol)   | no     | no         | no       | **yes** (InProc + Qdrant + LanceDB + Chroma + pgvector) |
+| Bundles on S3 / GCS (scale-to-zero ready)      | no     | no         | no       | **yes** (`s3://` / `gs://` URLs) |
+| GDPR-grade forgetting with audit trail         | no     | no         | no       | **yes** (`POST /forget` + `docs/gdpr.md`) |
 
 \* substrate ships; current memory workload doesn't trigger growth/pruning thresholds — see `benchmarks/reports/paper-draft.md` §5 for the research agenda to activate it.
 
@@ -166,10 +168,12 @@ mypy src/soma/
 
 - **[Quickstart](docs/quickstart.md)** — end-to-end agent-memory flow (install → serve → JWT → ConversationalMemory → Grafana).
 - **[Comparison](docs/comparison.md)** — SOMA vs Chroma / Mem0 / Letta / Zep / Pinecone.
-- **[Cookbook](docs/cookbook.md)** — 18 recipes (hybrid, rerank, multi-tenant REST, ConversationalMemory, multi-user, migrations).
+- **[Cookbook](docs/cookbook.md)** — recipes for hybrid retrieval, rerank, multi-tenant REST, ConversationalMemory (sync/async/batch), multi-user, migrations, streaming chat, cloud bundles.
 - **[Auth](docs/auth.md)** — per-bundle JWTs, RS256 split, revocation, rotation.
 - **[Observability](docs/observability.md)** — Prometheus metrics, JSON logs, OTel, Grafana dashboards.
-- **[Backends](docs/backends.md)** — InProc / Qdrant / LanceDB adapter tradeoffs.
+- **[Backends](docs/backends.md)** — InProc / Qdrant / LanceDB / Chroma / pgvector adapter tradeoffs.
+- **[Cloud](docs/cloud.md)** — S3/GCS bundle URLs + Lambda / Cloud Run / Fly deploy recipes.
+- **[GDPR forgetting](docs/gdpr.md)** — `POST /forget`, audit trail, summary cascade, compliance posture.
 - **[LLM backends](docs/llm-backends.md)** — Ollama / OpenAI / Anthropic / vLLM / HF.
 - **[Recall improvements](docs/recall-improvements.md)** — hybrid BM25, rerank, query expansion research agenda.
 - **[Clients](docs/clients.md)** — TypeScript client, auth modes, retry middleware.

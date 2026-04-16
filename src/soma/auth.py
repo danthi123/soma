@@ -108,12 +108,18 @@ def issue_token(
     secret: str | None = None,
     private_key_pem: bytes | None = None,
     issuer: str = "soma",
+    audience: str | None = None,
 ) -> str:
     """Mint a signed JWT with the SOMA claim envelope.
 
     HS256 uses ``secret``; RS256 uses ``private_key_pem`` (a PKCS8 PEM
     blob). Any other algorithm raises ``ValueError`` — we explicitly
     do not support ``none``.
+
+    ``audience`` (optional) populates the standard ``aud`` claim. When
+    set, verifiers that pass ``expected_audience=`` reject tokens whose
+    ``aud`` doesn't match. Leaving it unset preserves Phase 4 tokens
+    exactly (no ``aud`` claim emitted).
     """
     if alg == "HS256":
         if not secret:
@@ -136,6 +142,8 @@ def issue_token(
         "jti": str(uuid.uuid4()),
         "soma": {"v": 1, "bundles": bundles},
     }
+    if audience is not None:
+        claims["aud"] = audience
     return jwt.encode(claims, signing_key, algorithm=alg)
 
 
@@ -148,6 +156,7 @@ def verify_token(
     leeway: int = 60,
     issuer: str | None = "soma",
     blocklist: BlocklistBackend | None = None,
+    expected_audience: str | None = None,
 ) -> Principal:
     """Decode + validate a JWT; return a :class:`Principal`.
 
@@ -166,6 +175,15 @@ def verify_token(
     callers in CLI / tests behave unchanged. Tokens without a ``jti``
     claim (legacy / externally-issued) always pass the blocklist gate
     since there's nothing to key on.
+
+    ``expected_audience`` (optional) pins the verified ``aud`` claim to
+    a specific service string. When set, pyjwt enforces the match and
+    raises :class:`jwt.InvalidAudienceError` (a subclass of
+    :class:`jwt.InvalidTokenError`) on mismatch or missing ``aud``.
+    When unset (default), ``aud`` is not checked — tokens issued
+    without it (pre-Phase-18 or single-server deployments) keep
+    verifying unchanged, and tokens issued *with* ``aud`` still pass
+    (pyjwt's documented default).
     """
     # Belt-and-suspenders: reject alg=none before PyJWT gets a shot.
     # PyJWT 2.x already rejects 'none' unless explicitly allowed, but
@@ -189,7 +207,17 @@ def verify_token(
         raise ValueError(f"unsupported alg {alg!r}; use HS256 or RS256")
 
     # ``require`` forces exp to be present; ``verify_exp=True`` is default.
-    options = {"require": ["exp"], "verify_exp": True}
+    # ``verify_aud`` is explicitly tied to whether the caller supplied
+    # ``expected_audience``: pyjwt 2.x otherwise *rejects* tokens that
+    # carry an ``aud`` claim when the verifier passes ``audience=None``
+    # (InvalidAudienceError, "Invalid audience"). We want the opposite
+    # default — tokens with ``aud`` should still verify against legacy
+    # single-service callers who haven't opted into the check.
+    options: dict[str, object] = {
+        "require": ["exp"],
+        "verify_exp": True,
+        "verify_aud": expected_audience is not None,
+    }
     claims = jwt.decode(
         token,
         verify_key,
@@ -197,6 +225,7 @@ def verify_token(
         options=options,
         leeway=leeway,
         issuer=issuer,
+        audience=expected_audience,
     )
     soma_claims = claims.get("soma") or {}
     bundles_raw = soma_claims.get("bundles") if isinstance(soma_claims, dict) else None

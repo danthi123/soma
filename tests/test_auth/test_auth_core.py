@@ -262,6 +262,87 @@ def test_verify_accepts_unrevoked_jti(tmp_path) -> None:  # type: ignore[no-unty
     assert principal.sub == "alex"
 
 
+# ------------------------------------------------------------------
+# Phase 18 — optional `aud` claim for multi-service fleets
+# ------------------------------------------------------------------
+def test_aud_round_trip() -> None:
+    """issue with audience=X, verify with expected_audience=X => pass."""
+    token = issue_token(
+        sub="a",
+        bundles={"a": ["read"]},
+        expires_in=timedelta(minutes=5),
+        secret=SECRET,
+        audience="svc-A",
+    )
+    principal = verify_token(token, secret=SECRET, expected_audience="svc-A")
+    assert principal.sub == "a"
+
+
+def test_aud_mismatch_raises() -> None:
+    """Token aud=svc-A verified against expected_audience=svc-B => reject."""
+    token = issue_token(
+        sub="a",
+        bundles={},
+        expires_in=timedelta(minutes=5),
+        secret=SECRET,
+        audience="svc-A",
+    )
+    with pytest.raises(jwt.InvalidTokenError):
+        verify_token(token, secret=SECRET, expected_audience="svc-B")
+
+
+def test_aud_unset_on_token_fine_when_not_required() -> None:
+    """A pre-Phase-18 token (no aud) still verifies when expected_audience=None.
+
+    Backward-compat: operators who don't care about multi-service fleets
+    should see zero behaviour change.
+    """
+    token = issue_token(
+        sub="a",
+        bundles={},
+        expires_in=timedelta(minutes=5),
+        secret=SECRET,
+    )
+    principal = verify_token(token, secret=SECRET)
+    assert principal.sub == "a"
+
+
+def test_aud_required_but_missing_raises() -> None:
+    """Token with no aud + expected_audience set => InvalidTokenError.
+
+    Pyjwt's default: MissingRequiredClaimError (subclass of
+    InvalidTokenError) when the caller expects an audience the token
+    didn't declare.
+    """
+    token = issue_token(
+        sub="a",
+        bundles={},
+        expires_in=timedelta(minutes=5),
+        secret=SECRET,
+    )
+    with pytest.raises(jwt.InvalidTokenError):
+        verify_token(token, secret=SECRET, expected_audience="svc-A")
+
+
+def test_aud_set_on_token_but_verifier_unset_still_passes() -> None:
+    """Token with aud=svc-A + expected_audience=None => pass.
+
+    Pyjwt documented behaviour: aud is only checked when the caller
+    explicitly supplies audience=. A token carrying aud can therefore
+    still verify against legacy single-service verifiers that never
+    opt into the check.
+    """
+    token = issue_token(
+        sub="a",
+        bundles={"a": ["read"]},
+        expires_in=timedelta(minutes=5),
+        secret=SECRET,
+        audience="svc-A",
+    )
+    principal = verify_token(token, secret=SECRET)
+    assert principal.sub == "a"
+
+
 def test_verify_ignores_blocklist_for_tokens_without_jti() -> None:
     """Legacy tokens without a jti claim pass unaffected.
 

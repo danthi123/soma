@@ -27,49 +27,71 @@ on the user's disk, LLM-agnostic.
   without spinning up Postgres + pgvector + a RAG pipeline.
 - **Privacy-sensitive tools** where "user data goes to an external
   memory service" is a non-starter.
+- **Multi-tenant chat apps** that need one shared bundle with isolated
+  per-user scope — no extra infra, no per-user database.
 - **Researchers** interested in plastic graph memory, structural
   sparsification, or complementary memory systems as an alternative
   to transformer-KV-plus-RAG.
 
 ## How it compares
 
-| Capability                        | Chroma + RAG | Mem0 / Zep | **SOMA** |
-|-----------------------------------|:------------:|:----------:|:--------:|
-| Local-first, zero deps            | ✅           | ⚠️         | ✅       |
-| Vector retrieval                  | ✅           | ✅         | ✅       |
-| Working-memory window             | ❌           | ⚠️         | ✅       |
-| Episodic-memory store             | ❌           | ✅         | ✅       |
-| Plastic graph substrate (in-place) | ❌           | ❌         | ✅\*     |
-| Consolidation hook (learning-ready) | ❌           | ❌         | ✅       |
-| Single-file "brain" portability   | ❌           | ❌         | ✅       |
-| Swap LLM without losing memory    | ✅           | ⚠️         | ✅       |
-| Survives crashes (WAL + atomic snapshot) | ⚠️      | ⚠️         | ✅       |
-| Learns from use                   | ❌           | ⚠️         | ✅       |
+| Capability                                        | Chroma + RAG | Mem0 / Zep | **SOMA** |
+|---------------------------------------------------|:------------:|:----------:|:--------:|
+| Local-first, zero deps                            | ✅           | ⚠️         | ✅       |
+| Vector retrieval                                  | ✅           | ✅         | ✅       |
+| Working-memory window                             | ❌           | ⚠️         | ✅       |
+| Episodic-memory store                             | ❌           | ✅         | ✅       |
+| Plastic graph substrate (in-place)                | ❌           | ❌         | ✅\*     |
+| Consolidation hook (learning-ready)               | ❌           | ❌         | ✅       |
+| Single-directory "brain" portability              | ❌           | ❌         | ✅       |
+| Swap LLM without losing memory                    | ✅           | ⚠️         | ✅       |
+| Survives crashes (WAL + atomic snapshot)          | ⚠️           | ⚠️         | ✅       |
+| Conversational extract + reconcile                | ❌           | ✅         | ✅       |
+| Multi-user scoping on a shared bundle             | ❌           | ⚠️         | ✅       |
+| Per-bundle JWT auth + revocation blocklist        | ❌           | ⚠️         | ✅       |
+| Prometheus `/metrics` + importable Grafana dashboards | ❌       | ❌         | ✅       |
+| Pluggable vector backends (InProc / Qdrant / LanceDB) | ❌       | ❌         | ✅       |
+| Learns from use                                   | ❌           | ⚠️         | ✅       |
 
 ⚠️ = partial / conditional on provider.
 \* = plasticity substrate ships; current memory workload doesn't
 trigger growth/pruning thresholds (see `paper-draft.md` §5 for the
 research agenda to activate it).
 
-The differentiator today is **efficiency + the substrate for
-learning to come**. On benchmarks (see `benchmarks/reports/`):
+## Where the wins are today
 
-- **SOMA matches Chroma on retrieval quality** (identical Recall@3 /
-  MRR@3 / NDCG@3 on a labeled 50-fact / 26-query synthetic set with
-  the same sbert embedder).
-- **SOMA is 22.6× smaller on disk** (85 KB vs 1920 KB) and **1.3×
-  faster to retrieve** than Chroma at the same N. Store is **2.8×
-  faster** per op.
-- **Old memories don't rot.** A 30-day simulation with 150 facts
-  streamed in holds old-fact Recall@3 at 0.883 — essentially level
-  with recent-fact recall (0.938).
+The differentiator today is **efficiency, operational posture, and the
+substrate for learning to come**. On the benchmarks committed under
+`benchmarks/reports/`:
+
+- **Quality parity** with Chroma — identical Recall@3 / MRR@3 / NDCG@3
+  on a labeled 50-fact / 26-query synthetic set with the same sbert
+  embedder. By mathematical construction: same cosine over same vectors.
+- **Disk** — 22.6× smaller at 50 facts, narrowing to 1.4× at 20K and
+  1.42× at 100K. A bundle is `memory_embeddings.pt` plus a JSON index,
+  not an HNSW + SQLite + metadata triple.
+- **Store throughput** — 3.2–3.6× faster per op across the 1K–20K
+  range. At 100K index-only, **0.4 s vs Chroma's 23.6 min** because
+  SOMA's store is a tensor append while Chroma pays ~14 ms/op for
+  SQLite + HNSW metadata (`scale_enterprise_100k.md`).
+- **Retrieve** — HNSW backend runs 1.18–1.25× faster at 1K–20K,
+  growing to **5.12× at 100K** while holding recall (`backend_matrix.md`).
+- **Durability** — crash-safe WAL + atomic snapshot with three
+  durability modes (`sync` / `batch` / `async`). A `Ctrl-C` mid-ingest
+  loses nothing on `sync` mode.
+- **Old memories don't rot** — a 30-day streaming-facts simulation
+  holds old-fact Recall@3 at 0.883, essentially level with recent
+  recall (0.938).
+- **Recall beyond the embedder ceiling** — hybrid BM25 + rerank
+  triples R@1 on LoCoMo (0.098 → 0.287) and lifts R@5 by 21.2 pp. Peers
+  that only expose the embedder's cosine can't match this without
+  bringing their own lexical stage.
 
 The graph is plastic-by-construction (synaptogenesis, pruning,
-myelination) but under the memory-only workload the growth knobs
-don't fire — graph stays at seed size, retrieval scores stay at
-cosine-over-sbert. The graph-as-retrieval-signal is an **open
-research question** the `benchmarks/reports/paper-draft.md` document
-scopes explicitly; today's efficiency win does not depend on it.
+myelination) but under the memory-only workload the growth knobs don't
+fire — the substrate ships, the activation is an **open research
+question** `benchmarks/reports/paper-draft.md` §5 scopes explicitly.
+Today's efficiency and ops wins don't depend on it.
 
 ## Quick start
 
@@ -99,6 +121,9 @@ mem.consolidate()   # triggers Hebbian learning + structural plasticity
 mem.save("my-brain/")
 ```
 
+For the end-to-end server + JWT + ConversationalMemory + Grafana flow,
+see `docs/quickstart.md`.
+
 ## LangChain / LlamaIndex
 
 ```python
@@ -123,22 +148,15 @@ curl -X POST http://localhost:8420/store \
   -d '{"text": "user lives in Portland"}'
 ```
 
+Per-bundle JWT auth, revocation blocklist, Prometheus metrics, and
+importable Grafana dashboards (`deploy/grafana/`) are covered in the
+quickstart and `docs/auth.md` / `docs/observability.md`.
+
 ## Licensing & commercial story
 
 Pre-1.0, everything is MIT. Intent is to keep the core MIT post-1.0
 and sell hosting / multi-device sync / optional enterprise features
 rather than relicensing the core.
-
-## Roadmap
-
-- **Stage 2** — MemoryLayer API + persistent-chat demo
-- **Stage 3** — `pip install soma-memory`, LangChain + LlamaIndex
-  connectors, benchmark harness vs Chroma+RAG and Mem0
-- **Stage 4** — research side-bets (graph plasticity vs static
-  retrieval, WM vs recency-window), verbalizer-on-retrieved-context
-  retrain, Docker / deploy story
-
-Detailed roadmap: `docs/plans/2026-04-15-memory-layer-pivot.md`.
 
 ## Research appendix
 

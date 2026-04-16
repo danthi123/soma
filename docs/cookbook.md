@@ -424,6 +424,106 @@ and filter with the same key in `where` on retrieval. A JWT claim
 layer that auto-routes the `user_id` from the token is Phase 13+
 territory; the core plumbing ships here.
 
+## 19. Scale past 20K with an embedded LanceDB backend
+
+Qdrant-local warns past ~20K entries because its embedded index wasn't
+designed for that scale. The `LanceDBBackend` adapter fills the "local-
+first, no server, 10M+ scale" slot between `InProc` and a Qdrant HTTP
+deployment. Install the extra and swap the backend at construction
+time:
+
+```bash
+pip install -e ".[lancedb,sbert]"
+```
+
+```python
+from sentence_transformers import SentenceTransformer
+import torch
+
+from soma.memory import MemoryLayer
+from soma.memory.backends.lancedb import LanceDBBackend
+
+model = SentenceTransformer("all-MiniLM-L6-v2")
+def embed(text: str) -> torch.Tensor:
+    return torch.tensor(model.encode(text, convert_to_numpy=True))
+
+backend = LanceDBBackend(path="./data/lance-alice", dim=384, index_type="hnsw")
+mem = MemoryLayer(
+    embed_fn=embed,
+    embed_dim=384,
+    backend=backend,
+    bundle_path="brains/alice",
+)
+
+mem.store("alice prefers vegetarian", metadata={"user_id": "alice"})
+# Filter pushdown — LanceDB evaluates the where clause in the engine
+# instead of Python. Supports $eq / $ne / $gt / $gte / $lt / $lte / $in / $nin.
+hits = mem.retrieve("food preferences?", k=5, where={"user_id": "alice"})
+```
+
+Bundle layout: the LanceDB table directory sits inside the bundle, so
+`mem.save()` / `MemoryLayer.load()` still works unchanged — you're not
+managing a separate datastore. See [`backends.md`](backends.md) for the
+InProc / Qdrant / LanceDB decision matrix and the filter-pushdown
+fallback semantics.
+
+Benchmarked numbers (`benchmarks/reports/backend_matrix.md`, N=100K):
+
+| Backend      | Store total | Retrieve p50 (ms) | Retrieve p95 (ms) | Recall@10 |
+|--------------|------------:|------------------:|------------------:|----------:|
+| InProcFlat   | 6.7 s       | 7.71              | 12.91             | 1.000     |
+| InProcHNSW   | 6.6 s       | 0.45              | 0.80              | 0.714     |
+| LanceDBFlat  | 16.6 s      | 39.90             | 44.26             | 1.000     |
+| LanceDBHNSW  | 17.9 s      | 6.54              | 9.33              | 0.676     |
+
+Pick `InProcHNSW` for raw latency when the dataset fits in RAM;
+`LanceDBFlat` when you want exact recall plus filter pushdown and
+on-disk storage past RAM size.
+
+## 20. Operate with Prometheus + Grafana
+
+`pip install -e ".[metrics]"` exposes 18+ counters / gauges /
+histograms on `GET /metrics` — every MemoryLayer hot path plus FastAPI
+per-route timings. Schema and labels are stable across minor versions.
+
+```bash
+pip install -e ".[metrics]"
+soma serve --port 8420                 # exposes /metrics
+curl -s http://localhost:8420/metrics | grep '^soma_'
+```
+
+Three importable dashboards ship under `deploy/grafana/`:
+
+- `soma-overview.json` — RED (Rate / Errors / Duration) across the REST surface.
+- `soma-auth.json` — `soma_auth_failures_total{reason}` + revoked-token hits + success rate.
+- `soma-bundle-health.json` — USE (Utilization / Saturation / Errors):
+  WAL throughput, consolidation p95, live-entries gauge, peer-reload
+  rate, retrieve-latency heatmap.
+
+Import via the Grafana UI, `grafana-cli admin`, docker-compose
+provisioning, or a Kubernetes `ConfigMap` — the step-by-step recipes
+(plus the smoke-test procedure) live in
+[`../deploy/grafana/README.md`](../deploy/grafana/README.md). Full
+metric table and PromQL examples: [`observability.md`](observability.md).
+
+Multi-tenant deploys with thousands of bundles can collapse the
+`bundle` label to a single series per metric via
+`SOMA_METRICS_BUNDLE_LABEL_DISABLE=1`; the metric names stay the same
+so dashboards don't break.
+
+Switch stdout to structured JSON for Loki / Datadog / CloudWatch
+ingestion:
+
+```bash
+export SOMA_LOG_JSON=1
+uvicorn soma.serve:app --port 8420
+```
+
+Every `retrieve()` call emits one JSON line tagged `event=retrieve`
+with `bundle`, `backend`, `latency_ms`, `n_hits`, `hybrid_alpha`,
+`rerank_top_n`, and `cache_miss`. Schema is stable —
+`tests/test_memory/test_retrieve_log_line.py` pins it.
+
 ---
 
 Missing a recipe you want? Open an issue with the use case — most

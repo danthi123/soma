@@ -186,13 +186,26 @@ class S3ObjectStore:
     def get_stream(self, key: str) -> BinaryIO:
         """Return a readable binary stream for ``key``.
 
-        Note: the returned stream wraps boto's ``StreamingBody``, which
-        is NOT seekable — callers that need ``seek`` (e.g.
-        ``numpy.load`` on a compressed archive) should read the payload
-        into a :class:`io.BytesIO` first. The Protocol doesn't promise
-        seekability, but we call this out explicitly because the local
-        adapter returns a real file handle that IS seekable, and the
-        switch is easy to miss when moving from ``file://`` to ``s3://``.
+        The returned stream is a :class:`io.BytesIO` pre-loaded with
+        the full object body — seekable, ``tell()``-able, and usable
+        by ``torch.load`` / ``numpy.load`` / ``zipfile.ZipFile`` and
+        friends that need to seek around the payload.
+
+        This means the whole body is resident in RAM while the stream
+        is open. For very large blobs (hundred-MB+ vectors) callers
+        that want true streaming should either:
+
+        * Use :meth:`get_bytes` (explicit: "I want bytes").
+        * Use the ``local_root`` staging path — mirrors the S3 prefix
+          to a temp dir once, reads files with native ``open()``.
+        * Call ``head_object`` and multi-range-GET themselves.
+
+        The decision to slurp-into-BytesIO matches the local adapter's
+        practical behaviour: ``open("rb")`` returns a seekable file
+        handle and ``np.load`` / ``torch.load`` expect that contract.
+        Without this the S3 path would silently fail the first time a
+        user loads a bundle over ``s3://`` (torch's ``PyTorchFileReader``
+        needs seek, and ``StreamingBody`` doesn't support it).
         """
         full = self._full_key(key)
         try:
@@ -202,9 +215,12 @@ class S3ObjectStore:
                 raise KeyError(key) from exc
             raise
         body = resp["Body"]
-        # Wrap so the caller can ``with store.get_stream(...) as fh``
-        # and get deterministic close on the underlying HTTP connection.
-        return _StreamingBodyWrapper(body)
+        try:
+            data = body.read()
+        finally:
+            with contextlib.suppress(Exception):
+                body.close()
+        return io.BytesIO(data)
 
     def put_stream(self, key: str, stream: BinaryIO) -> None:
         full = self._full_key(key)
@@ -300,24 +316,11 @@ class S3ObjectStore:
             target = root / Path(rel_key)
             target.parent.mkdir(parents=True, exist_ok=True)
             try:
-                with self._client_stream(rel_key) as src, target.open("wb") as dst:
-                    while chunk := src.read(65536):
-                        dst.write(chunk)
+                data = self.get_bytes(rel_key)
             except KeyError:
                 # Raced with a concurrent delete — skip the vanished key.
                 continue
-
-    def _client_stream(self, key: str) -> BinaryIO:
-        """Internal helper that behaves like ``get_stream`` but doesn't
-        normalise the key (we already have the POSIX relative form)."""
-        full = self._full_key(key)
-        try:
-            resp = self._client.get_object(Bucket=self._bucket, Key=full)
-        except ClientError as exc:
-            if _is_not_found(exc):
-                raise KeyError(key) from exc
-            raise
-        return _StreamingBodyWrapper(resp["Body"])
+            target.write_bytes(data)
 
     def close(self) -> None:
         """Push the local staging dir (if any) back to S3 and tear it down.
@@ -351,7 +354,16 @@ class S3ObjectStore:
                 logger.warning("failed to clean up S3 staging dir %s", root)
 
     def _upload_from_stage(self, root: Path) -> None:
-        """Upload every file under ``root`` back to S3 at the matching key."""
+        """Upload every file under ``root`` back to S3 at the matching key.
+
+        Uses ``put_object`` (bytes) rather than ``upload_fileobj``
+        (threaded) because this path also runs from an ``atexit`` hook
+        and boto's ``s3transfer`` thread pool refuses to schedule new
+        work after interpreter shutdown. Staging files are typically
+        small (WAL records, bundle.lock, index.json); the large-blob
+        path goes through :meth:`put_bytes` / :meth:`put_stream`
+        directly, not the stage dir.
+        """
         for dirpath, _dirnames, filenames in os.walk(root):
             for fname in filenames:
                 # Skip ``.tmp`` siblings: the local adapter's atomic
@@ -362,15 +374,23 @@ class S3ObjectStore:
                     continue
                 abs_path = Path(dirpath) / fname
                 rel = abs_path.relative_to(root).as_posix()
-                with abs_path.open("rb") as src:
-                    self.put_stream(rel, src)
+                # Read the full file and ``put_bytes`` rather than
+                # ``put_stream``: atexit-safe (no thread pool), and
+                # the files in the stage dir are the WAL sidecar and
+                # friends — KB-MB at most.
+                self.put_bytes(rel, abs_path.read_bytes())
 
     def _atexit_close(self) -> None:
-        """atexit hook so a caller who forgot to call close() still flushes."""
-        try:
+        """atexit hook so a caller who forgot to call close() still flushes.
+
+        Swallows every exception silently. By the time atexit runs the
+        logger / stderr may already be closed, and we don't want our
+        best-effort sync to foul the interpreter-shutdown path. In
+        tests the moto mock is torn down before atexit fires and the
+        client rejects with InvalidAccessKeyId — harmless.
+        """
+        with contextlib.suppress(Exception):  # pragma: no cover - best-effort
             self.close()
-        except Exception:  # pragma: no cover - best-effort
-            logger.exception("S3ObjectStore atexit sync failed")
 
 
 # ----------------------------------------------------------------------
@@ -397,38 +417,3 @@ def _is_not_found(exc: Exception) -> bool:
     return status == 404
 
 
-class _StreamingBodyWrapper(io.RawIOBase):
-    """Adapter that makes boto's ``StreamingBody`` usable as ``BinaryIO``.
-
-    ``StreamingBody`` has a read/close surface but doesn't implement the
-    full ``io.IOBase`` contract (no ``readable()``, no ``seekable()``,
-    no context-manager ``__exit__`` on some botocore versions). Wrap it
-    so ``with store.get_stream(...) as fh`` works the same shape as the
-    local adapter's file handle.
-    """
-
-    def __init__(self, body: Any) -> None:
-        super().__init__()
-        self._body = body
-        self._closed = False
-
-    def readable(self) -> bool:
-        return not self._closed
-
-    def seekable(self) -> bool:  # pragma: no cover - pinned for doc clarity
-        return False
-
-    def read(self, size: int = -1) -> bytes:
-        if self._closed:
-            raise ValueError("I/O operation on closed stream")
-        if size is None or size < 0:
-            return bytes(self._body.read())
-        return bytes(self._body.read(size))
-
-    def close(self) -> None:
-        if self._closed:
-            return
-        self._closed = True
-        with contextlib.suppress(Exception):  # pragma: no cover - best-effort
-            self._body.close()
-        super().close()

@@ -37,7 +37,7 @@ from soma import metrics as _m
 from soma.io.text_encoder import TextEncoder, load_tokenizer
 from soma.memory.backend import FilterPushdownUnsupported, VectorBackend
 from soma.memory.wal import WAL, WalRecord
-from soma.storage import LocalFSObjectStore, ObjectStore, parse_store_url
+from soma.storage import ObjectStore, parse_store_url
 
 __all__ = ["MemoryHit", "MemoryLayer"]
 
@@ -144,17 +144,26 @@ def _coerce_store(dest: str | Path | ObjectStore) -> ObjectStore:
 def _store_local_root(store: ObjectStore) -> Path:
     """Return the local-FS root backing ``store`` for WAL / lock use.
 
-    The WAL and ``bundle.lock`` sidecar still need a real local
-    directory in Phase 30. ``LocalFSObjectStore`` exposes that as
-    :attr:`root`; any other adapter (S3 / GCS in Phases 31-32) will
-    need to stage the bundle to a temp dir before calling into the
-    legacy WAL-replay path. For now, raise so the gap is explicit.
+    The WAL and ``bundle.lock`` sidecar need a real local directory.
+    ``LocalFSObjectStore`` exposes that as :attr:`root`; the S3 / GCS
+    adapters expose a lazy staging temp dir as ``local_root`` which
+    downloads the bundle on first access and uploads changes back on
+    ``close()``. Duck-type on whichever attribute the store provides
+    so third-party adapters can plug in without inheritance.
     """
-    if isinstance(store, LocalFSObjectStore):
-        return store.root
+    # ``LocalFSObjectStore`` uses ``root``; S3ObjectStore (Phase 31)
+    # and the coming GCS adapter (Phase 32) use ``local_root`` for the
+    # lazy-staged temp dir. Prefer ``local_root`` when present — that's
+    # the explicit "please stage me" contract.
+    staged = getattr(store, "local_root", None)
+    if staged is not None:
+        return Path(staged)
+    root = getattr(store, "root", None)
+    if root is not None:
+        return Path(root)
     raise NotImplementedError(
         f"{type(store).__name__} does not expose a local bundle root; "
-        "remote-store WAL staging lands with the S3/GCS adapters."
+        "adapters must implement `local_root` (remote) or `root` (local)."
     )
 
 

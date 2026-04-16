@@ -57,12 +57,63 @@ def test_pathlib_accepted(tmp_path: Path) -> None:
     assert isinstance(store, LocalFSObjectStore)
 
 
-def test_unknown_scheme_raises() -> None:
-    """Phase 31 flips this test by adding s3:// dispatch. Keeping the
-    exact error message stable so the contract-pin is unambiguous.
-    """
-    with pytest.raises(ValueError, match="unsupported store scheme"):
-        parse_store_url("s3://bucket/prefix")
+def test_parse_store_url_dispatches_to_s3() -> None:
+    """Phase 31 flipped the Phase 30 "unsupported scheme" pin into a
+    real dispatch: ``s3://bucket/prefix`` now resolves to an
+    :class:`S3ObjectStore`. We gate the import via
+    ``pytest.importorskip`` so the test is skipped (not failed) on
+    environments without ``moto`` / ``boto3`` installed."""
+    pytest.importorskip("boto3")
+    moto = pytest.importorskip("moto")
+    import boto3 as _boto3
+
+    from soma.storage.s3 import S3ObjectStore
+
+    with moto.mock_aws():
+        _boto3.client("s3", region_name="us-east-1").create_bucket(Bucket="test-bucket")
+        store = parse_store_url("s3://test-bucket/bundle")
+        assert isinstance(store, S3ObjectStore)
+        # Round-trip a byte so we know the bucket + prefix split
+        # landed correctly.
+        store.put_bytes("probe.bin", b"ok")
+        assert store.get_bytes("probe.bin") == b"ok"
+        # Expected prefix is the path portion of the URL.
+        assert store._prefix == "bundle"
+
+
+def test_parse_store_url_s3_carries_query_params() -> None:
+    """Query-string kwargs override defaults so callers can point at a
+    non-AWS S3-compatible endpoint straight from the URL without
+    writing Python. ``region`` and ``endpoint`` are the two we pin."""
+    pytest.importorskip("boto3")
+    moto = pytest.importorskip("moto")
+
+    from soma.storage.s3 import S3ObjectStore
+
+    with moto.mock_aws():
+        store = parse_store_url(
+            "s3://test-bucket/bundle?region=eu-west-1&endpoint=http://minio:9000"
+        )
+        assert isinstance(store, S3ObjectStore)
+        assert store._client.meta.region_name == "eu-west-1"
+        assert store._client.meta.endpoint_url == "http://minio:9000"
+
+
+def test_parse_store_url_s3_bucket_only() -> None:
+    """``s3://bucket`` (no trailing prefix) is a valid form and means
+    "put bundles at the bucket root". Pin so the parser doesn't
+    accidentally stuff an empty path into the prefix slot."""
+    pytest.importorskip("boto3")
+    moto = pytest.importorskip("moto")
+    import boto3 as _boto3
+
+    from soma.storage.s3 import S3ObjectStore
+
+    with moto.mock_aws():
+        _boto3.client("s3", region_name="us-east-1").create_bucket(Bucket="test-bucket")
+        store = parse_store_url("s3://test-bucket")
+        assert isinstance(store, S3ObjectStore)
+        assert store._prefix == ""
 
 
 def test_gcs_scheme_raises_today() -> None:

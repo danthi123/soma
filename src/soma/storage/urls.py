@@ -21,25 +21,38 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from urllib.parse import unquote, urlparse
+from typing import TYPE_CHECKING
+from urllib.parse import parse_qs, unquote, urlparse
 
+from soma.storage.base import ObjectStore
 from soma.storage.local import LocalFSObjectStore
 
+if TYPE_CHECKING:  # pragma: no cover - typing only
+    pass
 
-def parse_store_url(url: str | os.PathLike[str]) -> LocalFSObjectStore:
+
+def parse_store_url(url: str | os.PathLike[str]) -> ObjectStore:
     """Resolve ``url`` to an :class:`ObjectStore`.
 
     Accepts:
 
     * A ``str`` URL (``file:///path/to/bundle``, or a plain
       ``/path/to/bundle`` / ``C:/path/to/bundle`` which is auto-prefixed
-      to ``file://``).
+      to ``file://``; ``s3://bucket/prefix`` for S3-compatible stores).
     * A ``Path`` / ``PathLike``, treated as a local filesystem path.
+
+    For ``s3://`` URLs, query-string parameters override the defaults
+    threaded to :class:`S3ObjectStore`:
+
+    * ``?region=eu-west-1`` — sets ``region_name``.
+    * ``?endpoint=http://minio:9000`` — sets ``endpoint_url``, so the
+      same adapter serves MinIO, LocalStack, Cloudflare R2,
+      DigitalOcean Spaces.
 
     Raises ``ValueError`` with the literal message ``"unsupported
     store scheme: <scheme>"`` for any URL whose scheme is not yet
-    wired into the dispatch table. Phase 31/32 flip those errors
-    into concrete adapter constructions.
+    wired into the dispatch table. Phase 32 flips ``gs://`` into a
+    concrete adapter construction.
     """
     # Pathlib.Path / PathLike → treat as a local FS path unconditionally.
     if isinstance(url, os.PathLike):
@@ -65,7 +78,41 @@ def parse_store_url(url: str | os.PathLike[str]) -> LocalFSObjectStore:
         path = _file_url_to_path(url)
         return LocalFSObjectStore(path)
 
+    if scheme == "s3":
+        return _s3_url_to_store(url)
+
     raise ValueError(f"unsupported store scheme: {scheme}")
+
+
+def _s3_url_to_store(url: str) -> ObjectStore:
+    """Turn ``s3://bucket[/prefix][?region=...&endpoint=...]`` into a store.
+
+    Split on the first ``/`` after the authority: everything before is
+    the bucket, everything after is the prefix (trailing slash stripped).
+    Query-string kwargs map to :class:`S3ObjectStore` constructor params.
+    """
+    # Import here so the core storage package doesn't hard-depend on
+    # boto3 — users who never touch S3 don't need the extra installed.
+    from soma.storage.s3 import S3ObjectStore
+
+    parsed = urlparse(url)
+    bucket = parsed.netloc
+    if not bucket:
+        raise ValueError(f"s3:// URL missing bucket: {url!r}")
+    # ``parsed.path`` is ``"/prefix/..."`` or empty. Trim the leading
+    # slash so the store's prefix stays the POSIX form we document.
+    prefix = parsed.path.lstrip("/").rstrip("/")
+    # Query-string kwargs. ``parse_qs`` returns ``dict[str, list[str]]``
+    # — we take the first value of each.
+    qs = parse_qs(parsed.query)
+    region = qs.get("region", [None])[0]
+    endpoint = qs.get("endpoint", [None])[0]
+    return S3ObjectStore(
+        bucket=bucket,
+        prefix=prefix,
+        endpoint_url=endpoint,
+        region_name=region,
+    )
 
 
 # ----------------------------------------------------------------------

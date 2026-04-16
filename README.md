@@ -143,7 +143,9 @@ mem = MemoryLayer.with_sbert(...)
 mem._faiss_index_type = "hnsw"  # or pass via constructor
 ```
 
-HNSW preserves identical Recall@3 on the labeled benchmark and runs **1.18–1.21× faster than Chroma's HNSW** across the 1K/5K/20K range tested. Defaults stay exact-flat so callers get vector-DB-equivalent recall guarantees out of the box.
+HNSW preserves identical Recall@3 on the labeled benchmark and runs **1.18–1.21× faster than Chroma's HNSW** across the 1K/5K/20K range tested, growing to **5.12× faster at 100K** under an index-only methodology that amortizes the sbert embed cost. Defaults stay exact-flat so callers get vector-DB-equivalent recall guarantees out of the box.
+
+At enterprise scale (100K entries, pre-computed embeddings), SOMA ingests the entire corpus in **0.4 seconds vs Chroma's 23.6 minutes** — SOMA's store is essentially a tensor-append while Chroma pays ~14 ms per insert for SQLite + HNSW metadata. See `benchmarks/reports/scale_enterprise_100k.md`.
 
 ## Demos
 
@@ -157,6 +159,8 @@ python scripts/demo_chat_persistent.py --dry-run  # persistent chat
 ```bash
 python -m benchmarks.run_retrieval              # vs Chroma at 50 facts
 python -m benchmarks.run_scale_vs_chroma        # vs Chroma at 1K/5K/20K
+python -m benchmarks.run_scale_enterprise --n 100000  # index-only, 100K/1M
+python -m benchmarks.run_locomo                 # real conversations (10 dialogues, 1986 Qs)
 python -m benchmarks.run_graph_ablation         # alpha sweep + stable capture
 python -m benchmarks.run_plasticity_scale       # graph growth at 100-2000
 python -m benchmarks.run_longitudinal_drift     # 30-day drift simulation

@@ -38,6 +38,7 @@ Seeds are fixed; the scripts run on a laptop without a GPU.
 | --- | --- | --- |
 | SOMA vs Chroma (50 facts, labeled) | `benchmarks/run_retrieval.py` | `benchmarks/reports/retrieval.md` |
 | SOMA vs Chroma (1K/5K/20K efficiency) | `benchmarks/run_scale_vs_chroma.py` | `benchmarks/reports/scale_vs_chroma.md` |
+| **Enterprise scale (100K+) — index-only** | `benchmarks/run_scale_enterprise.py` | `benchmarks/reports/scale_enterprise_*.md` |
 | **LoCoMo retrieval (real conversations)** | `benchmarks/run_locomo.py` | `benchmarks/reports/locomo.md` |
 | Graph re-rank sweep | `benchmarks/run_graph_ablation.py` | `benchmarks/reports/graph_ablation.md` + `graph_ablation_shuffled.md` |
 | Plasticity at scale | `benchmarks/run_plasticity_scale.py` | `benchmarks/reports/plasticity_scale.md` |
@@ -59,7 +60,7 @@ comparisons so the delta isolates storage/indexing mechanics.
 
 ## 3. Headline results
 
-**SOMA matches Chroma on retrieval quality across both synthetic and real-world conversational benchmarks (LoCoMo). It carries a durable 2.7–3.6× store-speed advantage, a disk advantage of 1.4–22× depending on N, and the opt-in HNSW backend wins on retrieve by 1.18–1.25× while preserving identical recall.**
+**SOMA matches Chroma on retrieval quality across both synthetic and real-world conversational benchmarks (LoCoMo). It carries a durable 2.7–3.6× store-speed advantage (full pipeline), a disk advantage of 1.4–22× depending on N, and the opt-in HNSW backend wins on retrieve by 1.18–1.25× while preserving identical recall. At enterprise scale (100K entries under an index-only methodology that pre-computes embeddings once), the store gap widens dramatically to ~3500× because SOMA's single-tensor + JSON-index bundle has essentially zero per-insert overhead while Chroma's SQLite + HNSW metadata layer pays ~14 ms per write regardless of embed cost.**
 
 ### 3.1 Quality (50-fact labeled benchmark)
 
@@ -125,7 +126,69 @@ The SOMA-hnsw column is opt-in via
 Chroma's exact mode without surprise; `hnsw` is the right opt-in
 for stores in the multi-K range where its build cost amortizes.
 
-### 3.3 Cross-validation on real conversational data (LoCoMo)
+### 3.3 Enterprise scale — index-only methodology (5K / 20K / 100K)
+
+The §3.2 table measures the full pipeline: every insert includes the
+sbert encode cost (~10 ms/op) because that is what a user feels when
+they call `store(text)`. At small N (≤20K) embed dominates the per-op
+cost so the index/storage differences are squeezed into a narrow
+range. To see what the index/storage layer *actually* does at scale,
+we pre-compute embeddings once and feed identical vectors to each
+system via `store_with_embedding` (native API on both SOMA and Chroma
+— no private-attr surgery).
+
+Unified table across `scale_enterprise_{5000,20000,100000}.md` (100
+topic clusters, 100 probes, post-warmup, no embed cost in any row):
+
+| N | System | Store (ms/op) | Store total | Retrieve (ms) | Disk (MB) |
+| ---: | --- | ---: | ---: | ---: | ---: |
+| 5,000 | soma-flat | **0.00** | **<0.1s** | 10.97 | **8.4** |
+| 5,000 | soma-hnsw | 0.00 | <0.1s | **5.81** | 8.4 |
+| 5,000 | chroma | 16.62 | 83.1s | 8.91 | 13.9 |
+| 20,000 | soma-flat | **0.00** | **0.1s** | 7.76 | **33.7** |
+| 20,000 | soma-hnsw | 0.00 | 0.1s | **6.34** | 33.7 |
+| 20,000 | chroma | 16.00 | 5.3min | 8.44 | 49.3 |
+| 100,000 | soma-flat | **0.00** | **0.4s** | 12.75 | **168.6** |
+| 100,000 | soma-hnsw | 0.00 | 0.4s | **5.58** | 168.6 |
+| 100,000 | chroma | 14.16 | 23.6min | 28.56 | 238.7 |
+
+Recall@5 (topic-cluster cohesion, not single-truth) is effectively
+identical across systems at every N — 0.110 at 5K, 0.116–0.122 at
+20K, 0.17–0.19 at 100K — so the table above focuses on the mechanics
+differences.
+
+**Findings:**
+
+- **Store: SOMA is 1000–3500× faster when embed cost is amortized.**
+  SOMA's `store` is essentially a tensor-append + JSON-index update
+  (~0 ms); Chroma pays 14–17 ms per insert for SQLite + HNSW metadata
+  regardless of scale. This is the *actual* index/storage mechanics
+  gap. Ratios grow with N: **~1000× at 5K, ~3180× at 20K, ~3535× at
+  100K** — Chroma's per-insert floor doesn't amortize.
+- **Retrieve scaling:** SOMA-hnsw wins at every N tested — **1.53×
+  at 5K** (5.81 ms vs 8.91 ms), **1.33× at 20K** (6.34 ms vs 8.44
+  ms), **5.12× at 100K** (5.58 ms vs 28.56 ms). SOMA-flat loses at
+  small N (linear scan over 5K–20K is slightly slower than Chroma's
+  HNSW) but crosses over by 20K (7.76 ms beats Chroma's 8.44 ms) and
+  wins 2.24× at 100K. The crossover reflects Chroma's metadata
+  overhead growing with N while FAISS kernels stay tight.
+- **Disk: 1.42–1.66× smaller across the range.** 1.66× at 5K,
+  1.46× at 20K, 1.42× at 100K — both systems approach the
+  raw-embedding floor (N × 384-d × 4B) but SOMA stays closer to it
+  at every N.
+
+The headline at enterprise scale is the store gap: **SOMA ingests
+100K entries in 0.4 seconds vs Chroma's 23.6 minutes**. Neither
+system is embedding in this test — both are indexing identical
+pre-computed vectors. This is the floor of each system's per-entry
+metadata overhead, and Chroma's is ~1400× higher than SOMA's in
+absolute ms/op.
+
+(Pending: 1M run to confirm the trend extends to the next tier —
+projected overnight based on linear extrapolation of Chroma's
+~16 ms/op constant × 1M = ~4.4 hrs for Chroma store alone.)
+
+### 3.4 Cross-validation on real conversational data (LoCoMo)
 
 The synthetic benchmarks could conceivably mask a regression on
 realistic conversational distributions. We re-validated against
@@ -209,7 +272,9 @@ From `plasticity_scale.md`, fresh system per scale point, 100 →
   these sizes; FAISS ANN kicks in at 10K+).
 - **Consolidate time scales linearly with N.** Today it buys no
   retrieval lift; an obvious follow-up is an incremental consolidate
-  that only processes new entries.
+  that only processes new entries. *(Shipped 2026-04-16: cursor-based
+  incremental consolidate is now O(1) when no new entries since the
+  last pass.)*
 
 ### 4.3 Does old memory rot?
 
@@ -233,9 +298,11 @@ contract.
 
 SOMA's current story is honest:
 
-- **Efficiency:** real, measurable, repeatable (22.6× disk, 1.3×
-  retrieve at 50 facts; same ordering holds at 500 and 2000 from the
-  scaling profile).
+- **Efficiency:** real, measurable, repeatable (22.6× disk at 50
+  facts narrowing to 1.4× at 20K full-pipeline and 1.42× at 100K
+  index-only; store 3.2–3.6× faster full-pipeline at ≤20K and ~3500×
+  faster index-only at 100K; HNSW retrieve 1.18–1.25× faster than
+  Chroma at ≤20K growing to 5.12× at 100K).
 - **Graph-as-retrieval-signal:** currently null. The plastic graph
   machinery runs but does not move Recall@3 on small corpora under
   the current consolidation objective.

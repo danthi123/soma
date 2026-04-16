@@ -907,6 +907,27 @@ class MemoryLayer:
         _m.RETRIEVE_LATENCY.labels(
             bundle=self._bundle_name, backend=backend
         ).observe(elapsed)
+        # Single structured-log line per retrieve so operators can trace
+        # every lookup in Loki/Datadog/CloudWatch without parsing format
+        # strings. Schema is pinned in ``docs/observability.md`` and
+        # ``tests/test_memory/test_retrieve_log_line.py``; adding keys is
+        # safe, removing/renaming is a breaking change.
+        logger.info(
+            "retrieve",
+            extra={
+                "event": "retrieve",
+                "bundle": self._bundle_name,
+                "query_len": len(query),
+                "k": k,
+                "has_where": where is not None,
+                "hybrid_alpha": hybrid_alpha,
+                "rerank_top_n": rerank_top_n,
+                "n_hits": len(results),
+                "backend": backend,
+                "latency_ms": round(elapsed * 1000.0, 3),
+                "cache_miss": False,
+            },
+        )
         return results
 
     def related(self, node_id: str, k: int = 5) -> list[MemoryHit]:

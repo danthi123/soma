@@ -4,6 +4,8 @@
 
 A drop-in replacement for vector-DB + RAG where the store is a plastic graph that grows and prunes with use. Store text, retrieve by meaning, and let the structure reshape itself over time. Everything local, everything on your disk, LLM-agnostic.
 
+> **60-second tour**: install, index a folder, chat — see [`docs/quickstart.md`](docs/quickstart.md). Picking SOMA over Mem0/Letta/Zep/Chroma? [`docs/comparison.md`](docs/comparison.md). Patterns + recipes: [`docs/cookbook.md`](docs/cookbook.md).
+
 ## Install
 
 ```bash
@@ -196,6 +198,11 @@ mypy src/soma/
 
 ## Docs
 
+- **[Quickstart](docs/quickstart.md)** — 60 seconds to a working chat-with-your-wiki demo
+- **[Comparison](docs/comparison.md)** — SOMA vs Chroma / Mem0 / Letta / Zep / Pinecone
+- **[Cookbook](docs/cookbook.md)** — 12 recipes for common patterns
+- **[Demos](docs/demos.md)** — every shipped demo, what it shows, when to run it
+- **[LLM backends](docs/llm-backends.md)** — Ollama / OpenAI / Anthropic / vLLM / HF
 - [Product positioning](docs/positioning.md)
 - [Pivot decision + roadmap](docs/plans/2026-04-15-memory-layer-pivot.md)
 - [Architecture whitepaper](docs/whitepaper.md)

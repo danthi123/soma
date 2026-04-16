@@ -294,6 +294,79 @@ All notable changes to SOMA are documented here.
   vars, when to prefer the in-proc limiter vs a reverse proxy,
   per-token vs per-subject tradeoff.
 
+### Added — Chroma-as-backend adapter (Phase 27)
+
+- **`ChromaBackend`** (`src/soma/memory/backends/chroma.py`, optional
+  `pip install "soma[chroma]"`): fourth pluggable vector backend
+  alongside InProc, Qdrant, and LanceDB. Targets the "Chroma shop
+  wants SOMA on top of its existing store" migration story — the
+  switching cost drops from *export + reimport* to *point MemoryLayer
+  at the same `path`*. Uses the `chromadb` Python client directly;
+  `PersistentClient(path=...)` for on-disk, or a caller-supplied
+  client for custom configs.
+- **`supports_filter_pushdown=True`** via
+  `chroma_filter.to_chroma_where`: maps SOMA's internal spec to
+  Chroma's MongoDB-style `where` clause (`$eq`/`$ne`/`$gt`/`$gte`/
+  `$lt`/`$lte`/`$in`/`$nin`), wraps multi-field / multi-op-per-field
+  dicts in `$and` (Chroma's single-op-per-field rule), and raises
+  `FilterPushdownUnsupported` on unknown ops or empty `$in`/`$nin`
+  lists so MemoryLayer cleanly falls back to its Python pre-filter
+  + `search_subset` path.
+- **Snapshot = directory copy** of the Chroma persist dir into the
+  bundle; restore = inverse. 0.5.x dropped the explicit `persist()`
+  call in favour of continuous flushing, so no explicit drain is
+  needed. Minimum pinned at `chromadb>=0.5`.
+- **Windows sqlite-lock fix in `close()`/`restore()`**: Chroma
+  caches a process-wide `SharedSystemClient` singleton that holds
+  sqlite + segment handles beyond Python-level refs. On Windows,
+  `rmtree` of the persist dir fails with WinError 32 unless we
+  call `chromadb.api.client.SharedSystemClient.clear_system_cache()`
+  after dropping refs + `gc.collect()`. Cheap on Linux/macOS so
+  the call is unconditional.
+- **Filter-pushdown contract**: when MemoryLayer adds vectors
+  without metadata (its default path), the Chroma collection has
+  nothing to filter against. Rather than silently returning zero
+  rows for a `retrieve(where=...)` call, the adapter tracks whether
+  any `add` supplied `metadatas=` and raises
+  `FilterPushdownUnsupported` when the collection is bare —
+  triggering MemoryLayer's existing fallback. Observable contract
+  stays identical to LanceDB + Qdrant.
+- **+52 tests**: 14 filter-translator, 27 adapter, 10 protocol-
+  contract rows, 1 prebuilt-client escape hatch. Parametrized
+  contract suite in `tests/test_memory/test_backend_protocol.py`
+  now covers all four pluggable adapters uniformly.
+- **Docs**: short stub in `docs/backends.md` (when-to-pick section
+  + minimal example).
+
+### Added — `soma chat` streaming (Phase 28)
+
+- **`LLMBackend.stream_generate(prompt, *, max_tokens=256)`**:
+  optional streaming capability on the Protocol. Existing backends
+  without it keep working identically — the REPL detects streaming
+  via `hasattr` and falls back to `generate()` when missing.
+- **`_run_chat_repl`**: streams chunks to stdout with `flush=True`
+  as they arrive, accumulates the joined text for `RAGAnswer.text`
+  so source citations + memory writes still see the full response.
+  KeyboardInterrupt during a stream leaves the REPL in a usable
+  state (partial text discarded, raise to outer loop).
+- **Streaming adapters** for OpenAI-compatible backends
+  (`OpenAICompatibleBackend.stream_generate` via
+  `client.chat.completions.create(stream=True)`), Ollama
+  (newline-delimited JSON over `/api/generate` with `stream=true`),
+  and Anthropic (`client.messages.stream(...)` context manager).
+  `OpenAIBackend` and LM Studio inherit streaming from the compat
+  subclass. `DryRunBackend` + `HuggingFaceBackend` deliberately
+  opt out — HF's `model.generate` is one-shot; dry-run echoes.
+- **+9 tests**: 4 REPL (stream-preferred, fallback,
+  joined-text-return, KeyboardInterrupt), 5 backend (one per
+  streaming backend + dry-run guardrail). All mock the network;
+  zero real API hits.
+- **Docs**: new streaming recipe in `docs/cookbook.md`.
+- **Known follow-up**: `scripts/demo_wiki_chat.py`'s legacy
+  `_chat` path still calls `RAGSession.ask()` synchronously. The
+  primary REPL entrypoint (`_run_chat_repl`) streams; unifying
+  the demo-script path is cheap but out-of-scope for this phase.
+
 ### Changed — Gitea Actions migration
 
 - **Moved `.github/workflows/*` → `.gitea/workflows/*`**

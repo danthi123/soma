@@ -44,7 +44,7 @@ Things that came up during the 2026-04-16 gap-closing push (Phases 1-7b) but wer
 - **Milvus adapter.** Heavier dep surface (pymilvus + server). Overlaps Qdrant's niche. ~2 d.
 - **Weaviate adapter.** Light client, heavy server. ~2 d.
 - **pgvector adapter.** High demand; filter pushdown over JSONB is its own design pass. ~3 d.
-- **Chroma-as-backend.** Migration story: let Chroma users get SOMA features on top of their existing Chroma dbs. ~2 d, mostly adapter + tests.
+- ✅ ~~**Chroma-as-backend.**~~ Shipped in Phase 27 (`d5d2c08`, `b4738c2`, `0da7d44`, `47041bb`). `ChromaBackend` adapter + `chroma_filter.to_chroma_where` translator ($eq/$ne/$gt/$gte/$lt/$lte/$in/$nin with $and wrapping for multi-field); `pip install "soma[chroma]"`; protocol contract suite row; snapshot/restore via dir copy; Windows sqlite-lock fix in close/restore.
 - ✅ ~~**`backend.search_near_id(node_id, k)`**~~ Shipped in Phase 16 (`4825cd3`..`9437ff6`). Default impl delegates to `get_vectors + search`; Qdrant overrides via `recommend` API; LanceDB via Arrow-native self-join. `MemoryLayer.related()` routed through it.
 - **Async Qdrant client (`AsyncQdrantClient`)** — waits for FastAPI routes to go async. No ETA.
 - **Per-bundle vs shared Qdrant collection.** Per-bundle is v1; shared collection with bundle_name tag scales to 1000+ bundles. Decision deferred to demand.
@@ -72,7 +72,7 @@ Things that came up during the 2026-04-16 gap-closing push (Phases 1-7b) but wer
 
 ## Tier 2 — docs / ops polish
 
-- **`soma chat` async streaming.** REPL today blocks on the full LLM response. Streaming tokens would feel better.
+- ✅ ~~**`soma chat` async streaming.**~~ Shipped in Phase 28 (`31fff9e`, `dece9ff`, `7a0a4d2`). `stream_generate(prompt)` optional Protocol method on `LLMBackend`; REPL detects via hasattr and falls back to `generate()` when missing. Streaming added for OpenAI / LM Studio (via OpenAI-compatible) / Ollama / Anthropic. Follow-up: unify `scripts/demo_wiki_chat.py`'s legacy `_chat` path.
 - ✅ ~~**Prometheus sample dashboards**~~ — Shipped in Phase 9 (`3c6441c`..`fb50482`). Three RED/USE dashboards + import guide under `deploy/grafana/`.
 - ✅ ~~**`soma bundle` subcommand group**~~ — Shipped in Phase 10 (`3987062`..`e61006b`). `list` / `info` / `delete` verbs; `migrate` still deferred.
 - **`soma bundle migrate`** — schema upgrade verb for cross-version bundle migration. Not yet needed since bundle format is stable. Revisit if we break schema.

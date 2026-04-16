@@ -321,6 +321,48 @@ def test_cli_auth_issue_rejects_bad_expires(
     assert err
 
 
+def test_cli_auth_issue_audience_populates_aud_claim(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """--audience svc-A lands on the aud claim; verifiable with expected_audience."""
+    monkeypatch.setenv("SOMA_JWT_SECRET", _TEST_SECRET)
+    rc = main(
+        [
+            "auth",
+            "issue",
+            "--sub",
+            "a",
+            "--expires",
+            "60m",
+            "--audience",
+            "svc-A",
+        ]
+    )
+    assert rc == 0
+    token = capsys.readouterr().out.strip()
+
+    from soma.auth import verify_token
+
+    principal = verify_token(token, secret=_TEST_SECRET, expected_audience="svc-A")
+    assert principal.sub == "a"
+
+
+def test_cli_auth_issue_audience_optional(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """--audience unset => no aud claim; legacy verifiers still pass."""
+    import jwt as _jwt
+
+    monkeypatch.setenv("SOMA_JWT_SECRET", _TEST_SECRET)
+    rc = main(["auth", "issue", "--sub", "a", "--expires", "60m"])
+    assert rc == 0
+    token = capsys.readouterr().out.strip()
+
+    # Decode unverified to inspect the claim set directly — no aud key.
+    claims = _jwt.decode(token, options={"verify_signature": False})
+    assert "aud" not in claims
+
+
 # ------------------------------------------------------------------
 # `soma auth revoke` / `list-revoked` / `gc`
 # ------------------------------------------------------------------

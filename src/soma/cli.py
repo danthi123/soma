@@ -237,11 +237,18 @@ def _cmd_auth_issue(args: argparse.Namespace) -> int:
             return 2
         bundles[name] = perms
 
+    # Optional --audience populates the standard JWT `aud` claim. The
+    # server enforces the match via SOMA_JWT_AUDIENCE; the token is a
+    # no-op when the server hasn't opted in, so this flag is always
+    # safe to pass.
+    audience = getattr(args, "audience", None)
+
     token = issue_token(
         sub=args.sub,
         bundles=bundles,  # type: ignore[arg-type]
         expires_in=expires_in,
         alg=alg,
+        audience=audience,
         **signing_kwargs,  # type: ignore[arg-type]
     )
     print(token)
@@ -751,6 +758,16 @@ def build_parser() -> argparse.ArgumentParser:
         required=True,
         metavar="SPEC",
         help="Token TTL: 30d | 7d | 24h | 60m",
+    )
+    p_auth_issue.add_argument(
+        "--audience",
+        default=None,
+        metavar="SVC",
+        help=(
+            "Optional JWT `aud` claim. Pin this to a service id when a "
+            "single signing secret serves multiple servers; verifiers "
+            "with SOMA_JWT_AUDIENCE set reject mismatched tokens."
+        ),
     )
     p_auth_issue.set_defaults(func=_cmd_auth_issue)
 

@@ -35,6 +35,11 @@ Environment variables:
                           token is additionally checked against the
                           blocklist (poll cadence ~30s). Unset = no
                           revocation (pre-Phase-4.1 behaviour).
+    SOMA_JWT_BLOCKLIST_HASHED — ``1`` to write sha256(jti) at rest instead
+                          of plaintext (Phase 18). Default = off.
+    SOMA_JWT_AUDIENCE   — pin the verifier to a specific ``aud`` claim
+                          (Phase 18). When set, tokens without a matching
+                          ``aud`` are rejected. Unset = no audience check.
     SOMA_CORS_ORIGINS   — comma-separated allow-list for the browser
                           CORS middleware (default: http://localhost:*).
 
@@ -91,6 +96,11 @@ try:
     JWT_LEEWAY = int(os.environ.get("SOMA_JWT_LEEWAY", "60"))
 except ValueError:
     JWT_LEEWAY = 60
+# Optional: pin the verifier to a specific `aud` claim (Phase 18). When
+# set, every token must carry a matching aud or it is rejected with the
+# same 401 path as any other InvalidTokenError. Unset (default) keeps
+# pre-Phase-18 behaviour — the aud claim is not checked at all.
+JWT_AUDIENCE = os.environ.get("SOMA_JWT_AUDIENCE", "").strip() or None
 # Resolved once at import time — rotating the key file requires a
 # server restart, which is the intended operator story.
 _JWT_PUBLIC_KEY_PEM: bytes | None = None
@@ -258,6 +268,7 @@ def _try_verify_jwt(token: str) -> Principal | None:
             secret=JWT_SECRET,
             leeway=JWT_LEEWAY,
             blocklist=_blocklist,
+            expected_audience=JWT_AUDIENCE,
         )
     if JWT_ALG == "RS256" and _JWT_PUBLIC_KEY_PEM is not None:
         return verify_token(
@@ -266,6 +277,7 @@ def _try_verify_jwt(token: str) -> Principal | None:
             public_key_pem=_JWT_PUBLIC_KEY_PEM,
             leeway=JWT_LEEWAY,
             blocklist=_blocklist,
+            expected_audience=JWT_AUDIENCE,
         )
     return None
 

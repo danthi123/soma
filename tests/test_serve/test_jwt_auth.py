@@ -53,6 +53,7 @@ def _fresh_serve(monkeypatch: pytest.MonkeyPatch, **env: str) -> object:
         "SOMA_JWT_PUBLIC_KEY_PATH",
         "SOMA_JWT_LEEWAY",
         "SOMA_JWT_BLOCKLIST_PATH",
+        "SOMA_JWT_AUDIENCE",
     ):
         monkeypatch.delenv(key, raising=False)
     for k, v in env.items():
@@ -448,6 +449,104 @@ def test_revocation_metric_counter_increments(
 
     if m.prometheus_available:
         assert after >= before + 1
+
+
+# ------------------------------------------------------------------
+# Phase 18 — SOMA_JWT_AUDIENCE plumbing
+# ------------------------------------------------------------------
+def test_jwt_audience_match_passes(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Server SOMA_JWT_AUDIENCE=svc-A + token aud=svc-A => 200."""
+    reloaded = _fresh_serve(
+        monkeypatch,
+        SOMA_JWT_SECRET=_SECRET,
+        SOMA_JWT_AUDIENCE="svc-A",
+    )
+    client = TestClient(reloaded.app)
+    token = issue_token(
+        sub="alex",
+        bundles={"__default__": ["write"]},
+        expires_in=timedelta(minutes=5),
+        secret=_SECRET,
+        audience="svc-A",
+    )
+    r = client.post(
+        "/store",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"text": "aud match"},
+    )
+    assert r.status_code == 200, r.text
+
+
+def test_jwt_audience_mismatch_401(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Server SOMA_JWT_AUDIENCE=svc-A + token aud=svc-B => 401."""
+    reloaded = _fresh_serve(
+        monkeypatch,
+        SOMA_JWT_SECRET=_SECRET,
+        SOMA_JWT_AUDIENCE="svc-A",
+    )
+    client = TestClient(reloaded.app)
+    token = issue_token(
+        sub="alex",
+        bundles={"__default__": ["write"]},
+        expires_in=timedelta(minutes=5),
+        secret=_SECRET,
+        audience="svc-B",
+    )
+    r = client.post(
+        "/store",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"text": "wrong aud"},
+    )
+    assert r.status_code == 401, r.text
+    assert r.headers.get("WWW-Authenticate", "").lower().startswith("bearer")
+
+
+def test_jwt_audience_missing_on_token_401(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Server expects aud but token has none => 401 (pyjwt MissingRequiredClaimError)."""
+    reloaded = _fresh_serve(
+        monkeypatch,
+        SOMA_JWT_SECRET=_SECRET,
+        SOMA_JWT_AUDIENCE="svc-A",
+    )
+    client = TestClient(reloaded.app)
+    token = issue_token(
+        sub="alex",
+        bundles={"__default__": ["write"]},
+        expires_in=timedelta(minutes=5),
+        secret=_SECRET,
+        # audience deliberately omitted
+    )
+    r = client.post(
+        "/store",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"text": "no aud"},
+    )
+    assert r.status_code == 401, r.text
+
+
+def test_jwt_audience_unset_on_server_ignores_aud(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """SOMA_JWT_AUDIENCE unset => token with aud still verifies.
+
+    Backward-compat: a multi-service token should keep working on a
+    legacy single-service server that hasn't opted into the check.
+    """
+    reloaded = _fresh_serve(monkeypatch, SOMA_JWT_SECRET=_SECRET)
+    client = TestClient(reloaded.app)
+    token = issue_token(
+        sub="alex",
+        bundles={"__default__": ["write"]},
+        expires_in=timedelta(minutes=5),
+        secret=_SECRET,
+        audience="svc-A",
+    )
+    r = client.post(
+        "/store",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"text": "aud ignored"},
+    )
+    assert r.status_code == 200, r.text
 
 
 def test_blocklist_path_unset_behaves_as_before(

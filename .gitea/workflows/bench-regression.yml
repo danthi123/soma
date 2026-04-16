@@ -14,7 +14,7 @@ on:
       - 'src/soma/io/**'
       - 'benchmarks/**'
       - 'scripts/check_bench_regressions.py'
-      - '.github/workflows/bench-regression.yml'
+      - '.gitea/workflows/bench-regression.yml'
   schedule:
     - cron: '0 8 * * *'  # 08:00 UTC nightly
   workflow_dispatch:

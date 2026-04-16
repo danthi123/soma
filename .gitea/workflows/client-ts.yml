@@ -8,7 +8,7 @@ on:
     paths:
       - 'src/soma/serve.py'
       - 'clients/typescript/**'
-      - '.github/workflows/client-ts.yml'
+      - '.gitea/workflows/client-ts.yml'
 
 jobs:
   build-publish:

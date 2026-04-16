@@ -20,7 +20,7 @@ from typing import Any
 
 try:
     from llama_index.core.retrievers import BaseRetriever
-    from llama_index.core.schema import NodeWithScore, TextNode
+    from llama_index.core.schema import NodeWithScore, QueryBundle, TextNode
 
     _HAS_LLAMAINDEX = True
 except ImportError:
@@ -47,8 +47,8 @@ if _HAS_LLAMAINDEX:
             self._memory = memory
             self._k = k
 
-        def _retrieve(self, query_str: str, **kwargs: Any) -> list[NodeWithScore]:  # type: ignore[name-defined]
-            hits = self._memory.retrieve(query_str, k=self._k)
+        def _retrieve(self, query_bundle: QueryBundle, **kwargs: Any) -> list[NodeWithScore]:  # type: ignore[name-defined,override]
+            hits = self._memory.retrieve(query_bundle.query_str, k=self._k)
             return [
                 NodeWithScore(
                     node=TextNode(

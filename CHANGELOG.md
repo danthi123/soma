@@ -4,6 +4,51 @@ All notable changes to SOMA are documented here.
 
 ## [Unreleased] — 2026-04-16
 
+### Added — pluggable vector backends (Phase 6)
+
+- **`VectorBackend` protocol** (`src/soma/memory/backend.py`):
+  runtime-checkable interface every adapter implements. Numpy
+  `float32` at the boundary (never torch), so adapters that speak
+  arrow/C/HTTP stay out of torch's import graph. Raises
+  `FilterPushdownUnsupported(op=?, field=?)` when a backend can't
+  translate a `where` clause — MemoryLayer catches and falls back to
+  its Python pre-filter + `search_subset` path.
+- **`InProcBackend`** (`src/soma/memory/backends/inproc.py`): default
+  adapter. Pure numpy vector matrix + lazy FAISS (flat / hnsw).
+  `supports_filter_pushdown=False`. Snapshot writes
+  `memory_embeddings.pt` bit-identical to pre-Phase-6 bundles so old
+  bundles keep loading.
+- **`QdrantBackend`** (`src/soma/memory/backends/qdrant.py`, optional
+  `pip install soma[qdrant]`): three modes in one class — `memory`
+  (embedded in-proc core), `local` (on-disk, warns past 20K), `http`
+  (the scale path). `supports_filter_pushdown=True`; filter
+  translator in `qdrant_filter.py` handles every `_COMPARE_OPS` op
+  plus `$in`/`$nin`. Per-bundle collection, deterministic int64
+  point-ids, `node_id` stored in payload so rehydration via `scroll`
+  works.
+- **`MemoryLayer.backend=`** (`src/soma/memory/api.py`): new kwarg
+  routes every vector op (add / remove / search / get_vectors /
+  subset) through the supplied backend. Default = `InProcBackend`
+  with the same `faiss_*` kwargs so zero-change upgrades keep
+  working.
+- **Filter pushdown dispatch** in `retrieve(where=...)`: tries the
+  backend first, falls back cleanly on `FilterPushdownUnsupported`.
+  Parity tests in `tests/test_memory/test_filter_parity.py` pin
+  equivalence across paths.
+- **`_soma_activations` keyed by `node_id`** (was positional list):
+  unlocks backends that soft-delete or reorder. `consolidate`
+  cursor remains an int into the ordered text list and is clamped
+  on `forget`.
+- **`tests/test_memory/test_backend_protocol.py`**,
+  `test_inproc_backend.py`, `test_qdrant_backend.py`,
+  `test_qdrant_filter.py`, `test_qdrant_http.py`,
+  `test_soma_activations_keying.py`, `test_filter_parity.py` —
+  full TDD coverage for the phase. HTTP-mode tests skip unless
+  `SOMA_QDRANT_TEST_URL` env is set.
+- **`docs/backends.md`**: protocol overview, when-to-pick-which
+  table, InProc vs Qdrant positioning, filter-pushdown semantics,
+  and a "write your own backend" walkthrough.
+
 ### Added — TypeScript client
 
 - **`@soma-ai/client`** (new `clients/typescript/` package): thin

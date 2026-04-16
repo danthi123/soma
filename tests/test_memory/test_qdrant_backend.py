@@ -168,3 +168,19 @@ def test_clear_empties_store() -> None:
 
 def test_dim_matches_constructor() -> None:
     assert QdrantBackend(mode="memory", dim=13).dim == 13
+
+
+def test_qdrant_backend_raises_clear_error_when_dep_missing(monkeypatch) -> None:
+    """Simulate qdrant-client being absent: instantiation must fail
+    with a pip install hint so users know what extra to add."""
+    import soma.memory.backends.qdrant as qdrant_module
+
+    def _fake_ensure():
+        raise ImportError(
+            "QdrantBackend requires qdrant-client. "
+            "Install with: pip install 'soma[qdrant]'"
+        )
+
+    monkeypatch.setattr(qdrant_module, "_ensure_qdrant_available", _fake_ensure)
+    with pytest.raises(ImportError, match="soma\\[qdrant\\]"):
+        QdrantBackend(mode="memory", dim=8)

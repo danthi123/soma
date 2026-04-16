@@ -75,6 +75,13 @@ serve = [
 ann = [
     "faiss-cpu>=1.7.0",
 ]
+qdrant = [
+    # QdrantBackend adapter — optional extra. Without this, SOMA runs on
+    # the default InProcBackend (FAISS + numpy) which needs no extra
+    # setup. Install with `pip install soma[qdrant]` to unlock the HTTP
+    # scale path and local-file mode. See docs/backends.md.
+    "qdrant-client>=1.10",
+]
 langchain = [
     "langchain-core>=0.1.0",
 ]
@@ -149,5 +156,6 @@ module = [
     "fastapi", "fastapi.*",
     "uvicorn", "uvicorn.*",
     "faiss", "faiss.*",
+    "qdrant_client", "qdrant_client.*",
 ]
 ignore_missing_imports = true

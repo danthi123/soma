@@ -364,6 +364,79 @@ class LanceDBBackend:
             for row in rows
         ]
 
+    def search_near_id(
+        self,
+        node_id: str,
+        k: int,
+        *,
+        exclude_self: bool = True,
+    ) -> list[tuple[str, float]]:
+        """In-process fast path for neighbour-of-stored-id lookup.
+
+        LanceDB doesn't expose a server-side ``recommend`` the way
+        Qdrant does, but the two-step pattern is still cheaper than
+        the default helper because both steps stay inside the Rust
+        core: we pull the pivot row via a ``WHERE id = ?`` Arrow
+        filter (no Python-side vector deserialization for the lookup
+        step — we keep the Arrow buffer) and then feed it back into
+        ``table.search(vector).limit(...)``. The win vs the default
+        is avoiding the numpy round-trip the Protocol default has to
+        take to stay adapter-agnostic.
+
+        ``exclude_self`` is pushed down as a ``WHERE id != '...'``
+        predicate so the planner can skip the pivot row before
+        distance computation.
+        """
+        if k <= 0 or self._table is None:
+            return []
+
+        import pyarrow.compute as pc
+
+        self._maybe_build_index()
+
+        # Step 1: pull the pivot vector straight from the Arrow table.
+        # Using ``to_arrow`` with a pushdown filter keeps the lookup
+        # inside LanceDB; the result is a (0 or 1)-row Arrow table
+        # whose ``vector`` column is a FixedSizeList we can feed back
+        # into ``search`` with a single tolist().
+        literal = _sql_string_literal(node_id)
+        try:
+            arr_tbl = self._table.to_arrow()
+        except Exception:
+            return []
+        pivot = arr_tbl.filter(pc.equal(arr_tbl["id"], node_id))
+        if pivot.num_rows == 0:
+            return []
+        pivot_vec = pivot["vector"][0].as_py()
+
+        # Step 2: normal ANN search against the same table. Exclude the
+        # pivot id server-side rather than over-fetching + filtering.
+        builder = self._table.search(np.asarray(pivot_vec, dtype=np.float32))
+        try:
+            builder = builder.distance_type(self._distance)
+        except AttributeError:
+            builder = builder.metric(self._distance)  # type: ignore[attr-defined]
+        if exclude_self:
+            builder = builder.where(f"id != {literal}")
+            limit = k
+        else:
+            limit = k
+        try:
+            rows = builder.limit(limit).to_list()
+        except Exception:
+            # Same schema-error guard as ``search``; fall back to
+            # empty rather than crashing the caller.
+            return []
+        return [
+            (
+                str(row["id"]),
+                _distance_to_score(
+                    float(row["_distance"]), metric=self._distance
+                ),
+            )
+            for row in rows
+        ][:k]
+
     # ------------------------------------------------------------------
     # Snapshot / restore
     # ------------------------------------------------------------------

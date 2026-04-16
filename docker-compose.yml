@@ -1,0 +1,13 @@
+services:
+  soma-memory:
+    build: .
+    ports:
+      - "8420:8420"
+    volumes:
+      - soma-data:/app/data
+    environment:
+      - SOMA_BUNDLE_PATH=/app/data/memory
+      - SOMA_EMBED_MODEL=all-MiniLM-L6-v2
+
+volumes:
+  soma-data:

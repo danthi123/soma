@@ -26,12 +26,16 @@ behavioural contract.
 
 from __future__ import annotations
 
+import concurrent.futures
 import json
 import logging
+from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 if TYPE_CHECKING:
+    from types import TracebackType
+
     from soma.llm.backends import LLMBackend
     from soma.memory.api import MemoryHit, MemoryLayer
 
@@ -76,12 +80,23 @@ class ConversationalMemory:
       session by default and filtering out superseded entries.
     - :meth:`list_facts` / :meth:`get_summary` — introspection.
     - :meth:`supersede` / :meth:`clear_session` — lifecycle helpers.
-    - :meth:`flush` — durability hand-off (sync mode: no-op).
+    - :meth:`flush` — drain pending async extractions (sync mode: no-op
+      beyond the underlying MemoryLayer flush).
+    - :meth:`close` / ``__enter__`` / ``__exit__`` — context-manager
+      lifecycle; drains the background executor and shuts it down.
 
     The ``extractor_llm`` kwarg lets callers pin a stronger model for
     the two structured-JSON steps (extract + reconcile) while leaving
     free-form chat + summary on a smaller model. When unset, the
     main ``llm`` is used for everything (backward compat).
+
+    ``extraction_mode="async"`` (Phase 22) runs extract+reconcile on a
+    single background thread so ``add_message`` can return as soon as
+    the raw turn is persisted. Raw-turn writes and summary rollover
+    stay synchronous. Because of the GIL the speedup is **I/O overlap
+    with the LLM network call**, not CPU parallelism — local CPU-bound
+    backends will not see a win. ``max_workers=1`` is pinned so
+    within-session extraction order is preserved.
     """
 
     def __init__(
@@ -97,6 +112,7 @@ class ConversationalMemory:
         summary_every: int = 20,
         resummarize_every: int = 5,
         extract_assistant: bool = False,
+        extraction_mode: Literal["sync", "async"] = "sync",
     ) -> None:
         """Build a ConversationalMemory wrapper.
 
@@ -132,6 +148,18 @@ class ConversationalMemory:
             the previous one.
         :param extract_assistant: if True, also extract facts from
             ``role="assistant"`` turns; defaults to user-only.
+        :param extraction_mode: ``"sync"`` (default) runs LLM
+            extract+reconcile inline on :meth:`add_message` — cheapest
+            path, strict ordering, pre-Phase-22 behaviour. ``"async"``
+            offloads extract+reconcile to a single-worker
+            :class:`concurrent.futures.ThreadPoolExecutor` so
+            :meth:`add_message` returns as soon as the raw turn is
+            persisted; call :meth:`flush` (or use the context-manager
+            protocol) before reading extracted facts. Python's GIL
+            means the async win is I/O overlap with the LLM network
+            call, not CPU parallelism — local CPU-bound backends will
+            not benefit. ``max_workers`` is pinned to 1 so within-
+            session extraction order is preserved.
         """
         self._memory = memory
         self._llm = llm
@@ -161,6 +189,28 @@ class ConversationalMemory:
         self._summaries_generated: int = 0
         self._extract_assistant: bool = bool(extract_assistant)
         self._turn_counter: int = 0
+
+        # Phase 22: optional async extraction. ``max_workers=1`` is
+        # deliberate — it preserves within-session extraction ordering
+        # (each add_message submits one future; FIFO serialization
+        # matches submission order). The executor thread calls through
+        # to the MemoryLayer directly; MemoryLayer is thread-safe per
+        # Phase 1's WAL design so cross-thread writes are fine.
+        if extraction_mode not in ("sync", "async"):
+            raise ValueError(
+                f"extraction_mode must be 'sync' or 'async', got {extraction_mode!r}"
+            )
+        self._extraction_mode: Literal["sync", "async"] = extraction_mode
+        self._executor: ThreadPoolExecutor | None = None
+        # list appended-to by the submitting thread and drained by
+        # flush(). Python list.append is atomic under the GIL so a
+        # dedicated lock isn't required here.
+        self._pending_futures: list[Future[None]] = []
+        if extraction_mode == "async":
+            self._executor = ThreadPoolExecutor(
+                max_workers=1,
+                thread_name_prefix=f"soma-conv-{self._session_id}",
+            )
 
     # ------------------------------------------------------------------
     # Multi-user scoping helpers (Phase 12)
@@ -505,9 +555,15 @@ class ConversationalMemory:
 
         should_extract = role == "user" or self._extract_assistant
         if should_extract:
-            facts = self._extract_facts(text)
-            for f in facts:
-                self._reconcile(f, user_id=effective_user)
+            if self._executor is None:
+                self._run_extract_reconcile(text, user_id=effective_user)
+            else:
+                fut = self._executor.submit(
+                    self._run_extract_reconcile,
+                    text,
+                    user_id=effective_user,
+                )
+                self._pending_futures.append(fut)
 
         self._turn_counter += 1
         if (
@@ -515,6 +571,22 @@ class ConversationalMemory:
             and self._turn_counter % self._summary_every == 0
         ):
             self._roll_summary(user_id=effective_user)
+
+    def _run_extract_reconcile(
+        self, text: str, *, user_id: str | None = None
+    ) -> None:
+        """Extract atomic facts from ``text`` and reconcile each.
+
+        Single helper so :meth:`add_message` can either call it inline
+        (sync mode) or submit it to the background executor (async
+        mode). In async mode this runs on the executor thread; both
+        ``self._extractor_llm.generate`` and the reconcile writes to
+        ``self._memory`` are safe to call from a worker thread — the
+        MemoryLayer has per-Phase-1 WAL-backed thread safety.
+        """
+        facts = self._extract_facts(text)
+        for f in facts:
+            self._reconcile(f, user_id=user_id)
 
     def _roll_summary(self, *, user_id: str | None = None) -> None:
         """Summarize recent raw turns, store as a ``type=summary`` entry.
@@ -693,7 +765,15 @@ class ConversationalMemory:
         Superseded entries ARE removed here — they're scoped to the
         session being cleared, and retention is a separate concern
         (see docs/plans/... follow-up on GDPR-grade forgetting).
+
+        In async-extraction mode any pending extract+reconcile futures
+        are drained **before** the wipe so facts in flight at the time
+        of the call land + are then deleted rather than leaking in
+        after the clear.
         """
+        # Drain pending async extractions first so late-arriving facts
+        # don't resurrect a just-cleared session. Sync mode is a no-op.
+        self.flush()
         to_delete: list[str] = []
         for nid in list(self._memory._ids):
             hit = self._memory.get(nid)
@@ -716,14 +796,73 @@ class ConversationalMemory:
                 removed += 1
         return removed
 
-    def flush(self) -> None:
-        """Durability hand-off. In sync mode this is a no-op — the
-        underlying MemoryLayer has already fsynced on every write.
-        Stage 2's async/batch mode overrides this to drain pending work.
+    def flush(self, timeout: float | None = None) -> None:
+        """Drain pending async extractions and hand off for durability.
+
+        In sync mode (default) this only passes through to
+        :meth:`MemoryLayer.flush` — the underlying layer has already
+        fsynced on every write, but this call lets batched-mode
+        bundles fsync pending state on orderly shutdown.
+
+        In async mode this additionally blocks on every pending
+        extract+reconcile future. Any exception raised on an executor
+        thread is re-raised here on the first future to surface it —
+        callers expecting fire-and-forget semantics should wrap
+        ``flush()`` in try/except. Futures that have not completed
+        within ``timeout`` (seconds; ``None`` = wait indefinitely) are
+        left in ``self._pending_futures`` for a later :meth:`flush`.
         """
+        if self._executor is not None and self._pending_futures:
+            done, not_done = concurrent.futures.wait(
+                self._pending_futures, timeout=timeout,
+            )
+            # Keep the not-yet-done futures for the next flush; drop the
+            # completed ones after surfacing any exceptions they held.
+            self._pending_futures = list(not_done)
+            for fut in done:
+                # ``result()`` re-raises whatever the worker raised, so
+                # operator errors (LLM crash, parse blow-up, transient
+                # network) surface here rather than being swallowed.
+                fut.result()
         # Pass through to the MemoryLayer so an attached bundle fsyncs
         # any batched-mode state on callers' orderly shutdown.
         self._memory.flush()
+
+    def close(self) -> None:
+        """Flush pending extractions and shut down the background executor.
+
+        Safe to call multiple times — subsequent calls are no-ops once
+        the executor has been torn down. In sync mode :meth:`close`
+        still calls :meth:`MemoryLayer.flush` via :meth:`flush` so the
+        durability hand-off works the same either way.
+        """
+        if self._executor is None:
+            # Sync mode (or already-closed async): still pass through
+            # to the MemoryLayer so callers get the durability hand-off
+            # whether or not they ever turned async extraction on.
+            self._memory.flush()
+            return
+        try:
+            self.flush()
+        finally:
+            # shutdown(wait=True) blocks until the single worker
+            # finishes. We call it even if flush() re-raised so a
+            # misbehaving extractor doesn't leak the executor thread.
+            self._executor.shutdown(wait=True)
+            self._executor = None
+
+    def __enter__(self) -> ConversationalMemory:
+        """Enter the context manager; returns ``self`` unchanged."""
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> None:
+        """Exit: drain pending work and shut down the executor."""
+        self.close()
 
     # ------------------------------------------------------------------
     # Helpers

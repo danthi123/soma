@@ -1,5 +1,22 @@
 # SOMA — Self-Organizing Memory Architecture
 
+## Current Positioning (2026-04-15)
+
+SOMA is being repositioned as a **local-first, learning agent-memory
+layer** — a drop-in replacement for vector-DB-plus-RAG where the
+store is a plastic graph that grows and prunes with use. The
+research-grade "brain-inspired developmental AI" framing (below) is
+the engineering substrate, not the product story.
+
+- Product-facing pitch: `docs/positioning.md`
+- Pivot decision + roadmap: `docs/plans/2026-04-15-memory-layer-pivot.md`
+- Historical hybrid-brain framing: `docs/progress/HYBRID_PIVOT.md`
+
+Anything under `src/soma/core/`, `src/soma/memory/`,
+`src/soma/growth/`, `src/soma/io/`, `src/soma/deploy/` is load-bearing
+for the memory layer and must stay working. The verbalizer +
+bootstrap trainer stay in-tree but are off the critical path.
+
 ## What This Is
 
 A brain-inspired developmental AI system built on PyTorch. NOT a language model — a dynamic processing system that grows through interaction via structural plasticity, complementary memory systems, and intrinsic motivation. Target: single NVIDIA RTX 3090 (24GB VRAM).

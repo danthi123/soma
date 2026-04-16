@@ -53,3 +53,8 @@ runs/
 
 # Autonomous loop runtime state
 .soma-loop/
+
+# Training-run artifacts (verbalizer checkpoints, loss CSVs, step bundles).
+# Reports that summarise a run live under reports/ and are tracked;
+# the raw per-step artifacts stay out of git.
+artifacts/

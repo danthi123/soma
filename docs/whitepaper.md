@@ -7,6 +7,21 @@
 
 ---
 
+> **Reader orientation (2026-04-15).** This document is the original
+> research whitepaper. It describes the architecture that shipped as
+> the `soma` package and remains the substrate of everything built on
+> top. It does *not* reflect how the project is currently positioned as
+> a product: after the three-regime bootstrap experiments on
+> 2026-04-15 the project pivoted to framing SOMA as a local-first,
+> learning agent-memory layer (a vector-DB-plus-RAG replacement), not
+> as a hybrid cognition pipeline. The pivot rationale and roadmap
+> live in `docs/plans/2026-04-15-memory-layer-pivot.md`; the
+> product-facing story lives in `docs/positioning.md`. Read those
+> first if you want the current direction; read on here for the
+> engineering foundation.
+
+---
+
 ## 1. Executive Summary
 
 SOMA is a novel AI architecture designed from first principles around the brain's developmental mechanisms rather than the transformer paradigm. Unlike conventional models that are trained on massive static datasets and then deployed frozen, SOMA is a dynamic system that grows through interaction. It starts from a minimal seed architecture and self-organizes over time — forming new connections, pruning unused ones, consolidating memories, and developing increasingly complex capabilities through staged exposure to experience.

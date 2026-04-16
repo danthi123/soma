@@ -4,6 +4,25 @@ All notable changes to SOMA are documented here.
 
 ## [Unreleased] — 2026-04-16
 
+### Added — TypeScript client
+
+- **`@soma-ai/client`** (new `clients/typescript/` package): thin
+  wrapper over `openapi-fetch` with types generated from the live
+  SOMA `/openapi.json`. Works in Node 18+, browsers, Deno, Bun, and
+  Cloudflare Workers. `createClient({ baseUrl, token })` papers over
+  all three server auth modes (JWT preferred, legacy `SOMA_API_KEY`
+  fallback, open-mode default). Full path / body / response /
+  401-error type inference; vitest covers both compile-time type
+  shapes and an msw-stubbed runtime round-trip.
+- **OpenAPI snapshot** (`clients/typescript/openapi.json`) committed
+  alongside the generated `src/schema.d.ts`. CI workflow
+  `.github/workflows/client-ts.yml` re-snapshots on every PR to
+  `src/soma/serve.py` and fails fast on drift; publishes on `v*` tag
+  push with `--provenance`.
+- Reference docs: [`docs/clients.md`](docs/clients.md) (install, auth
+  modes, multi-tenant usage, retry middleware, browser notes, scope
+  claim checklist).
+
 ### Added — conversational memory
 
 - **`ConversationalMemory` wrapper** (`src/soma/memory/conversational.py`):

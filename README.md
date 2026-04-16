@@ -188,6 +188,30 @@ OpenTelemetry spans via `pip install "soma[otel]"` + `SOMA_OTEL_ENABLED=1`.
 See [`docs/observability.md`](docs/observability.md) for the full
 metric table + Grafana examples + log schema.
 
+### TypeScript client
+
+```bash
+npm install @soma-ai/client
+```
+
+```ts
+import { createClient } from "@soma-ai/client";
+
+const soma = createClient({
+  baseUrl: "http://localhost:8420",
+  token: process.env.SOMA_TOKEN,
+});
+
+await soma.POST("/store", { body: { text: "Paris is the capital of France." } });
+const { data } = await soma.POST("/retrieve", { body: { query: "capital?", k: 3 } });
+console.log(data?.hits);
+```
+
+Works in Node 18+, browsers, Deno, Bun, and Cloudflare Workers. Types
+are regenerated from the live `/openapi.json` on every PR so the
+client never drifts from the server — see
+[`docs/clients.md`](docs/clients.md).
+
 ## Cloud deploy (<5 min)
 
 [![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/new/template?template=https://github.com/soma-ai/SOMA&envs=SOMA_API_KEY)

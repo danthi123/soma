@@ -35,7 +35,7 @@ if TYPE_CHECKING:
     from soma.llm.backends import LLMBackend
     from soma.memory.api import MemoryLayer
 
-from soma.memory.conversational_prompts import EXTRACT_PROMPT
+from soma.memory.conversational_prompts import EXTRACT_PROMPT, RECONCILE_PROMPT
 
 logger = logging.getLogger("soma.memory")
 
@@ -168,3 +168,321 @@ class ConversationalMemory:
                 },
             )
         return facts
+
+    # ------------------------------------------------------------------
+    # Internals - reconcile
+    # ------------------------------------------------------------------
+    def _add_fact(
+        self,
+        text: str,
+        *,
+        category: str = "other",
+        extra_meta: dict[str, object] | None = None,
+    ) -> str:
+        """Store a new fact entry tagged with this session. Returns node_id."""
+        meta: dict[str, object] = {
+            "session_id": self._session_id,
+            "type": "fact",
+            "category": category,
+        }
+        if extra_meta:
+            meta.update(extra_meta)
+        return self._memory.store(text, metadata=meta)
+
+    def _reconcile(self, fact: ExtractedFact) -> str | None:
+        """Decide what to do with ``fact`` given the top-k nearest stored entries.
+
+        Threshold short-circuits before any LLM round-trip:
+
+        - ``max_score >= near_dup_threshold`` (default 0.92) -> return
+          ``None``; the fact is effectively a duplicate.
+        - ``max_score < ambiguous_threshold`` (default 0.75) OR no
+          candidates -> ADD without asking the LLM.
+
+        In the ambiguous range we call the LLM once with RECONCILE_PROMPT
+        and dispatch on ``op``:
+
+        - ``ADD`` -> store new.
+        - ``UPDATE target_id`` -> forget old, store new with
+          ``metadata.supersedes = target_id``.
+        - ``SUPERSEDE target_id`` -> store new with supersedes pointer,
+          then call ``memory.update_metadata(target_id, ...)`` to mark
+          the old entry with ``superseded_by = new_id``. Preserves
+          history (Zep-style "invalidate, don't delete").
+        - ``NOOP`` -> return ``None``.
+
+        Any parse failure or unknown op in the ambiguous branch falls
+        back to ADD - safer to keep a fact than lose it on a broken
+        LLM reply. Logged at WARNING for operator visibility.
+        """
+        # Scope retrieve to this session so reconcile doesn't try to
+        # merge across users.
+        candidates = self._memory.retrieve(
+            fact.text,
+            k=5,
+            where={
+                "session_id": self._session_id,
+                "type": "fact",
+            },
+        )
+        # Skip already-superseded entries - they're history, not live state.
+        live_candidates = [
+            c for c in candidates
+            if c.metadata.get("superseded_by") is None
+        ]
+        if not live_candidates:
+            return self._add_fact(fact.text, category=fact.category)
+
+        max_score = max(c.score for c in live_candidates)
+        if max_score >= self._near_dup_threshold:
+            return None
+        if max_score < self._ambiguous_threshold:
+            return self._add_fact(fact.text, category=fact.category)
+
+        # Ambiguous range: consult the LLM.
+        return self._reconcile_with_llm(fact, live_candidates)
+
+    def _reconcile_with_llm(
+        self,
+        fact: ExtractedFact,
+        candidates: list[object],  # list[MemoryHit]
+    ) -> str | None:
+        candidate_block = "\n".join(
+            f"[id={c.node_id}] (score={c.score:.3f}) {c.text}"  # type: ignore[attr-defined]
+            for c in candidates
+        )
+        prompt = RECONCILE_PROMPT.format(
+            new_fact=fact.text, candidates=candidate_block
+        )
+        raw = self._llm.generate(prompt, max_tokens=256)
+        try:
+            parsed = json.loads(raw)
+            if not isinstance(parsed, dict):
+                raise TypeError(f"expected JSON object, got {type(parsed).__name__}")
+            op = parsed["op"]
+            target_id = parsed.get("target_id")
+        except (json.JSONDecodeError, KeyError, TypeError) as exc:
+            logger.warning(
+                "reconcile: LLM reply unparseable (%s); falling back to ADD",
+                type(exc).__name__,
+                extra={
+                    "event": "reconcile_parse_failure",
+                    "session_id": self._session_id,
+                    "reply_prefix": raw[:80],
+                },
+            )
+            return self._add_fact(fact.text, category=fact.category)
+
+        if op == "NOOP":
+            return None
+        if op == "ADD":
+            return self._add_fact(fact.text, category=fact.category)
+        if op == "UPDATE":
+            if not isinstance(target_id, str) or target_id not in self._memory:
+                logger.warning(
+                    "reconcile: UPDATE missing valid target_id; falling back to ADD",
+                    extra={
+                        "event": "reconcile_update_no_target",
+                        "session_id": self._session_id,
+                    },
+                )
+                return self._add_fact(fact.text, category=fact.category)
+            self._memory.forget(target_id)
+            return self._add_fact(
+                fact.text,
+                category=fact.category,
+                extra_meta={"supersedes": target_id},
+            )
+        if op == "SUPERSEDE":
+            if not isinstance(target_id, str) or target_id not in self._memory:
+                logger.warning(
+                    "reconcile: SUPERSEDE missing valid target_id; "
+                    "falling back to ADD",
+                    extra={
+                        "event": "reconcile_supersede_no_target",
+                        "session_id": self._session_id,
+                    },
+                )
+                return self._add_fact(fact.text, category=fact.category)
+            new_id = self._add_fact(
+                fact.text,
+                category=fact.category,
+                extra_meta={"supersedes": target_id},
+            )
+            self._memory.update_metadata(
+                target_id,
+                {
+                    "superseded_by": new_id,
+                    "superseded_at_step": self._memory._step,
+                },
+            )
+            return new_id
+        # Unknown op - log and fall back to ADD so we don't lose the fact.
+        logger.warning(
+            "reconcile: unknown op %r; falling back to ADD",
+            op,
+            extra={
+                "event": "reconcile_unknown_op",
+                "session_id": self._session_id,
+            },
+        )
+        return self._add_fact(fact.text, category=fact.category)
+
+    # ------------------------------------------------------------------
+    # Internals — reconcile
+    # ------------------------------------------------------------------
+    def _add_fact(
+        self,
+        text: str,
+        *,
+        category: str = "other",
+        extra_meta: dict[str, object] | None = None,
+    ) -> str:
+        """Store a new fact entry tagged with this session. Returns node_id."""
+        meta: dict[str, object] = {
+            "session_id": self._session_id,
+            "type": "fact",
+            "category": category,
+        }
+        if extra_meta:
+            meta.update(extra_meta)
+        return self._memory.store(text, metadata=meta)
+
+    def _reconcile(self, fact: ExtractedFact) -> str | None:
+        """Decide what to do with ``fact`` given the top-k nearest stored entries.
+
+        Threshold short-circuits before any LLM round-trip:
+
+        - ``max_score >= near_dup_threshold`` (default 0.92) → return
+          ``None``; the fact is effectively a duplicate.
+        - ``max_score < ambiguous_threshold`` (default 0.75) OR no
+          candidates → ADD without asking the LLM.
+
+        In the ambiguous range we call the LLM once with RECONCILE_PROMPT
+        and dispatch on ``op``:
+
+        - ``ADD`` → store new.
+        - ``UPDATE target_id`` → forget old, store new with
+          ``metadata.supersedes = target_id``.
+        - ``SUPERSEDE target_id`` → store new with supersedes pointer,
+          then call ``memory.update_metadata(target_id, ...)`` to mark
+          the old entry with ``superseded_by = new_id``. Preserves
+          history (Zep-style "invalidate, don't delete").
+        - ``NOOP`` → return ``None``.
+
+        Any parse failure or unknown op in the ambiguous branch falls
+        back to ADD — safer to keep a fact than lose it on a broken
+        LLM reply. Logged at WARNING for operator visibility.
+        """
+        # Scope retrieve to this session so reconcile doesn't try to
+        # merge across users. Also exclude already-superseded entries
+        # from the similarity check — they're history, not live state.
+        candidates = self._memory.retrieve(
+            fact.text,
+            k=5,
+            where={
+                "session_id": self._session_id,
+                "type": "fact",
+            },
+        )
+        live_candidates = [
+            c for c in candidates
+            if c.metadata.get("superseded_by") is None
+        ]
+        if not live_candidates:
+            return self._add_fact(fact.text, category=fact.category)
+
+        max_score = max(c.score for c in live_candidates)
+        if max_score >= self._near_dup_threshold:
+            return None
+        if max_score < self._ambiguous_threshold:
+            return self._add_fact(fact.text, category=fact.category)
+
+        # Ambiguous range: consult the LLM.
+        return self._reconcile_with_llm(fact, live_candidates)
+
+    def _reconcile_with_llm(
+        self,
+        fact: ExtractedFact,
+        candidates: list[object],  # list[MemoryHit]
+    ) -> str | None:
+        candidate_block = "\n".join(
+            f"[id={c.node_id}] (score={c.score:.3f}) {c.text}"  # type: ignore[attr-defined]
+            for c in candidates
+        )
+        prompt = RECONCILE_PROMPT.format(
+            new_fact=fact.text, candidates=candidate_block
+        )
+        raw = self._llm.generate(prompt, max_tokens=256)
+        try:
+            parsed = json.loads(raw)
+            if not isinstance(parsed, dict):
+                raise TypeError(f"expected JSON object, got {type(parsed).__name__}")
+            op = parsed["op"]
+            target_id = parsed.get("target_id")
+        except (json.JSONDecodeError, KeyError, TypeError) as exc:
+            logger.warning(
+                "reconcile: LLM reply unparseable (%s); falling back to ADD",
+                type(exc).__name__,
+                extra={
+                    "event": "reconcile_parse_failure",
+                    "session_id": self._session_id,
+                    "reply_prefix": raw[:80],
+                },
+            )
+            return self._add_fact(fact.text, category=fact.category)
+
+        if op == "NOOP":
+            return None
+        if op == "ADD":
+            return self._add_fact(fact.text, category=fact.category)
+        if op == "UPDATE":
+            if not isinstance(target_id, str) or target_id not in self._memory:
+                logger.warning(
+                    "reconcile: UPDATE missing valid target_id; falling back to ADD",
+                    extra={
+                        "event": "reconcile_update_no_target",
+                        "session_id": self._session_id,
+                    },
+                )
+                return self._add_fact(fact.text, category=fact.category)
+            self._memory.forget(target_id)
+            return self._add_fact(
+                fact.text,
+                category=fact.category,
+                extra_meta={"supersedes": target_id},
+            )
+        if op == "SUPERSEDE":
+            if not isinstance(target_id, str) or target_id not in self._memory:
+                logger.warning(
+                    "reconcile: SUPERSEDE missing valid target_id; "
+                    "falling back to ADD",
+                    extra={
+                        "event": "reconcile_supersede_no_target",
+                        "session_id": self._session_id,
+                    },
+                )
+                return self._add_fact(fact.text, category=fact.category)
+            new_id = self._add_fact(
+                fact.text,
+                category=fact.category,
+                extra_meta={"supersedes": target_id},
+            )
+            self._memory.update_metadata(
+                target_id,
+                {
+                    "superseded_by": new_id,
+                    "superseded_at_step": self._memory._step,
+                },
+            )
+            return new_id
+        # Unknown op — log and fall back to ADD so we don't lose the fact.
+        logger.warning(
+            "reconcile: unknown op %r; falling back to ADD",
+            op,
+            extra={
+                "event": "reconcile_unknown_op",
+                "session_id": self._session_id,
+            },
+        )
+        return self._add_fact(fact.text, category=fact.category)

@@ -1060,11 +1060,13 @@ class MemoryLayer:
         """Return up to k entries most similar to the entry at ``node_id``."""
         if node_id not in self._id_to_idx:
             raise KeyError(f"node_id {node_id!r} not found in MemoryLayer")
-        # Fetch the stored vector from the backend and use it as the
-        # query. For HTTP adapters this is one extra round-trip; we
-        # accept that for v1 (see plan §Risks).
-        q_np = self._backend.get_vectors([node_id])[0]
-        pairs = self._backend.search(q_np, k=k, exclude_ids={node_id})
+        # Phase 16: delegate to ``backend.search_near_id`` so adapters
+        # that can resolve the pivot server-side (Qdrant's ``recommend``
+        # API, LanceDB's Arrow-native self-join) skip the
+        # ``get_vectors`` + ``search`` round-trip. The Protocol default
+        # preserves the pre-Phase-16 two-step behaviour so in-proc and
+        # any third-party adapter that doesn't override keeps working.
+        pairs = self._backend.search_near_id(node_id, k, exclude_self=True)
         return [self._hit_for_id(nid, score=s) for nid, s in pairs]
 
     # ------------------------------------------------------------------

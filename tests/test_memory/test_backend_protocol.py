@@ -169,12 +169,64 @@ def _chroma_factory(dim: int, tmp_path: Path) -> Any:
     )
 
 
+def _pgvector_factory(dim: int) -> Any:
+    """Build a PgvectorBackend against a live pgvector container.
+
+    Skipped unless both testcontainers is importable AND the
+    ``SOMA_PGVECTOR_INTEGRATION=1`` env gate is set — same pattern the
+    dedicated Phase 29 integration suite uses. The caller is
+    responsible for tearing the container down; we return the
+    backend as-is and let the test's ``close()`` drop the psycopg
+    connection.
+    """
+    import os
+    import uuid
+
+    pytest.importorskip("testcontainers")
+    pytest.importorskip("psycopg")
+    pytest.importorskip("pgvector")
+    if os.environ.get("SOMA_PGVECTOR_INTEGRATION") != "1":
+        pytest.skip("set SOMA_PGVECTOR_INTEGRATION=1 to run pgvector contract tests")
+
+    from testcontainers.postgres import PostgresContainer  # type: ignore[import-not-found]
+
+    from soma.memory.backends.pgvector import PgvectorBackend
+
+    container = PostgresContainer(image="pgvector/pgvector:pg16")
+    container.start()
+    url = container.get_connection_url()
+    url = url.replace("postgresql+psycopg2://", "postgresql://")
+    url = url.replace("postgresql+psycopg://", "postgresql://")
+
+    backend = PgvectorBackend(
+        dsn=url,
+        dim=dim,
+        table_name=f"contract_{uuid.uuid4().hex[:8]}",
+    )
+
+    # Attach the container to the backend so the ``close`` override can
+    # tear it down deterministically at the end of the test.
+    backend._contract_container = container  # type: ignore[attr-defined]
+    original_close = backend.close
+
+    import contextlib as _contextlib
+
+    def _close_and_stop() -> None:
+        original_close()
+        with _contextlib.suppress(Exception):  # pragma: no cover - best-effort teardown
+            container.stop()
+
+    backend.close = _close_and_stop  # type: ignore[method-assign]
+    return backend
+
+
 @pytest.fixture(
     params=[
         pytest.param("inproc", id="inproc"),
         pytest.param("qdrant", id="qdrant"),
         pytest.param("lancedb", id="lancedb"),
         pytest.param("chroma", id="chroma"),
+        pytest.param("pgvector", id="pgvector"),
     ]
 )
 def shipped_backend(request: pytest.FixtureRequest, tmp_path: Path) -> BackendFactory:
@@ -190,6 +242,8 @@ def shipped_backend(request: pytest.FixtureRequest, tmp_path: Path) -> BackendFa
         return lambda d: _lancedb_factory(d, tmp_path)
     if kind == "chroma":
         return lambda d: _chroma_factory(d, tmp_path)
+    if kind == "pgvector":
+        return _pgvector_factory
     raise AssertionError(f"unhandled backend param {kind!r}")
 
 

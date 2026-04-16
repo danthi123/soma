@@ -163,15 +163,40 @@ def test_save_load_retrieve_matches_pre_save(embedder, tmp_path: Path) -> None:
         assert pre.score == pytest.approx(post.score, abs=1e-5)
 
 
-def test_consolidate_is_safe_noop(embedder) -> None:
-    """Stage 2 stub: consolidate must be callable but does not mutate index."""
+def test_consolidate_without_soma_is_noop(embedder) -> None:
+    """Without an attached SOMA, consolidate returns 0 and doesn't mutate."""
     tokenizer, encoder = embedder
     mem = MemoryLayer(tokenizer=tokenizer, encoder=encoder)
     mem.store("before consolidate")
     before = [h.node_id for h in mem.get_recent(10)]
-    mem.consolidate()
+    assert mem.consolidate() == 0
     after = [h.node_id for h in mem.get_recent(10)]
     assert before == after
+
+
+def test_consolidate_with_soma_processes_entries(embedder) -> None:
+    """With an attached SOMA, consolidate feeds entries through the graph."""
+    from soma.core.config import SOMAConfig
+    from soma.system import SOMA
+
+    tokenizer, encoder = embedder
+    config = SOMAConfig(
+        vocab_size=256,
+        text_embed_dim=32,
+        sensor_output_dim=32,
+        max_input_tokens=64,
+    )
+    soma = SOMA(config)
+
+    mem = MemoryLayer(tokenizer=tokenizer, encoder=encoder)
+    mem.store("the cat sat on the mat")
+    mem.store("the dog chased the ball")
+    mem.store("quantum physics is fascinating")
+
+    mem.attach_soma(soma, tokenizer, encoder)
+    processed = mem.consolidate()
+    assert processed == 3
+    assert soma.global_step > 0
 
 
 def test_store_empty_text_raises(embedder) -> None:

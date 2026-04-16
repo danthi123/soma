@@ -95,6 +95,11 @@ class MemoryLayer:
             assert encoder is not None
             self._embed_dim = int(encoder.embed_dim)
 
+        # Optional SOMA attachment for graph-based consolidation.
+        self._soma: Any = None
+        self._soma_tokenizer: Any = None
+        self._soma_encoder: Any = None
+
         # Parallel storage. Order is preserved across save/load so
         # ``get_recent`` stays stable.
         self._ids: list[str] = []
@@ -106,6 +111,56 @@ class MemoryLayer:
         self._embeddings_list: list[torch.Tensor] = []
 
         self._step: int = 0
+
+    # ------------------------------------------------------------------
+    # Factory methods
+    # ------------------------------------------------------------------
+    @classmethod
+    def with_sbert(
+        cls,
+        model_name: str = "all-MiniLM-L6-v2",
+        *,
+        device: torch.device | str | None = None,
+    ) -> MemoryLayer:
+        """Create a MemoryLayer backed by a sentence-transformers model.
+
+        Requires ``sentence-transformers`` to be installed (optional dep).
+        """
+        try:
+            from sentence_transformers import SentenceTransformer
+        except ImportError as exc:
+            raise ImportError(
+                "MemoryLayer.with_sbert() requires sentence-transformers. "
+                "Install with: pip install sentence-transformers"
+            ) from exc
+
+        model = SentenceTransformer(model_name)
+        dim = int(model.get_sentence_embedding_dimension())
+
+        def _embed(text: str) -> torch.Tensor:
+            return torch.tensor(model.encode(text, convert_to_numpy=True))
+
+        return cls(embed_fn=_embed, embed_dim=dim, device=device)
+
+    # ------------------------------------------------------------------
+    # SOMA graph attachment (optional)
+    # ------------------------------------------------------------------
+    def attach_soma(
+        self,
+        soma: Any,
+        tokenizer: Any,
+        encoder: Any,
+    ) -> None:
+        """Attach a SOMA instance for graph-based consolidation.
+
+        When attached, :meth:`consolidate` feeds stored entries through
+        the SOMA graph, triggering structural plasticity (edge
+        formation, pruning, myelination). Without attachment,
+        ``consolidate`` remains a safe no-op.
+        """
+        self._soma = soma
+        self._soma_tokenizer = tokenizer
+        self._soma_encoder = encoder
 
     # ------------------------------------------------------------------
     # Core API
@@ -174,14 +229,35 @@ class MemoryLayer:
         self._embeddings_list.pop(idx)
         return True
 
-    def consolidate(self) -> None:
-        """Stage-3 hook: push the current index into SOMA's growth engine.
+    def consolidate(self) -> int:
+        """Push stored entries through SOMA's graph to trigger plasticity.
 
-        Intentionally a no-op today. Having the call site in agent loops
-        now means we can light up graph consolidation in Stage 3 without
-        a second API migration.
+        When a SOMA instance is attached via :meth:`attach_soma`, this
+        feeds each stored text through the graph (one ``step()`` per
+        entry) so structural plasticity — synaptogenesis, pruning,
+        myelination — fires based on the content patterns. Returns
+        the number of entries processed.
+
+        Without an attached SOMA, this is a safe no-op (returns 0).
+        Callers should include ``consolidate()`` in their loops now; it
+        becomes load-bearing once a SOMA is attached.
         """
-        return None
+        if self._soma is None:
+            return 0
+        from soma.training.verbalizer_bootstrap import text_to_state
+
+        soma_output_dim = int(self._soma.config.sensor_output_dim)
+        processed = 0
+        for text in self._texts:
+            text_to_state(
+                text=text,
+                soma=self._soma,
+                tokenizer=self._soma_tokenizer,
+                encoder=self._soma_encoder,
+                soma_output_dim=soma_output_dim,
+            )
+            processed += 1
+        return processed
 
     def __len__(self) -> int:
         return len(self._ids)

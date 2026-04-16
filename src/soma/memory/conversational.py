@@ -36,6 +36,7 @@ from typing import TYPE_CHECKING, Any, Literal, overload
 if TYPE_CHECKING:
     from types import TracebackType
 
+    from soma.forget_audit import ForgetAuditSink
     from soma.llm.backends import LLMBackend
     from soma.memory.api import MemoryHit, MemoryLayer
 
@@ -340,6 +341,7 @@ class ConversationalMemory:
         extract_assistant: bool = False,
         extraction_mode: Literal["sync", "async", "batch"] = "sync",
         batch_size: int = 8,
+        audit_sink: ForgetAuditSink | None = None,
     ) -> None:
         """Build a ConversationalMemory wrapper.
 
@@ -394,6 +396,12 @@ class ConversationalMemory:
         :param batch_size: number of turns to accumulate before firing
             a batched extract call in ``extraction_mode="batch"``.
             Ignored in ``"sync"`` / ``"async"`` modes. Must be ``>= 1``.
+        :param audit_sink: optional :class:`ForgetAuditSink` that
+            receives one JSONL record per :meth:`forget` call (both
+            dry-run and live). ``None`` (default) disables auditing —
+            pre-Phase-37 behaviour. Operators wiring the REST server
+            typically build this once per process via
+            :meth:`ForgetAuditSink.from_env` and thread it through.
         """
         self._memory = memory
         self._llm = llm
@@ -457,6 +465,10 @@ class ConversationalMemory:
                 max_workers=1,
                 thread_name_prefix=f"soma-conv-{self._session_id}",
             )
+        # Phase 37: optional audit sink for forget events. Held as
+        # Optional so the no-wiring path stays truly zero-cost (no
+        # stub-sink dispatch overhead on every forget).
+        self._audit_sink: ForgetAuditSink | None = audit_sink
 
     # ------------------------------------------------------------------
     # Multi-user scoping helpers (Phase 12)
@@ -1250,6 +1262,7 @@ class ConversationalMemory:
         user_id: str | None = ...,
         case_sensitive: bool = ...,
         dry_run: Literal[True],
+        actor: str | None = ...,
     ) -> ForgetPreview: ...
 
     @overload
@@ -1261,6 +1274,7 @@ class ConversationalMemory:
         user_id: str | None = ...,
         case_sensitive: bool = ...,
         dry_run: Literal[False] = ...,
+        actor: str | None = ...,
     ) -> ForgetResult: ...
 
     def forget(
@@ -1271,6 +1285,7 @@ class ConversationalMemory:
         user_id: str | None = None,
         case_sensitive: bool = False,
         dry_run: bool = False,
+        actor: str | None = None,
     ) -> ForgetPreview | ForgetResult:
         """Delete (or preview) entries matching the criteria.
 
@@ -1352,6 +1367,15 @@ class ConversationalMemory:
             case_sensitive=case_sensitive,
         )
         if dry_run:
+            self._emit_audit(
+                actor=actor,
+                target_user_id=user_id,
+                text_matches=text_matches,
+                subject=subject,
+                case_sensitive=case_sensitive,
+                dry_run=True,
+                outcome=preview,
+            )
             return preview
 
         # Delete facts FIRST so source_turn_id never dangles on an
@@ -1382,7 +1406,7 @@ class ConversationalMemory:
                 deleted_summaries.append(sid)
             else:  # "regenerated"
                 regenerated_summaries.append(resulting_id)
-        return ForgetResult(
+        result = ForgetResult(
             deleted_turns=deleted_turns,
             deleted_facts=deleted_facts,
             deleted_summaries=deleted_summaries,
@@ -1394,6 +1418,68 @@ class ConversationalMemory:
                 + len(deleted_facts)
                 + len(deleted_summaries)
             ),
+        )
+        self._emit_audit(
+            actor=actor,
+            target_user_id=user_id,
+            text_matches=text_matches,
+            subject=subject,
+            case_sensitive=case_sensitive,
+            dry_run=False,
+            outcome=result,
+        )
+        return result
+
+    def _emit_audit(
+        self,
+        *,
+        actor: str | None,
+        target_user_id: str | None,
+        text_matches: str | None,
+        subject: str | None,
+        case_sensitive: bool,
+        dry_run: bool,
+        outcome: ForgetPreview | ForgetResult,
+    ) -> None:
+        """Ship one forget-event to the configured :class:`ForgetAuditSink`.
+
+        Assembles the ``criteria`` dict from the (non-None) kwargs so
+        the audit line reflects exactly what the caller asked for. A
+        caller who passes ``case_sensitive=True`` sees that in the log;
+        the default is omitted to keep records compact.
+
+        ``actor`` is the principal.sub-equivalent identity recorded as
+        ``user_id`` on the audit record. When the CM was constructed
+        without a user_id *and* the REST wrapper didn't pass one
+        explicitly, the emitter falls back to ``"anonymous"``.
+
+        ``target_user_id`` is only stamped when it differs from the
+        actor, matching the REST endpoint's behaviour — a user
+        scrubbing their own data gets a null ``target_user_id``, an
+        admin scrubbing someone else's data carries both.
+        """
+        sink = self._audit_sink
+        if sink is None or not sink.is_enabled:
+            return
+        resolved_actor = actor or self._user_id or "anonymous"
+        effective_target = (
+            target_user_id if target_user_id and target_user_id != resolved_actor else None
+        )
+        criteria: dict[str, Any] = {}
+        if text_matches is not None:
+            criteria["text_matches"] = text_matches
+        if subject is not None:
+            criteria["subject"] = subject
+        if target_user_id is not None:
+            criteria["user_id"] = target_user_id
+        if case_sensitive:
+            criteria["case_sensitive"] = True
+        sink.emit(
+            user_id=resolved_actor,
+            target_user_id=effective_target,
+            criteria=criteria,
+            dry_run=dry_run,
+            result=outcome,
         )
 
     def _cascade_summary(

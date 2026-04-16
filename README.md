@@ -62,17 +62,49 @@ mem.attach_soma(soma, tokenizer, encoder)
 mem.consolidate()  # triggers synaptogenesis, pruning, myelination
 ```
 
+## Framework integrations
+
+```python
+# LangChain
+from soma.integrations.langchain import SomaRetriever
+retriever = SomaRetriever(memory=mem, k=5)
+docs = retriever.invoke("what's the user's name?")
+
+# LlamaIndex
+from soma.integrations.llamaindex import SomaRetriever
+nodes = SomaRetriever(memory=mem, k=5).retrieve("what's the user's name?")
+```
+
+## REST API / Docker
+
+```bash
+# Local:
+uvicorn soma.serve:app --port 8420
+
+# Docker:
+docker compose up
+
+# Then:
+curl -X POST http://localhost:8420/store \
+  -H 'Content-Type: application/json' \
+  -d '{"text": "user lives in Portland"}'
+
+curl -X POST http://localhost:8420/retrieve \
+  -H 'Content-Type: application/json' \
+  -d '{"query": "where does the user live?", "k": 3}'
+```
+
+## Scaling
+
+MemoryLayer auto-switches to a FAISS index when the store exceeds 10K entries (configurable via `faiss_threshold`). Below that, the O(N) linear scan is faster with zero overhead.
+
 ## Demos
 
 ```bash
-# Pure API demo (no GPU needed):
-python scripts/demo_memory_layer.py
-
-# Persistent chat with LLM (--dry-run skips LLM):
-python scripts/demo_chat_persistent.py --dry-run
-
-# Benchmark vs Chroma:
-python scripts/benchmark_memory.py
+python scripts/demo_memory_layer.py           # pure API, no GPU
+python scripts/demo_chat_persistent.py --dry-run  # persistent chat
+python scripts/benchmark_memory.py            # vs Chroma benchmark
+python scripts/experiment_plasticity.py       # graph plasticity proof
 ```
 
 ## Development
@@ -90,6 +122,7 @@ mypy src/soma/
 - [Pivot decision + roadmap](docs/plans/2026-04-15-memory-layer-pivot.md)
 - [Architecture whitepaper](docs/whitepaper.md)
 - [Benchmark report](reports/memory-layer-vs-rag-benchmark.md)
+- [Plasticity experiment](reports/plasticity-experiment.md)
 
 ## License
 

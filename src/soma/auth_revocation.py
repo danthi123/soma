@@ -31,6 +31,7 @@ exactly like pre-revocation Phase 4.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import time
@@ -193,28 +194,25 @@ class FileBlocklist:
         # data file itself — portalocker on Windows can't hold an
         # exclusive lock on the file being appended to without racing
         # the append handle).
-        with portalocker.Lock(str(lock_path), mode="a", timeout=30):
-            with self._path.open("a", encoding="utf-8") as fh:
-                fh.write(payload + "\n")
-                fh.flush()
-                try:
-                    os.fsync(fh.fileno())
-                except OSError:
-                    # fsync is best-effort — some filesystems (tmpfs,
-                    # Windows on network shares) don't support it. The
-                    # lock release is already a barrier for same-host
-                    # readers.
-                    pass
+        with (
+            portalocker.Lock(str(lock_path), mode="a", timeout=30),
+            self._path.open("a", encoding="utf-8") as fh,
+        ):
+            fh.write(payload + "\n")
+            fh.flush()
+            # fsync is best-effort — some filesystems (tmpfs, Windows
+            # on network shares) don't support it. The lock release is
+            # already a barrier for same-host readers.
+            with contextlib.suppress(OSError):
+                os.fsync(fh.fileno())
 
         # Live-cache update — fast-path for the same process issuing
         # the revoke. Filter out exp-past entries symmetrically with
         # the disk load so the fast path behaves like the reload path.
         if int(record.exp) > int(time.time()):
             self._cache.add(record.jti)
-        try:
+        with contextlib.suppress(OSError):
             self._mtime = self._path.stat().st_mtime
-        except OSError:
-            pass
         self._last_poll = time.time()
 
     def gc_expired(self) -> int:
@@ -257,10 +255,8 @@ class FileBlocklist:
                 for rec in kept:
                     fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
                 fh.flush()
-                try:
+                with contextlib.suppress(OSError):
                     os.fsync(fh.fileno())
-                except OSError:
-                    pass
             tmp.replace(self._path)
 
         # Refresh the cache to match disk.

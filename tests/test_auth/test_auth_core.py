@@ -270,11 +270,13 @@ def test_verify_ignores_blocklist_for_tokens_without_jti() -> None:
     missing jti because legacy callers (pre-Phase-4 + external issuers)
     may emit tokens without one.
     """
-    from soma.auth_revocation import FileBlocklist
-
     # Craft a token with no jti claim via PyJWT directly (bypassing
     # issue_token, which always populates jti).
+    import tempfile
     import time as _t
+    from pathlib import Path as _P
+
+    from soma.auth_revocation import FileBlocklist
 
     now = int(_t.time())
     raw = jwt.encode(
@@ -284,9 +286,6 @@ def test_verify_ignores_blocklist_for_tokens_without_jti() -> None:
     )
     # Blocklist exists but doesn't contain anything matching — the
     # no-jti branch must still accept.
-    import tempfile
-    from pathlib import Path as _P
-
     with tempfile.TemporaryDirectory() as td:
         bl = FileBlocklist(_P(td) / "bl.jsonl")
         principal = verify_token(raw, secret=SECRET, blocklist=bl)

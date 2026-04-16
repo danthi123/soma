@@ -1,0 +1,296 @@
+"""Public memory-layer API: vector-DB-shaped surface over SOMA's substrate.
+
+This is the product-facing entry point introduced by the 2026-04-15
+pivot (see ``docs/plans/2026-04-15-memory-layer-pivot.md``). It gives
+agent developers a familiar ``store``/``retrieve`` contract while
+leaving room for the graph/plasticity differentiators to come online in
+later stages.
+
+Stage 2 (this module) ships the flat vector-store semantics plus
+save/load. Stage 3 wires ``consolidate()`` into SOMA's growth engine so
+stored entries become graph structure that prunes and reinforces with
+use; today ``consolidate`` is a safe no-op so callers can include the
+call in their loops now and not have to revisit when the plasticity
+path lands.
+"""
+
+from __future__ import annotations
+
+import json
+import uuid
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+
+import torch
+from torch.nn import functional as F  # noqa: N812
+
+from soma.io.text_encoder import TextEncoder, load_tokenizer
+
+
+@dataclass(frozen=True)
+class MemoryHit:
+    """One retrieved entry. Immutable so callers can pass them around safely."""
+
+    node_id: str
+    text: str
+    score: float
+    metadata: dict[str, Any] = field(default_factory=dict)
+    timestamp_step: int = 0
+
+
+class MemoryLayer:
+    """Local-first, learning agent-memory layer.
+
+    Reads like a vector DB at the edge: ``store(text)`` appends,
+    ``retrieve(query)`` ranks by cosine similarity. Behind the API,
+    entries are kept alongside their pooled-token-embedding vectors in
+    an in-memory tensor that scales linearly with the store size (fine
+    for up to ~100K entries on consumer hardware; Stage 3 adds a
+    chunked / on-disk path for larger stores).
+
+    The embedder is caller-supplied — pass any
+    :class:`soma.io.text_encoder.TextEncoder` plus its tokenizer. This
+    keeps the memory layer independent of any specific embedding model,
+    so callers can swap in sentence-transformers or an LLM's input
+    embeddings once Stage 3's benchmark harness picks a default.
+
+    Persistence writes a directory bundle compatible with
+    ``SOMA.save_bundle`` naming: ``tokenizer.json``, ``encoder.pt``,
+    ``memory_index.json``, ``memory_embeddings.pt``. A future
+    MemoryLayer bundle CAN be dropped inside a SOMA brain bundle and
+    the two will coexist without collision.
+    """
+
+    def __init__(
+        self,
+        *,
+        tokenizer: Any,
+        encoder: TextEncoder,
+        device: torch.device | str | None = None,
+    ) -> None:
+        self._tokenizer = tokenizer
+        self._encoder = encoder
+        # Embedding device follows the encoder unless the caller overrides.
+        if device is not None:
+            self._device = torch.device(device)
+        else:
+            self._device = encoder.embedding.weight.device
+        self._embed_dim: int = int(encoder.embed_dim)
+
+        # Parallel storage. Order is preserved across save/load so
+        # ``get_recent`` stays stable.
+        self._ids: list[str] = []
+        self._texts: list[str] = []
+        self._metadatas: list[dict[str, Any]] = []
+        self._timestamps: list[int] = []
+        # (N, embed_dim) — lazily rebuilt from _embeddings_list when persisting
+        # so we don't pay stack cost on every store.
+        self._embeddings_list: list[torch.Tensor] = []
+
+        self._step: int = 0
+
+    # ------------------------------------------------------------------
+    # Core API
+    # ------------------------------------------------------------------
+    def store(self, text: str, *, metadata: dict[str, Any] | None = None) -> str:
+        """Add an entry. Returns a stable node_id (uuid4 hex)."""
+        if not text or not text.strip():
+            raise ValueError("MemoryLayer.store rejects empty text")
+        node_id = uuid.uuid4().hex
+        embedding = self._embed(text)
+        self._ids.append(node_id)
+        self._texts.append(text)
+        self._metadatas.append(dict(metadata) if metadata else {})
+        self._timestamps.append(self._step)
+        self._embeddings_list.append(embedding)
+        self._step += 1
+        return node_id
+
+    def retrieve(self, query: str, k: int = 5) -> list[MemoryHit]:
+        """Return up to k entries most similar to ``query`` by cosine."""
+        if k <= 0:
+            raise ValueError(f"k must be positive, got {k}")
+        if not self._ids:
+            return []
+        q_vec = self._embed(query)
+        return self._rank(q_vec, k=k, exclude_idx=None)
+
+    def related(self, node_id: str, k: int = 5) -> list[MemoryHit]:
+        """Return up to k entries most similar to the entry at ``node_id``."""
+        if node_id not in self._ids:
+            raise KeyError(f"node_id {node_id!r} not found in MemoryLayer")
+        idx = self._ids.index(node_id)
+        q_vec = self._embeddings_list[idx]
+        return self._rank(q_vec, k=k, exclude_idx=idx)
+
+    def get(self, node_id: str) -> MemoryHit | None:
+        """Fetch an entry by id; ``None`` if unknown. Score is self-cosine (1.0)."""
+        if node_id not in self._ids:
+            return None
+        idx = self._ids.index(node_id)
+        return MemoryHit(
+            node_id=node_id,
+            text=self._texts[idx],
+            score=1.0,
+            metadata=dict(self._metadatas[idx]),
+            timestamp_step=self._timestamps[idx],
+        )
+
+    def get_recent(self, n: int) -> list[MemoryHit]:
+        """Return the n most recently stored entries, newest first."""
+        if n <= 0:
+            raise ValueError(f"n must be positive, got {n}")
+        start = max(0, len(self._ids) - n)
+        recent_indices = list(range(start, len(self._ids)))[::-1]
+        return [self._hit_for_index(i, score=1.0) for i in recent_indices]
+
+    def forget(self, node_id: str) -> bool:
+        """Remove an entry. Returns True if removed, False if unknown."""
+        if node_id not in self._ids:
+            return False
+        idx = self._ids.index(node_id)
+        self._ids.pop(idx)
+        self._texts.pop(idx)
+        self._metadatas.pop(idx)
+        self._timestamps.pop(idx)
+        self._embeddings_list.pop(idx)
+        return True
+
+    def consolidate(self) -> None:
+        """Stage-3 hook: push the current index into SOMA's growth engine.
+
+        Intentionally a no-op today. Having the call site in agent loops
+        now means we can light up graph consolidation in Stage 3 without
+        a second API migration.
+        """
+        return None
+
+    def __len__(self) -> int:
+        return len(self._ids)
+
+    def __contains__(self, node_id: str) -> bool:
+        return node_id in self._ids
+
+    # ------------------------------------------------------------------
+    # Persistence
+    # ------------------------------------------------------------------
+    def save(self, path: str | Path) -> None:
+        """Write a self-contained memory bundle to ``path`` (a directory)."""
+        out = Path(path)
+        out.mkdir(parents=True, exist_ok=True)
+        self._encoder.save_tokenizer(out / "tokenizer.json")
+        torch.save(self._encoder.state_dict(), out / "encoder.pt")
+        if self._embeddings_list:
+            stacked = torch.stack(self._embeddings_list, dim=0).detach().cpu()
+        else:
+            stacked = torch.empty((0, self._embed_dim))
+        torch.save(stacked, out / "memory_embeddings.pt")
+        index = {
+            "schema_version": 1,
+            "embed_dim": self._embed_dim,
+            "max_seq_len": int(self._encoder.max_seq_len),
+            "step": self._step,
+            "entries": [
+                {
+                    "node_id": nid,
+                    "text": txt,
+                    "metadata": md,
+                    "timestamp_step": ts,
+                }
+                for nid, txt, md, ts in zip(
+                    self._ids, self._texts, self._metadatas, self._timestamps, strict=True
+                )
+            ],
+        }
+        (out / "memory_index.json").write_text(json.dumps(index, indent=2), encoding="utf-8")
+
+    @classmethod
+    def load(
+        cls,
+        path: str | Path,
+        *,
+        device: torch.device | str | None = None,
+    ) -> MemoryLayer:
+        """Rehydrate a MemoryLayer from a ``save()``-produced directory."""
+        src = Path(path)
+        index_path = src / "memory_index.json"
+        tokenizer_path = src / "tokenizer.json"
+        encoder_path = src / "encoder.pt"
+        embeddings_path = src / "memory_embeddings.pt"
+        for required in (index_path, tokenizer_path, encoder_path, embeddings_path):
+            if not required.exists():
+                raise FileNotFoundError(f"MemoryLayer bundle missing {required.name}")
+
+        index = json.loads(index_path.read_text(encoding="utf-8"))
+        if index.get("schema_version") != 1:
+            raise ValueError(
+                f"Unsupported MemoryLayer schema_version {index.get('schema_version')!r}"
+            )
+
+        tokenizer = load_tokenizer(tokenizer_path)
+        encoder = TextEncoder(
+            tokenizer,
+            embed_dim=int(index["embed_dim"]),
+            max_seq_len=int(index["max_seq_len"]),
+            device=device,
+        )
+        encoder_state = torch.load(encoder_path, map_location=device or "cpu", weights_only=True)
+        encoder.load_state_dict(encoder_state)
+
+        instance = cls(tokenizer=tokenizer, encoder=encoder, device=device)
+        instance._step = int(index.get("step", 0))
+        embeddings = torch.load(
+            embeddings_path, map_location=device or "cpu", weights_only=True
+        )
+        target_device = instance._device
+        for entry, vec in zip(index["entries"], embeddings, strict=True):
+            instance._ids.append(str(entry["node_id"]))
+            instance._texts.append(str(entry["text"]))
+            instance._metadatas.append(dict(entry.get("metadata", {})))
+            instance._timestamps.append(int(entry.get("timestamp_step", 0)))
+            instance._embeddings_list.append(vec.to(target_device))
+        return instance
+
+    # ------------------------------------------------------------------
+    # Internals
+    # ------------------------------------------------------------------
+    def _embed(self, text: str) -> torch.Tensor:
+        """Mean-pool token embeddings into a single (embed_dim,) vector."""
+        with torch.no_grad():
+            stacked = self._encoder.encode_batch(text)  # (T, embed_dim)
+        if stacked.numel() == 0:
+            return torch.zeros(self._embed_dim, device=self._device)
+        pooled = stacked.mean(dim=0)
+        return pooled.detach().to(self._device)
+
+    def _rank(
+        self,
+        query_vec: torch.Tensor,
+        *,
+        k: int,
+        exclude_idx: int | None,
+    ) -> list[MemoryHit]:
+        matrix = torch.stack(self._embeddings_list, dim=0)
+        sims = F.cosine_similarity(query_vec.unsqueeze(0), matrix, dim=-1)
+        if exclude_idx is not None:
+            sims = sims.clone()
+            sims[exclude_idx] = float("-inf")
+        eligible = (sims > float("-inf")).sum().item()
+        k = int(min(k, eligible))
+        if k <= 0:
+            return []
+        top = torch.topk(sims, k=k)
+        return [
+            self._hit_for_index(int(i.item()), score=float(s.item()))
+            for i, s in zip(top.indices, top.values, strict=True)
+        ]
+
+    def _hit_for_index(self, idx: int, *, score: float) -> MemoryHit:
+        return MemoryHit(
+            node_id=self._ids[idx],
+            text=self._texts[idx],
+            score=score,
+            metadata=dict(self._metadatas[idx]),
+            timestamp_step=self._timestamps[idx],
+        )

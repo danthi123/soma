@@ -195,6 +195,8 @@ metric table + Grafana examples + log schema.
 
 Fly.io: `fly launch --from https://github.com/soma-ai/SOMA --copy-config`
 
+Kubernetes (Helm 3.14+): `helm install soma oci://ghcr.io/soma-ai/charts/soma --version 0.1.0` — see [`docs/deployment-k8s.md`](docs/deployment-k8s.md) for the full runbook.
+
 Per-platform runbook: [`docs/deployment-cloud.md`](docs/deployment-cloud.md). Minimum tier: 2 GB RAM (1 GB OOMs on first retrieve).
 
 ## Scaling

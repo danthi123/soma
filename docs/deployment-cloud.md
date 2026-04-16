@@ -97,7 +97,35 @@ regions with `fly scale count 2 --region iad,fra`.
 
 ---
 
-## 4. DigitalOcean / generic VPS
+## 4. Kubernetes (Helm)
+
+SOMA ships a first-class Helm chart at `deploy/helm/soma`, distributed
+via OCI on `ghcr.io` + GitHub Pages. One install gets you a
+StatefulSet, a PVC, a generated API-key Secret, and optional Ingress /
+HTTPRoute / ServiceMonitor.
+
+```bash
+# Helm 3.14+ — OCI is native, no experimental flag needed.
+helm install soma oci://ghcr.io/soma-ai/charts/soma --version 0.1.0
+
+# Verify:
+kubectl get statefulset,svc,secret -l app.kubernetes.io/name=soma
+kubectl port-forward svc/soma 8420:8420
+curl http://localhost:8420/health
+
+# Pull the auto-generated API key:
+export SOMA_API_KEY=$(kubectl get secret soma-api \
+  -o jsonpath='{.data.SOMA_API_KEY}' | base64 -d)
+```
+
+`replicaCount` is locked at 1 (WAL is single-writer; Phase 6 unlocks
+horizontal scale). 2 GiB RAM floor and a default StorageClass are the
+only hard prereqs. Full runbook + values reference + troubleshooting:
+[`docs/deployment-k8s.md`](deployment-k8s.md).
+
+---
+
+## 5. DigitalOcean / generic VPS
 
 Any Docker-capable host works. The shipped `docker-compose.yml` is the
 reference — copy the repo to the box and bring it up:

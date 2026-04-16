@@ -61,6 +61,46 @@ All notable changes to SOMA are documented here.
   processes sharing a bundle dir. Readers never block writers; writers
   serialize with each other.
 
+### Added — k8s
+
+- **Helm chart** at `deploy/helm/soma` (Chart v0.1.0, kubeVersion
+  `>=1.28`). First-class peer of the Railway / Render / Fly / Docker
+  paths — `helm install soma oci://ghcr.io/soma-ai/charts/soma` is
+  the one-liner. Ships a `StatefulSet` (single-replica, LOCKED until
+  Phase 6) with `volumeClaimTemplates` for `/app/data`, probes
+  (`startupProbe` 150 s budget for sbert warmup), non-root
+  securityContext, a `ClusterIP` Service on 8420, a headless Service
+  for stable pod DNS, and a ServiceAccount.
+- **Idempotent API-key Secret** — mints a 32-byte random key on fresh
+  install; `lookup` helper preserves the value across
+  `helm upgrade`; `helm.sh/resource-policy: keep` survives
+  `helm uninstall`. Bring-your-own Secret via
+  `api.existingSecret: <name>`; disable auth entirely with
+  `api.enabled: false`.
+- **Opt-in Ingress + HTTPRoute (Gateway API v1)**, mutually exclusive
+  via a `{{ fail }}` guard in `_helpers.tpl`. Ingress supports
+  cert-manager annotations out of the box; HTTPRoute is gated on
+  `Capabilities.APIVersions.Has "gateway.networking.k8s.io/v1"`.
+- **Opt-in ServiceMonitor + PodMonitor** gated on
+  `monitoring.coreos.com/v1` — scrapes the Phase 3 `/metrics`
+  endpoint. Plus pod-level `prometheus.io/scrape` annotations via
+  `metrics.annotations.enabled`.
+- **Schema-enforced invariants** — `values.schema.json` pins
+  `replicaCount.maximum: 1` (defense against multi-writer WAL
+  corruption) and requires `resources.requests.memory` (prevents
+  the 1 Gi OOM-on-first-retrieve footgun).
+- **CI** (`.github/workflows/helm.yml`) runs `helm lint` +
+  `kubeconform -strict` across k8s 1.28 / 1.29 / 1.30 +
+  `ct install` on `kind` for `default-values`, `ingress-enabled`,
+  and `servicemonitor` test value files under `deploy/helm/ci/`.
+- **Dual-channel release** (`.github/workflows/helm-release.yml`)
+  on `chart-v*` tags — OCI push to `ghcr.io/soma-ai/charts/soma` +
+  GitHub Pages index via `helm/chart-releaser-action@v1`. Fail-fast
+  if either channel fails so the two never drift.
+- Runbook: `docs/deployment-k8s.md` (prereqs, quickstart, values
+  reference, secret management, persistence, observability,
+  upgrading, multi-replica roadmap, troubleshooting).
+
 ### Added — cloud deploy
 
 - One-click templates for **Railway** (`railway.json`), **Render**

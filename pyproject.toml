@@ -142,6 +142,26 @@ s3-test = [
     # pin to that major so the adapter's tests don't silently drift.
     "moto[s3]>=5",
 ]
+gcs = [
+    # GCSObjectStore adapter — optional extra. Without this, SOMA's bundle
+    # storage runs on the default LocalFSObjectStore (filesystem only).
+    # Install with `pip install soma[gcs]` to unlock ``gs://bucket/prefix``
+    # URLs on ``MemoryLayer.save``/``load``. Credentials follow the standard
+    # Google Application Default Credentials chain
+    # (``GOOGLE_APPLICATION_CREDENTIALS``, metadata server on GCP,
+    # ``gcloud auth application-default login`` for local dev).
+    # See docs/backends.md.
+    "google-cloud-storage>=2.10",
+]
+gcs-test = [
+    # Unit tests for GCSObjectStore use the community
+    # ``gcp-storage-emulator`` (in-process HTTP server speaking the real
+    # GCS JSON API). ``google-cloud-storage`` honours the
+    # ``STORAGE_EMULATOR_HOST`` env var transparently, so the same
+    # adapter code paths run against the emulator without any
+    # sub-classing. Higher fidelity than raw ``unittest.mock`` stubs.
+    "gcp-storage-emulator>=2024.8",
+]
 pgvector-test = [
     # Integration tests for PgvectorBackend spin up a real
     # pgvector/pgvector:pg16 container via testcontainers-python and
@@ -218,6 +238,7 @@ markers = [
     "slow_qdrant: cross-version Qdrant snapshot/restore tests via testcontainers (Phase 24); gated by SOMA_QDRANT_VERSION_MATRIX=1",
     "slow_pgvector: pgvector integration tests via testcontainers (Phase 29); gated by SOMA_PGVECTOR_INTEGRATION=1",
     "slow_s3: real S3 / S3-compatible integration tests (Phase 31); gated by SOMA_S3_INTEGRATION_BUCKET=<bucket>",
+    "slow_gcs: real GCS integration tests (Phase 32); gated by SOMA_GCS_INTEGRATION_BUCKET=<bucket>",
 ]
 
 [tool.mypy]
@@ -255,5 +276,7 @@ module = [
     "pyarrow", "pyarrow.*",
     "redis", "redis.*",
     "fakeredis", "fakeredis.*",
+    "google", "google.*",
+    "gcp_storage_emulator", "gcp_storage_emulator.*",
 ]
 ignore_missing_imports = true

@@ -27,6 +27,7 @@ import numpy as np
 import torch
 
 from soma import metrics as _m
+from soma.memory.backend import _default_search_near_id
 
 
 def _import_faiss() -> Any:
@@ -229,6 +230,22 @@ class InProcBackend:
         scores = _cosine_sim_rows(q, subset)
         order = np.argsort(-scores)[:k]
         return [(self._ids[idxs[j]], float(scores[j])) for j in order]
+
+    def search_near_id(
+        self,
+        node_id: str,
+        k: int,
+        *,
+        exclude_self: bool = True,
+    ) -> list[tuple[str, float]]:
+        """In-proc has no round-trip to skip; fall back to the default.
+
+        The default ``get_vectors`` + ``search`` pattern is already
+        optimal here — both calls are in-RAM — so we just delegate.
+        """
+        return _default_search_near_id(
+            self, node_id, k, exclude_self=exclude_self
+        )
 
     def snapshot(self, bundle_dir: Path) -> None:
         """Write ``memory_embeddings.pt`` with the stacked vector matrix.

@@ -71,6 +71,15 @@ class _DummyBackend:
     ) -> list[tuple[str, float]]:
         return []
 
+    def search_near_id(
+        self,
+        node_id: str,
+        k: int,
+        *,
+        exclude_self: bool = True,
+    ) -> list[tuple[str, float]]:
+        return []
+
     def snapshot(self, bundle_dir: Path) -> None:
         return None
 
@@ -292,6 +301,84 @@ def test_contract_protocol_isinstance(
     b = shipped_backend(4)
     try:
         assert isinstance(b, VectorBackend)
+    finally:
+        if hasattr(b, "close"):
+            b.close()
+
+
+# ----------------------------------------------------------------------
+# Phase 16: search_near_id contract. All adapters must agree on shape,
+# self-exclusion semantics, and the unknown-id empty-result contract —
+# whether via the default two-step implementation or a server-side
+# fast path.
+# ----------------------------------------------------------------------
+
+
+def test_contract_search_near_id_excludes_self(
+    shipped_backend: BackendFactory,
+) -> None:
+    """``exclude_self=True`` (default) must drop the pivot id from the
+    result. Length must be exactly ``k`` when enough other points exist.
+    Ordering is score-descending; higher cosine == more similar."""
+    b = shipped_backend(8)
+    try:
+        ids = [f"id-{i}" for i in range(5)]
+        vecs = _rand_vecs(5, 8, seed=7)
+        b.add(ids, vecs)
+        hits = b.search_near_id("id-0", k=3)
+        returned = [nid for nid, _ in hits]
+        assert "id-0" not in returned
+        assert len(hits) == 3
+        scores = [s for _, s in hits]
+        assert scores == sorted(scores, reverse=True)
+    finally:
+        if hasattr(b, "close"):
+            b.close()
+
+
+def test_contract_search_near_id_includes_self(
+    shipped_backend: BackendFactory,
+) -> None:
+    """``exclude_self=False`` must keep the pivot id — it normally
+    surfaces first because cosine(v, v) = 1."""
+    b = shipped_backend(8)
+    try:
+        ids = [f"id-{i}" for i in range(5)]
+        vecs = _rand_vecs(5, 8, seed=11)
+        b.add(ids, vecs)
+        hits = b.search_near_id("id-0", k=3, exclude_self=False)
+        returned = [nid for nid, _ in hits]
+        assert "id-0" in returned
+        assert len(hits) == 3
+    finally:
+        if hasattr(b, "close"):
+            b.close()
+
+
+def test_contract_search_near_id_unknown_returns_empty(
+    shipped_backend: BackendFactory,
+) -> None:
+    """An unknown ``node_id`` must return ``[]`` rather than raise —
+    this matches Qdrant's ``recommend`` behaviour and is the safest
+    contract when the caller may have just removed the pivot."""
+    b = shipped_backend(8)
+    try:
+        b.add(["a", "b", "c"], _rand_vecs(3, 8))
+        assert b.search_near_id("does-not-exist", k=3) == []
+    finally:
+        if hasattr(b, "close"):
+            b.close()
+
+
+def test_contract_search_near_id_empty_store(
+    shipped_backend: BackendFactory,
+) -> None:
+    """An empty store returns ``[]`` — no exceptions, no partial
+    results. The pivot id also doesn't exist yet, so this falls under
+    the same missing-id branch."""
+    b = shipped_backend(8)
+    try:
+        assert b.search_near_id("anything", k=3) == []
     finally:
         if hasattr(b, "close"):
             b.close()

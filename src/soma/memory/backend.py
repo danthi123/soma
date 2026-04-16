@@ -181,6 +181,40 @@ class VectorBackend(Protocol):
         """
         ...
 
+    def search_near_id(
+        self,
+        node_id: str,
+        k: int,
+        *,
+        exclude_self: bool = True,
+    ) -> list[tuple[str, float]]:
+        """Return ``(id, score)`` pairs for the k nearest neighbours of
+        the vector stored at ``node_id``.
+
+        The default implementation (see :func:`_default_search_near_id`)
+        is a two-step ``get_vectors`` + ``search`` — the same code path
+        :meth:`MemoryLayer.related` took before Phase 16. Adapters that
+        can do the lookup server-side (Qdrant's ``recommend``, LanceDB's
+        in-process self-join) override to skip the round-trip. The
+        default preserves behaviour so any conforming backend that
+        doesn't override keeps working.
+
+        Parameters
+        ----------
+        node_id:
+            The stored id whose neighbourhood we want.
+        k:
+            How many neighbours to return.
+        exclude_self:
+            When True (default), filter ``node_id`` out of the result.
+            When False, the self-match normally appears first.
+
+        Missing ``node_id`` returns ``[]`` (no raise) — this matches
+        Qdrant's ``recommend`` behaviour and is the safest contract for
+        a caller that just deleted the point.
+        """
+        ...
+
     def snapshot(self, bundle_dir: Path) -> None:
         """Write any backend-specific state into ``bundle_dir`` so
         ``restore(bundle_dir)`` can rebuild equivalent state.
@@ -199,4 +233,41 @@ class VectorBackend(Protocol):
         ...
 
 
-__all__ = ["FilterPushdownUnsupported", "VectorBackend"]
+def _default_search_near_id(
+    backend: VectorBackend,
+    node_id: str,
+    k: int,
+    *,
+    exclude_self: bool = True,
+) -> list[tuple[str, float]]:
+    """Reference default for :meth:`VectorBackend.search_near_id`.
+
+    Implements the two-step ``get_vectors`` + ``search`` pattern
+    MemoryLayer used pre-Phase-16. Adapters call this from their own
+    ``search_near_id`` when they don't have a cheaper server-side path
+    (in-proc, test stubs, third-party adapters that don't override).
+
+    Returns ``[]`` when ``node_id`` is unknown (treat-as-missing — we
+    never want a neighbour lookup to blow up the caller just because
+    the pivot id was just removed).
+    """
+    if k <= 0:
+        return []
+    try:
+        vectors = backend.get_vectors([node_id])
+    except KeyError:
+        return []
+    if vectors.shape[0] == 0:
+        return []
+    query_k = k + 1 if exclude_self else k
+    hits = backend.search(vectors[0], query_k)
+    if exclude_self:
+        hits = [(nid, s) for nid, s in hits if nid != node_id]
+    return hits[:k]
+
+
+__all__ = [
+    "FilterPushdownUnsupported",
+    "VectorBackend",
+    "_default_search_near_id",
+]

@@ -350,6 +350,15 @@ class MemoryLayer:
         # Reset to 0 by attach_soma (a freshly-attached SOMA hasn't
         # seen any of the existing entries yet).
         self._consolidation_cursor: int = 0
+        # Lazy stable-capture flag (Phase 13). ``consolidate()`` flips
+        # this True when its growth pass updated weights / topology;
+        # the next ``retrieve()`` with ``graph_rerank_alpha > 0`` runs
+        # the O(N) stable-capture pass and clears the flag. Mutations
+        # (``store``, ``forget``, WAL replay) also set it so the next
+        # retrieve refreshes. Cost moves off the write path; with the
+        # default ``graph_rerank_alpha=0.0`` the flag is never acted on
+        # and stable-capture never runs.
+        self._stable_capture_dirty: bool = False
 
         # Optional recall boosters — lazy, opt-in at retrieve time.
         # BM25 lexical index for hybrid search; rebuilt when stale.
@@ -550,6 +559,8 @@ class MemoryLayer:
             self._backend.add([rec.node_id], _vec_to_np(emb))
             self._soma_activations[rec.node_id] = None
             self._step = max(self._step, int(rec.timestamp_step) + 1)
+            if self._graph_rerank_stable_capture:
+                self._stable_capture_dirty = True
         elif rec.op == "forget":
             idx = self._id_to_idx.pop(rec.node_id, None)
             if idx is None:
@@ -565,6 +576,8 @@ class MemoryLayer:
             if self._consolidation_cursor > len(self._texts):
                 self._consolidation_cursor = len(self._texts)
             self._step = max(self._step, int(rec.timestamp_step) + 1)
+            if self._graph_rerank_stable_capture:
+                self._stable_capture_dirty = True
         elif rec.op == "update_metadata":
             idx = self._id_to_idx.get(rec.node_id)
             if idx is None:
@@ -812,6 +825,10 @@ class MemoryLayer:
             self._soma_activations[node_id] = None
             self._step += 1
             self._stores_since_consolidation += 1
+            # New entry — prior stable-capture no longer covers the
+            # full store. Next retrieve with graph re-rank will refresh.
+            if self._graph_rerank_stable_capture:
+                self._stable_capture_dirty = True
             if self._wal is not None:
                 self._last_wal_offset = self._wal.ops_size_on_disk()
             self._maybe_compact()
@@ -885,6 +902,10 @@ class MemoryLayer:
             # an index per call.
             self._backend.add(node_ids, _batch_to_np(embeddings))
             self._stores_since_consolidation += len(texts)
+            # Batch grew the store — any prior stable-capture is now
+            # incomplete. Next retrieve with graph re-rank refreshes.
+            if self._graph_rerank_stable_capture:
+                self._stable_capture_dirty = True
             if self._wal is not None:
                 self._last_wal_offset = self._wal.ops_size_on_disk()
             self._maybe_compact()
@@ -948,6 +969,20 @@ class MemoryLayer:
         backend = self._backend.name
         started = time.monotonic()
         q_vec = self._embed(query)
+        # Lazy stable-capture (Phase 13). If the graph re-rank is
+        # active and a prior consolidate() / mutation left the capture
+        # stale, refresh it before reading activations. alpha=0 keeps
+        # the dirty flag set and skips the O(N) pass entirely — the
+        # production default path.
+        if (
+            self._graph_rerank_alpha > 0.0
+            and self._stable_capture_dirty
+            and self._soma is not None
+            and self._graph_rerank_stable_capture
+        ):
+            soma_output_dim = int(self._soma.config.sensor_output_dim)
+            self._recapture_activations_stable(soma_output_dim)
+            self._stable_capture_dirty = False
         has_graph_signal = (
             self._graph_rerank_alpha > 0.0
             and self._soma is not None
@@ -1277,6 +1312,11 @@ class MemoryLayer:
             # texts list, and forget() just shrank that list by one.
             if self._consolidation_cursor > len(self._texts):
                 self._consolidation_cursor = len(self._texts)
+            # Forget mutates the stored set — mark stable-capture stale
+            # (remaining entries' captures are still valid individually,
+            # but the dirty flag is cheap to clear on the next retrieve).
+            if self._graph_rerank_stable_capture:
+                self._stable_capture_dirty = True
             if self._wal is not None:
                 self._last_wal_offset = self._wal.ops_size_on_disk()
             self._maybe_compact()
@@ -1319,7 +1359,15 @@ class MemoryLayer:
             _m.COMPACTION_SECONDS.labels(bundle=bundle_label).observe(elapsed)
 
     def _consolidate_impl(self) -> int:
-        """Internal body of consolidate(), wrapped by metrics in the caller."""
+        """Internal body of consolidate(), wrapped by metrics in the caller.
+
+        Phase 13: stable-capture moved off the write path. We run the
+        growth pass here (SOMA.step under ``eval_mode=False`` for new
+        entries), then flip ``_stable_capture_dirty`` so the next
+        retrieve that actually consumes graph activations refreshes
+        them. Callers that want to pay the cost eagerly (benchmarks,
+        cold-start warmup) invoke :meth:`stable_capture` directly.
+        """
         if self._soma is None:
             return 0
         self._stores_since_consolidation = 0
@@ -1354,18 +1402,17 @@ class MemoryLayer:
             processed += 1
         self._consolidation_cursor = len(self._texts)
 
-        # Stable-capture re-runs every entry in eval_mode so all
-        # stored activations live in the same graph + weight state
-        # the query will see at retrieval. We only skip it when the
-        # growth pass didn't process anything — in that case nothing
-        # could have shifted weights or topology, so prior captures
-        # remain valid. Note: even without nodes/edges changing, the
-        # growth pass updates Hebbian + backprop weights on every
-        # step, so we cannot skip stable-capture just on
-        # ``num_nodes/num_edges unchanged`` — we have to skip on
-        # ``no SOMA steps fired``.
+        # Stable-capture is now lazy (Phase 13). If the growth pass
+        # processed anything, prior stored activations are no longer
+        # comparable to queries under the current graph + weights —
+        # even without nodes/edges changing, Hebbian + backprop run on
+        # every ``soma.step()`` so weights drift. Mark dirty so the
+        # next retrieve that needs graph activations refreshes them.
+        # With ``graph_rerank_alpha=0.0`` (shipping default) the
+        # retrieve path never reads the capture, so the flag stays
+        # set and the O(N) pass simply never runs.
         if self._graph_rerank_stable_capture and processed > 0:
-            self._recapture_activations_stable(soma_output_dim)
+            self._stable_capture_dirty = True
         return processed
 
     def _recapture_activations_stable(self, soma_output_dim: int) -> None:

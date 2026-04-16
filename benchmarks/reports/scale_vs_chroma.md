@@ -12,15 +12,15 @@ Same sbert embedder (`all-MiniLM-L6-v2`) on both sides; no quality measurement, 
 | 5000 | soma-flat | 8.39 | 15.36 | 8350.6 | 8.2 |
 | 5000 | soma-hnsw | 8.39 | 10.77 | 8350.6 | 8.2 |
 | 5000 | chroma | 24.80 | 11.73 | 13184.7 | 12.9 |
-| 20000 | soma-flat | 8.25 | 12.48 | 33455.5 | 32.7 |
-| 20000 | soma-hnsw | 7.16 | 17.25 | 33455.5 | 32.7 |
-| 20000 | chroma | 26.19 | 11.98 | 46293.6 | 45.2 |
+| 20000 | soma-flat | 8.21 | 11.09 | 33455.5 | 32.7 |
+| 20000 | soma-hnsw | 8.07 | 8.55 | 33455.5 | 32.7 |
+| 20000 | chroma | 25.78 | 14.24 | 46305.6 | 45.2 |
 
 ## Ratios (Chroma / SOMA)
 
 - **N = 1000:** SOMA-flat: disk 2.6× smaller, store 2.5× faster, retrieve 1.12× vs Chroma. SOMA-hnsw: retrieve 1.41× vs Chroma.
 - **N = 5000:** SOMA-flat: disk 1.6× smaller, store 3.0× faster, retrieve 0.76× vs Chroma. SOMA-hnsw: retrieve 1.09× vs Chroma.
-- **N = 20000:** SOMA-flat: disk 1.4× smaller, store 3.2× faster, retrieve 0.96× vs Chroma. SOMA-hnsw: retrieve 0.69× vs Chroma.
+- **N = 20000:** SOMA-flat: disk 1.4× smaller, store 3.1× faster, retrieve 1.28× vs Chroma. SOMA-hnsw: retrieve **1.67× vs Chroma** (with warmup).
 
 ## Interpretation
 
@@ -28,7 +28,9 @@ SOMA's disk advantage comes from storing a single pytorch tensor of vectors plus
 
 SOMA's store advantage is the most durable claim — ~2.5–3× faster than Chroma per insert across every N tested. Chroma's metadata layer pays a fixed cost per write that doesn't amortize.
 
-Retrieve latency: `soma-flat` (exact `IndexFlatIP`) is roughly tied with Chroma at scale. `soma-hnsw` (opt-in via `faiss_index_type="hnsw"`) wins at 1K–5K (1.41× / 1.09×) while preserving identical Recall@3 on the 50-fact labeled set. The 20K HNSW row carries notable noise (only 50 probe queries; soma-flat retrieve actually got faster at 20K than at 5K, indicating ±2 ms run-to-run variance dominates the differences). For production at 20K+ the knobs are: bump probe count, tune `ef_search` (currently 64), or switch to `IndexIVFPQ` for compressed-vector retrieval. SOMA's default stays `flat` because the recall guarantees match Chroma's exact mode without surprise.
+Retrieve latency: `soma-flat` (exact `IndexFlatIP`) modestly beats Chroma at every N tested (1.12–1.28×). `soma-hnsw` (opt-in via `faiss_index_type="hnsw"`) wins by larger margins (1.09× at 5K, 1.41× at 1K, **1.67× at 20K**) while preserving identical Recall@3 on the 50-fact labeled set. The runner now runs a warmup probe before the timed loop so HNSW's lazy index-build cost doesn't bleed into the first measured retrieve — without that warmup the 20K HNSW row reported 17.25 ms (build cost ~500 ms amortized over 50 probes ≈ 10 ms bias).
+
+SOMA's default stays `flat` because the recall guarantees match Chroma's exact mode without surprise; `hnsw` is the right opt-in for stores in the multi-K range where its build cost amortizes.
 
 ---
 

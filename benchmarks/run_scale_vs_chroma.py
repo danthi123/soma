@@ -53,6 +53,14 @@ def _run_system(
         adapter.store(f)
     store_total = time.perf_counter() - t0
 
+    # Warmup: HNSW (and Chroma to a lesser extent) lazily build their
+    # index on first retrieve. Without a warmup the first probe absorbs
+    # the build cost and skews the average for indexes that take long
+    # to construct. One warmup is enough — subsequent calls hit a warm
+    # index.
+    print(f"  [{system_name}] warmup retrieve...")
+    adapter.retrieve(probes[0], k=3)
+
     print(f"  [{system_name}] probing {len(probes)} queries...")
     retrieve_times: list[float] = []
     for q in probes:

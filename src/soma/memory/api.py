@@ -293,8 +293,10 @@ class MemoryLayer:
         # so we don't pay stack cost on every store.
         self._embeddings_list: list[torch.Tensor] = []
         # SOMA output activations captured during consolidate(), keyed by
-        # list index. Used for graph-aware re-ranking when SOMA is attached.
-        self._soma_activations: list[torch.Tensor | None] = []
+        # node_id. Used for graph-aware re-ranking when SOMA is attached.
+        # Keyed by id (not list position) so backends that soft-delete or
+        # reorder can't desync us — see Phase 6 task 3.
+        self._soma_activations: dict[str, torch.Tensor | None] = {}
 
         self._step: int = 0
         self._graph_rerank_alpha: float = float(graph_rerank_alpha)
@@ -502,7 +504,7 @@ class MemoryLayer:
             emb = rec.embedding
             assert emb is not None
             self._embeddings_list.append(emb.to(self._device))
-            self._soma_activations.append(None)
+            self._soma_activations[rec.node_id] = None
             self._step = max(self._step, int(rec.timestamp_step) + 1)
         elif rec.op == "forget":
             idx = self._id_to_idx.pop(rec.node_id, None)
@@ -513,9 +515,11 @@ class MemoryLayer:
             self._metadatas.pop(idx)
             self._timestamps.pop(idx)
             self._embeddings_list.pop(idx)
-            self._soma_activations.pop(idx)
+            self._soma_activations.pop(rec.node_id, None)
             for later_id in self._ids[idx:]:
                 self._id_to_idx[later_id] -= 1
+            if self._consolidation_cursor > len(self._texts):
+                self._consolidation_cursor = len(self._texts)
             self._step = max(self._step, int(rec.timestamp_step) + 1)
         elif rec.op == "update_metadata":
             idx = self._id_to_idx.get(rec.node_id)
@@ -753,7 +757,7 @@ class MemoryLayer:
             self._metadatas.append(meta_dict)
             self._timestamps.append(ts_step)
             self._embeddings_list.append(embedding)
-            self._soma_activations.append(None)
+            self._soma_activations[node_id] = None
             self._step += 1
             self._faiss_index = None  # invalidate; rebuilt on next retrieve
             self._stores_since_consolidation += 1
@@ -822,7 +826,7 @@ class MemoryLayer:
                 self._metadatas.append(meta_dict)
                 self._timestamps.append(ts_step)
                 self._embeddings_list.append(embeddings[i])
-                self._soma_activations.append(None)
+                self._soma_activations[nid] = None
                 self._step += 1
                 node_ids.append(nid)
             self._faiss_index = None
@@ -893,7 +897,7 @@ class MemoryLayer:
         has_graph_signal = (
             self._graph_rerank_alpha > 0.0
             and self._soma is not None
-            and any(a is not None for a in self._soma_activations)
+            and any(a is not None for a in self._soma_activations.values())
         )
 
         # Pre-rerank candidate pool: hybrid > graph rerank > plain cosine.
@@ -1214,9 +1218,13 @@ class MemoryLayer:
             self._metadatas.pop(idx)
             self._timestamps.pop(idx)
             self._embeddings_list.pop(idx)
-            self._soma_activations.pop(idx)
+            self._soma_activations.pop(node_id, None)
             for later_id in self._ids[idx:]:
                 self._id_to_idx[later_id] -= 1
+            # Keep the consolidation cursor valid: it's an int into the
+            # texts list, and forget() just shrank that list by one.
+            if self._consolidation_cursor > len(self._texts):
+                self._consolidation_cursor = len(self._texts)
             self._faiss_index = None  # invalidate
             if self._wal is not None:
                 self._last_wal_offset = self._wal.ops_size_on_disk()
@@ -1260,6 +1268,7 @@ class MemoryLayer:
         start = self._consolidation_cursor
         for entry_idx in range(start, len(self._texts)):
             text = self._texts[entry_idx]
+            nid = self._ids[entry_idx]
             token_embeddings = self._soma_encoder.encode(text)
             if len(token_embeddings) < 2:
                 continue
@@ -1273,7 +1282,7 @@ class MemoryLayer:
                 output_acts,
                 soma_output_dim=soma_output_dim,
             )
-            self._soma_activations[entry_idx] = pooled.detach().cpu()
+            self._soma_activations[nid] = pooled.detach().cpu()
             processed += 1
         self._consolidation_cursor = len(self._texts)
 
@@ -1306,6 +1315,7 @@ class MemoryLayer:
         from soma.io.verbalizer import SomaAggregator
 
         for entry_idx, text in enumerate(self._texts):
+            nid = self._ids[entry_idx]
             token_embeddings = self._soma_encoder.encode(text)
             if len(token_embeddings) < 2:
                 continue
@@ -1319,7 +1329,7 @@ class MemoryLayer:
                 output_acts,
                 soma_output_dim=soma_output_dim,
             )
-            self._soma_activations[entry_idx] = pooled.detach().cpu()
+            self._soma_activations[nid] = pooled.detach().cpu()
 
     def __len__(self) -> int:
         return len(self._ids)
@@ -1495,7 +1505,7 @@ class MemoryLayer:
                 instance._metadatas.append(dict(entry.get("metadata", {})))
                 instance._timestamps.append(int(entry.get("timestamp_step", 0)))
                 instance._embeddings_list.append(vec.to(target_device))
-                instance._soma_activations.append(None)
+                instance._soma_activations[nid] = None
 
         # --- Replay WAL on top of snapshot. -------------------------------
         # The WAL was opened during __init__; replay re-reads from disk.
@@ -1514,7 +1524,7 @@ class MemoryLayer:
                     emb = rec.embedding
                     assert emb is not None
                     instance._embeddings_list.append(emb.to(target_device))
-                    instance._soma_activations.append(None)
+                    instance._soma_activations[rec.node_id] = None
                     instance._step = max(
                         instance._step, int(rec.timestamp_step) + 1
                     )
@@ -1527,7 +1537,7 @@ class MemoryLayer:
                     instance._metadatas.pop(idx)
                     instance._timestamps.pop(idx)
                     instance._embeddings_list.pop(idx)
-                    instance._soma_activations.pop(idx)
+                    instance._soma_activations.pop(rec.node_id, None)
                     for later_id in instance._ids[idx:]:
                         instance._id_to_idx[later_id] -= 1
                     instance._step = max(
@@ -1625,8 +1635,7 @@ class MemoryLayer:
         alpha = self._graph_rerank_alpha
         scored: list[tuple[float, MemoryHit]] = []
         for hit in candidates:
-            idx = self._id_to_idx[hit.node_id]
-            stored_act = self._soma_activations[idx]
+            stored_act = self._soma_activations.get(hit.node_id)
             if stored_act is not None and q_act is not None:
                 graph_score = float(
                     F.cosine_similarity(

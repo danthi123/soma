@@ -1,5 +1,23 @@
 # Autonomous Loop — Operator Runbook
 
+> **Status: HISTORICAL (paused 2026-04-15).** This runbook describes
+> the Phase 1 autonomous training-and-improvement loop that drove SOMA
+> forward in early April 2026. As of the memory-layer pivot
+> (`docs/plans/2026-04-15-memory-layer-pivot.md`), the loop is
+> **disabled**: the training service is paused (heartbeat status
+> `"paused"`), no Windows scheduled tasks are registered, and the
+> product is now the `soma.memory.MemoryLayer` API (see
+> `docs/positioning.md`). The supporting scripts
+> (`scripts/train_service.py`, `scripts/run_tick.sh`,
+> `scripts/auto_revert.py`, `scripts/bootstrap_loop.py`) and the
+> `.soma-loop/` state directory remain in-tree so the loop can be
+> revived if future work needs it, but none of the sections below
+> describe current operational reality. Do not enable the scheduled
+> tasks without first reconsidering whether the loop still serves the
+> memory-layer roadmap. New contributors should ignore this document
+> and start from `docs/positioning.md` +
+> `docs/plans/2026-04-15-memory-layer-pivot.md`.
+
 ## 1. Overview
 
 The autonomous loop is a Claude-in-the-middle improvement cycle that runs train → test → diagnose → propose → gate → commit → restart → wiki-sync on a 37-minute cadence. A long-lived training service (`scripts/train_service.py`) drives SOMA forward continuously; every 37 minutes the Windows Task Scheduler fires `scripts/run_tick.sh`, which invokes Claude Code with the soma-diagnose and soma-propose-change skills against the latest metrics, commits any approved change under an `auto:` trailer, and signals the training service to hot-reload the new checkpoint. A separate watchdog (`scripts/auto_revert.py`) runs every 2 minutes and reverts regressions. The complete design is in `docs/plans/2026-04-12-autonomous-loop-design.md`; this document is the operational manual.
@@ -267,4 +285,9 @@ sudo systemctl enable --now soma-train.service
 
 ---
 
-*Last updated: 2026-04-12. Design reference: `docs/plans/2026-04-12-autonomous-loop-design.md`. Implementation plan: `docs/plans/2026-04-12-autonomous-loop-implementation.md`.*
+*Last updated: 2026-04-12 (runbook content); 2026-04-15 (historical
+status banner added after memory-layer pivot). Design reference:
+`docs/plans/2026-04-12-autonomous-loop-design.md`. Implementation
+plan: `docs/plans/2026-04-12-autonomous-loop-implementation.md`.
+Pivot that paused this loop:
+`docs/plans/2026-04-15-memory-layer-pivot.md`.*

@@ -124,39 +124,43 @@ def _atomic_torch_save(obj: Any, path: Path) -> None:
 EmbedFn = Callable[[str], torch.Tensor]
 
 
-def _vec_to_np(v: torch.Tensor) -> np.ndarray:
+def _vec_to_np(v: torch.Tensor) -> np.ndarray[Any, Any]:
     """Convert a (dim,) torch tensor into a (1, dim) float32 ndarray.
 
     Protocol-boundary shim — every backend expects numpy float32, not
     torch tensors. Centralized here so the torch→numpy round-trip is
     consistent on every call site.
     """
-    return v.detach().cpu().numpy().astype(np.float32).reshape(1, -1)
+    arr: np.ndarray[Any, Any] = (
+        v.detach().cpu().numpy().astype(np.float32).reshape(1, -1)
+    )
+    return arr
 
 
-def _batch_to_np(vs: list[torch.Tensor]) -> np.ndarray:
+def _batch_to_np(vs: list[torch.Tensor]) -> np.ndarray[Any, Any]:
     """Stack a list of (dim,) tensors into a (N, dim) float32 array."""
     if not vs:
         return np.empty((0, 0), dtype=np.float32)
-    return (
+    arr: np.ndarray[Any, Any] = (
         torch.stack(vs, dim=0)
         .detach()
         .cpu()
         .numpy()
         .astype(np.float32)
     )
+    return arr
 
 
 # ----------------------------------------------------------------------
 # Metadata filter — Chroma-compatible subset of `where` semantics.
 # ----------------------------------------------------------------------
-_COMPARE_OPS = {
-    "$eq": lambda a, b: a == b,
-    "$ne": lambda a, b: a != b,
-    "$gt": lambda a, b: a > b,
-    "$gte": lambda a, b: a >= b,
-    "$lt": lambda a, b: a < b,
-    "$lte": lambda a, b: a <= b,
+_COMPARE_OPS: dict[str, Callable[[Any, Any], bool]] = {
+    "$eq": lambda a, b: bool(a == b),
+    "$ne": lambda a, b: bool(a != b),
+    "$gt": lambda a, b: bool(a > b),
+    "$gte": lambda a, b: bool(a >= b),
+    "$lt": lambda a, b: bool(a < b),
+    "$lte": lambda a, b: bool(a <= b),
 }
 
 
@@ -438,7 +442,13 @@ class MemoryLayer:
             ) from exc
 
         model = SentenceTransformer(model_name)
-        dim = int(model.get_sentence_embedding_dimension())
+        raw_dim = model.get_sentence_embedding_dimension()
+        if raw_dim is None:
+            raise ValueError(
+                f"SentenceTransformer({model_name!r}) has no reported "
+                "embedding dimension; cannot build MemoryLayer."
+            )
+        dim = int(raw_dim)
 
         def _embed(text: str) -> torch.Tensor:
             return torch.tensor(model.encode(text, convert_to_numpy=True))
@@ -695,12 +705,13 @@ class MemoryLayer:
                 else:
                     emb_np_snap = np.empty((0, self._embed_dim), dtype=np.float32)
                 step_snap = self._step
-                has_encoder = self._encoder is not None
+                encoder_snap = self._encoder
+                has_encoder = encoder_snap is not None
                 encoder_state = (
-                    self._encoder.state_dict() if has_encoder else None
+                    encoder_snap.state_dict() if encoder_snap is not None else None
                 )
                 encoder_max_seq = (
-                    int(self._encoder.max_seq_len) if has_encoder else None
+                    int(encoder_snap.max_seq_len) if encoder_snap is not None else None
                 )
 
             # --- Step 2: write the new snapshot outside the lock. -----
@@ -1489,12 +1500,13 @@ class MemoryLayer:
         """
         out = Path(path)
         out.mkdir(parents=True, exist_ok=True)
-        has_encoder = self._encoder is not None
-        if has_encoder:
+        encoder = self._encoder
+        has_encoder = encoder is not None
+        if encoder is not None:
             # save_tokenizer goes through its own write path; torch.save
             # we route through the atomic wrapper.
-            self._encoder.save_tokenizer(out / "tokenizer.json")
-            _atomic_torch_save(self._encoder.state_dict(), out / "encoder.pt")
+            encoder.save_tokenizer(out / "tokenizer.json")
+            _atomic_torch_save(encoder.state_dict(), out / "encoder.pt")
         if self._ids:
             # Pull stacked vectors out of the backend in id order so
             # snapshot rows line up with memory_index.json entries.
@@ -1527,8 +1539,8 @@ class MemoryLayer:
                 )
             ],
         }
-        if has_encoder:
-            index["max_seq_len"] = int(self._encoder.max_seq_len)
+        if encoder is not None:
+            index["max_seq_len"] = int(encoder.max_seq_len)
         _atomic_write_bytes(
             out / "memory_index.json",
             json.dumps(index, indent=2).encode("utf-8"),

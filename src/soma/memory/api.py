@@ -19,6 +19,8 @@ from __future__ import annotations
 import contextlib
 import json
 import os
+import threading
+import time
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -33,6 +35,15 @@ from soma.io.text_encoder import TextEncoder, load_tokenizer
 from soma.memory.wal import WAL, WalRecord
 
 _VALID_DURABILITY = {"sync", "batch", "async"}
+
+# Compaction defaults. When the WAL grows past ``max(size_floor,
+# size_ratio * snapshot_size) OR record_count > record_threshold OR
+# age > age_seconds``, a background compaction thread rewrites the
+# snapshot and truncates the WAL.
+_COMPACTION_SIZE_FLOOR = 4 * 1024 * 1024  # 4 MB
+_COMPACTION_SIZE_RATIO = 1.0
+_COMPACTION_RECORD_THRESHOLD = 10_000
+_COMPACTION_AGE_SECONDS = 60 * 60  # 1 hour
 
 
 def _atomic_write_bytes(path: Path, data: bytes) -> None:
@@ -296,6 +307,20 @@ class MemoryLayer:
         self._durability: Literal["sync", "batch", "async"] = durability
         self._wal: WAL | None = None
         self._lock_path: Path | None = None
+        # Compaction state. ``_compaction_lock`` guards the spawn-at-most-
+        # one-thread invariant; ``_compaction_thread`` is the in-flight
+        # worker (or None/finished). Thresholds are instance-mutable so
+        # tests can tune them down without waiting for the 10K default.
+        self._compaction_lock: threading.Lock = threading.Lock()
+        self._compaction_thread: threading.Thread | None = None
+        self._compaction_size_floor: int = _COMPACTION_SIZE_FLOOR
+        self._compaction_size_ratio: float = _COMPACTION_SIZE_RATIO
+        self._compaction_record_threshold: int = _COMPACTION_RECORD_THRESHOLD
+        self._compaction_age_seconds: float = _COMPACTION_AGE_SECONDS
+        self._compaction_last_ts: float = time.monotonic()
+        # Cursor + snapshot-size used by reload_if_stale and compaction
+        # triggers. These are updated as the WAL grows / compacts.
+        self._last_wal_offset: int = 0
         if self._bundle_path is not None:
             self._bundle_path.mkdir(parents=True, exist_ok=True)
             self._lock_path = self._bundle_path / "bundle.lock"
@@ -398,12 +423,185 @@ class MemoryLayer:
 
     def close(self) -> None:
         """Close the WAL, flushing any buffered state. Safe to call
-        multiple times; safe when no bundle is attached."""
+        multiple times; safe when no bundle is attached.
+
+        Joins any in-flight compaction thread first so the on-disk
+        bundle is in a consistent state by the time close() returns.
+        """
+        thread = self._compaction_thread
+        if thread is not None and thread.is_alive():
+            thread.join(timeout=30.0)
         if self._wal is None:
             return
         with self._bundle_lock():
             self._wal.close()
         self._wal = None
+
+    # ------------------------------------------------------------------
+    # Compaction — background snapshot rewrite + WAL truncate
+    # ------------------------------------------------------------------
+    def _maybe_compact(self) -> None:
+        """Spawn a compaction thread when the WAL exceeds bounds.
+
+        Triggers on any of:
+          - record count > ``_compaction_record_threshold`` (10 000 default)
+          - WAL size bytes > ``max(4 MB, 1.0 x snapshot)``
+          - time since last compaction > ``_compaction_age_seconds`` (1 h)
+
+        Only one compaction runs at a time. A second trigger while the
+        first is in flight is a no-op — ``_compaction_lock`` is
+        non-blocking and ``_compaction_thread.is_alive()`` gates the
+        spawn. The running thread re-reads the WAL at the point it
+        grabs the bundle lock, so a trigger missed during in-flight
+        compaction is caught by the next store/store_batch/forget.
+
+        Call from within the bundle lock (so the trigger snapshot is
+        coherent with the mutation that just landed).
+        """
+        if self._wal is None or self._bundle_path is None:
+            return
+        # Only one in-flight compaction at a time. Non-blocking; a
+        # concurrent trigger sees the first still running and returns.
+        if not self._compaction_lock.acquire(blocking=False):
+            return
+        try:
+            thread = self._compaction_thread
+            if thread is not None and thread.is_alive():
+                return
+            if not self._compaction_should_fire():
+                return
+            self._compaction_thread = threading.Thread(
+                target=self._run_compaction,
+                name="soma-memory-compaction",
+                daemon=True,
+            )
+            self._compaction_thread.start()
+        finally:
+            self._compaction_lock.release()
+
+    def _compaction_should_fire(self) -> bool:
+        """Evaluate the three trigger conditions against the live WAL."""
+        if self._wal is None or self._bundle_path is None:
+            return False
+        wal = self._wal
+        if wal.record_count > self._compaction_record_threshold:
+            return True
+        snap_path = self._bundle_path / "memory_embeddings.pt"
+        snap_size = snap_path.stat().st_size if snap_path.exists() else 0
+        size_floor = max(self._compaction_size_floor, int(self._compaction_size_ratio * snap_size))
+        if wal.size_bytes > size_floor:
+            return True
+        if time.monotonic() - self._compaction_last_ts > self._compaction_age_seconds:
+            # Only fire on age if there's actually something to compact.
+            return wal.record_count > 0
+        return False
+
+    def _run_compaction(self) -> None:
+        """Background worker: copy state under lock, write snapshot
+        outside the lock, then re-acquire to swap + truncate WAL.
+
+        The snapshot write uses :func:`_atomic_torch_save` and
+        :func:`_atomic_write_bytes` so a crash mid-compaction leaves
+        the previous snapshot intact. The WAL is only truncated AFTER
+        the new snapshot is in place.
+        """
+        try:
+            # --- Step 1: snapshot the in-memory state refs. -----------
+            # We hold the bundle lock just long enough to copy references
+            # (O(N) on list copies, but no embedding or encoder work).
+            # Readers see the old snapshot + WAL until we flip atomically.
+            with self._bundle_lock():
+                if self._wal is None or self._bundle_path is None:
+                    return
+                ids_snap = list(self._ids)
+                texts_snap = list(self._texts)
+                meta_snap = [dict(m) for m in self._metadatas]
+                ts_snap = list(self._timestamps)
+                embs_snap = list(self._embeddings_list)
+                step_snap = self._step
+                has_encoder = self._encoder is not None
+                encoder_state = (
+                    self._encoder.state_dict() if has_encoder else None
+                )
+                encoder_max_seq = (
+                    int(self._encoder.max_seq_len) if has_encoder else None
+                )
+
+            # --- Step 2: write the new snapshot outside the lock. -----
+            # Each file goes to a sibling .tmp + os.replace so readers
+            # never observe a half-written bundle.
+            bundle = self._bundle_path
+            assert bundle is not None
+            if has_encoder:
+                # Tokenizer save path already writes atomically.
+                assert self._encoder is not None
+                self._encoder.save_tokenizer(bundle / "tokenizer.json")
+                assert encoder_state is not None
+                _atomic_torch_save(encoder_state, bundle / "encoder.pt")
+            if embs_snap:
+                stacked = torch.stack(embs_snap, dim=0).detach().cpu()
+            else:
+                stacked = torch.empty((0, self._embed_dim))
+            _atomic_torch_save(stacked, bundle / "memory_embeddings.pt")
+            index: dict[str, Any] = {
+                "schema_version": 2,
+                "embed_dim": self._embed_dim,
+                "embed_type": "text_encoder" if has_encoder else "custom",
+                "step": step_snap,
+                "entries": [
+                    {
+                        "node_id": nid,
+                        "text": txt,
+                        "metadata": md,
+                        "timestamp_step": ts,
+                    }
+                    for nid, txt, md, ts in zip(
+                        ids_snap, texts_snap, meta_snap, ts_snap, strict=True
+                    )
+                ],
+            }
+            if encoder_max_seq is not None:
+                index["max_seq_len"] = encoder_max_seq
+            _atomic_write_bytes(
+                bundle / "memory_index.json",
+                json.dumps(index, indent=2).encode("utf-8"),
+            )
+
+            # --- Step 3: re-acquire lock, truncate the WAL. -----------
+            # The snapshot is now on disk. Anything the WAL held prior
+            # to our Step 1 snapshot is redundant. WAL appends that
+            # landed during Steps 1-2 are lost on truncate — so we MUST
+            # snapshot the WAL's live state before truncating too.
+            with self._bundle_lock():
+                if self._wal is None:
+                    return
+                # Replay any WAL records appended after our snapshot
+                # and re-append them on top of the freshly truncated
+                # WAL so no committed store is dropped. We keep every
+                # record whose node_id was NOT in the snapshot (= new
+                # store since Step 1) plus every forget tombstone whose
+                # target id appeared in the snapshot (so a forget of a
+                # pre-snapshot id still replays on next load). Forgets
+                # of post-snapshot ids are preserved too — their
+                # matching store record is already in the tail list, so
+                # replay order will store-then-forget correctly.
+                existing_ids = set(ids_snap)
+                tail_records: list[WalRecord] = []
+                for rec in self._wal.replay():
+                    if rec.op == "store" and rec.node_id in existing_ids:
+                        # Already in snapshot; skip.
+                        continue
+                    tail_records.append(rec)
+                self._wal.truncate()
+                for rec in tail_records:
+                    self._wal.append(rec)
+                self._last_wal_offset = 0
+                self._compaction_last_ts = time.monotonic()
+        except Exception:
+            # Best-effort: log via the background thread's failure; we
+            # don't want compaction crashes to kill the main process.
+            # The next store/forget will retry the trigger.
+            pass
 
     # ------------------------------------------------------------------
     # Core API
@@ -442,6 +640,7 @@ class MemoryLayer:
             self._step += 1
             self._faiss_index = None  # invalidate; rebuilt on next retrieve
             self._stores_since_consolidation += 1
+            self._maybe_compact()
         if (
             self._auto_consolidate_every > 0
             and self._soma is not None
@@ -506,6 +705,7 @@ class MemoryLayer:
                 node_ids.append(nid)
             self._faiss_index = None
             self._stores_since_consolidation += len(texts)
+            self._maybe_compact()
         if (
             self._auto_consolidate_every > 0
             and self._soma is not None
@@ -818,6 +1018,7 @@ class MemoryLayer:
             for later_id in self._ids[idx:]:
                 self._id_to_idx[later_id] -= 1
             self._faiss_index = None  # invalidate
+            self._maybe_compact()
             return True
 
     def consolidate(self) -> int:

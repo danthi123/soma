@@ -2,10 +2,10 @@
 
 Contract (per ``docs/plans/2026-04-16-phase-34-forget-inventory.md``):
 
-- ``forget(...)`` with ``dry_run=True`` (the only mode shipped in this
-  phase) returns a :class:`ForgetPreview` dataclass summarising what a
-  deletion would touch — raw turns, derived facts, and overlapping
-  summaries — without mutating the underlying :class:`MemoryLayer`.
+- ``forget(..., dry_run=True)`` returns a :class:`ForgetPreview`
+  dataclass summarising what a deletion would touch — raw turns,
+  derived facts, and overlapping summaries — without mutating the
+  underlying :class:`MemoryLayer`.
 - Three matcher modes, intersected when combined:
     - ``text_matches=pattern``: substring match over raw turn text
       (case-insensitive by default, ``case_sensitive=True`` to opt in).
@@ -13,12 +13,16 @@ Contract (per ``docs/plans/2026-04-16-phase-34-forget-inventory.md``):
     - ``user_id=uid``: equality on ``metadata["user_id"]`` across every
       entry; delegates to the Phase 12 multi-user scoping contract.
 - Zero criteria → :class:`ValueError` (don't accidentally wipe).
-- ``dry_run=False`` → :class:`NotImplementedError` (Phase 35 wires
-  deletion).
 - Derived-fact detection uses the Phase 25 ``source_turn_id`` back-
   pointer. Overlapping-summary detection uses the
   ``summarized_turn_start`` / ``summarized_turn_end`` range metadata
   that Phase 17 stamps on every summary write.
+
+Phase 35 flipped ``dry_run`` to default to ``False`` and wired the
+actual deletion path; the preview tests here always pass
+``dry_run=True`` explicitly so they exercise only the inventory
+behaviour. The delete-path contract lives in
+``tests/test_memory/test_conversational_forget_delete.py``.
 """
 
 from __future__ import annotations
@@ -124,7 +128,7 @@ def test_forget_preview_text_match_returns_matching_turns() -> None:
     cm.add_message("user", "Coffee is good")
     cm.add_message("user", "Gardening on weekends is my hobby")
 
-    preview = cm.forget(text_matches="gardening")
+    preview = cm.forget(text_matches="gardening", dry_run=True)
     assert isinstance(preview, ForgetPreview)
     assert len(preview.raw_turns) == 2, (
         f"expected 2 turns matching 'gardening', got {len(preview.raw_turns)}"
@@ -141,7 +145,7 @@ def test_forget_preview_case_insensitive_by_default() -> None:
     """text_matches ignores case unless case_sensitive=True."""
     cm, _ = _make_cm(extract_replies=[json.dumps([])])
     cm.add_message("user", "I LOVE Gardening")
-    preview = cm.forget(text_matches="gardening")
+    preview = cm.forget(text_matches="gardening", dry_run=True)
     assert len(preview.raw_turns) == 1
 
 
@@ -149,10 +153,10 @@ def test_forget_preview_case_sensitive_optional() -> None:
     """case_sensitive=True tightens the match and can miss when case differs."""
     cm, _ = _make_cm(extract_replies=[json.dumps([])])
     cm.add_message("user", "I LOVE Gardening")
-    preview = cm.forget(text_matches="gardening", case_sensitive=True)
+    preview = cm.forget(text_matches="gardening", case_sensitive=True, dry_run=True)
     assert preview.is_empty()
     # Sanity: the capital-G variant still matches in case-sensitive mode.
-    preview2 = cm.forget(text_matches="Gardening", case_sensitive=True)
+    preview2 = cm.forget(text_matches="Gardening", case_sensitive=True, dry_run=True)
     assert len(preview2.raw_turns) == 1
 
 
@@ -186,7 +190,7 @@ def test_forget_preview_subject_match() -> None:
     llm = _ScriptedLLM()
     cm = ConversationalMemory(memory=mem, llm=llm, session_id="s")
 
-    preview = cm.forget(subject="alice")
+    preview = cm.forget(subject="alice", dry_run=True)
     assert len(preview.derived_facts) == 1
     # Alice's entry came back; Bob's did not.
     alice_hit = mem.get(preview.derived_facts[0])
@@ -226,7 +230,7 @@ def test_forget_preview_user_id_match() -> None:
         },
     )
 
-    preview = cm.forget(user_id="alice")
+    preview = cm.forget(user_id="alice", dry_run=True)
     assert alice_turn in preview.raw_turns
     assert bob_turn not in preview.raw_turns
     assert alice_fact in preview.derived_facts
@@ -255,7 +259,7 @@ def test_forget_preview_intersection_of_criteria() -> None:
         metadata={"type": "turn", "session_id": "s", "user_id": "alice", "role": "user"},
     )
 
-    preview = cm.forget(text_matches="gardening", user_id="alice")
+    preview = cm.forget(text_matches="gardening", user_id="alice", dry_run=True)
     assert preview.raw_turns == [alice_turn]
     assert bob_turn not in preview.raw_turns
     assert alice_other not in preview.raw_turns
@@ -278,16 +282,21 @@ def test_forget_preview_empty_result_returns_empty_preview() -> None:
     """A miss returns an empty ForgetPreview rather than raising."""
     cm, _ = _make_cm(extract_replies=[json.dumps([])])
     cm.add_message("user", "hello world")
-    preview = cm.forget(text_matches="nonexistent")
+    preview = cm.forget(text_matches="nonexistent", dry_run=True)
     assert preview.is_empty()
     assert preview.total_vectors == 0
 
 
 # ----------------------------------------------------------------------
-# 7. Dry-run default: no writes, no mutations
+# 7. Explicit dry_run=True: no writes, no mutations
 # ----------------------------------------------------------------------
-def test_forget_dry_run_default_true_no_writes() -> None:
-    """dry_run=True (default) must not delete anything from the MemoryLayer."""
+def test_forget_dry_run_true_no_writes() -> None:
+    """dry_run=True must not delete anything from the MemoryLayer.
+
+    Phase 34 defaulted ``dry_run`` to True; Phase 35 flipped it to
+    False, so the preview path now requires an explicit opt-in. The
+    no-writes guarantee still holds for that explicit path.
+    """
     cm, mem = _make_cm(
         extract_replies=[
             json.dumps([_fact("preference", "User loves gardening")]),
@@ -295,21 +304,11 @@ def test_forget_dry_run_default_true_no_writes() -> None:
     )
     cm.add_message("user", "I love gardening")
     baseline = len(mem)
-    preview = cm.forget(text_matches="gardening")
+    preview = cm.forget(text_matches="gardening", dry_run=True)
     assert not preview.is_empty(), "sanity: preview found something"
     assert len(mem) == baseline, (
         f"dry_run must not mutate; len went {baseline} -> {len(mem)}"
     )
-
-
-# ----------------------------------------------------------------------
-# 8. Dry-run=False is Phase 35 — raises until then
-# ----------------------------------------------------------------------
-def test_forget_dry_run_false_raises_not_implemented() -> None:
-    """dry_run=False is wired in Phase 35; today it explicitly raises."""
-    cm, _ = _make_cm()
-    with pytest.raises(NotImplementedError, match="Phase 35"):
-        cm.forget(text_matches="x", dry_run=False)
 
 
 # ----------------------------------------------------------------------
@@ -340,7 +339,7 @@ def test_forget_preview_includes_overlapping_summaries() -> None:
     ]
     assert len(summaries_all) == 3
 
-    preview = cm.forget(text_matches="gardening")
+    preview = cm.forget(text_matches="gardening", dry_run=True)
     # All three gardening turns matched.
     assert len(preview.raw_turns) == 3
     # Exactly one summary overlaps — the one covering turn indices 0..2.
@@ -363,7 +362,7 @@ def test_forget_preview_counts_total_vectors() -> None:
         summary_every=1000,
     )
     cm.add_message("user", "I love gardening")
-    preview = cm.forget(text_matches="gardening")
+    preview = cm.forget(text_matches="gardening", dry_run=True)
     assert preview.total_vectors == (
         len(preview.raw_turns)
         + len(preview.derived_facts)
@@ -387,11 +386,13 @@ def test_forget_preview_user_id_scopes_text_matches() -> None:
 
     # Constructor user_id=alice; a text-only forget still sees both
     # because the scoping is on the user_id criterion, not the wrapper.
-    all_preview = cm.forget(text_matches="gardening")
+    all_preview = cm.forget(text_matches="gardening", dry_run=True)
     assert len(all_preview.raw_turns) == 2
 
     # But adding user_id=alice as a criterion excludes bob.
-    scoped = cm.forget(text_matches="gardening", user_id="alice")
+    scoped = cm.forget(
+        text_matches="gardening", user_id="alice", dry_run=True,
+    )
     assert len(scoped.raw_turns) == 1
     only_hit = mem.get(scoped.raw_turns[0])
     assert only_hit is not None

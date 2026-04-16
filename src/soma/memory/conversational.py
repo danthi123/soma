@@ -31,7 +31,7 @@ import json
 import logging
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, overload
 
 if TYPE_CHECKING:
     from types import TracebackType
@@ -102,6 +102,36 @@ class ForgetPreview:
     def is_empty(self) -> bool:
         """True when no entries matched — safe to surface as a no-op."""
         return not (self.raw_turns or self.derived_facts or self.summaries)
+
+
+@dataclass(frozen=True)
+class ForgetResult:
+    """Outcome of a :meth:`ConversationalMemory.forget` call with ``dry_run=False``.
+
+    Phase 35 wires the actual deletion behind the Phase 34 inventory
+    path. Returned by the default (``dry_run=False``) branch so callers
+    can confirm what went away — useful for GDPR audit logs and for
+    composing higher-level "forget user X" workflows.
+
+    - :attr:`deleted_turns` — node ids of raw turns that were removed.
+    - :attr:`deleted_facts` — node ids of derived facts that were
+      removed. Facts are deleted **before** turns so the brief window
+      during which ``source_turn_id`` would dangle never exists.
+    - :attr:`deleted_summaries` — always ``[]`` in Phase 35. The field
+      is declared now so Phase 36's summary-cascade wiring doesn't
+      churn the dataclass shape. Until then, summaries that overlap
+      matched turns are surfaced by :class:`ForgetPreview` but left
+      untouched by the delete path — callers who want them gone must
+      call :meth:`clear_session` or delete them explicitly.
+    - :attr:`total_deleted` — ``len(deleted_turns) + len(deleted_facts)
+      + len(deleted_summaries)``; the single integer most audit logs
+      actually care about.
+    """
+
+    deleted_turns: list[str]
+    deleted_facts: list[str]
+    deleted_summaries: list[str]
+    total_deleted: int
 
 
 # ----------------------------------------------------------------------
@@ -1200,8 +1230,30 @@ class ConversationalMemory:
         return removed
 
     # ------------------------------------------------------------------
-    # Phase 34: forget() inventory API (dry-run only)
+    # Phase 34 (inventory) / Phase 35 (delete): forget() GDPR-forgetting API
     # ------------------------------------------------------------------
+    @overload
+    def forget(
+        self,
+        *,
+        text_matches: str | None = ...,
+        subject: str | None = ...,
+        user_id: str | None = ...,
+        case_sensitive: bool = ...,
+        dry_run: Literal[True],
+    ) -> ForgetPreview: ...
+
+    @overload
+    def forget(
+        self,
+        *,
+        text_matches: str | None = ...,
+        subject: str | None = ...,
+        user_id: str | None = ...,
+        case_sensitive: bool = ...,
+        dry_run: Literal[False] = ...,
+    ) -> ForgetResult: ...
+
     def forget(
         self,
         *,
@@ -1209,13 +1261,13 @@ class ConversationalMemory:
         subject: str | None = None,
         user_id: str | None = None,
         case_sensitive: bool = False,
-        dry_run: bool = True,
-    ) -> ForgetPreview:
-        """Return what a deletion under these criteria would touch.
+        dry_run: bool = False,
+    ) -> ForgetPreview | ForgetResult:
+        """Delete (or preview) entries matching the criteria.
 
-        Phase 34 ships the read-only inventory path only — no writes,
-        no LLM calls, no vector-store mutations. Phase 35 wires the
-        ``dry_run=False`` branch and flips the default.
+        Phase 34 shipped the read-only inventory path. Phase 35 wires
+        the actual deletion and flips the default so ``forget(...)``
+        without ``dry_run=`` does what the verb says — deletes.
 
         Matcher modes (at least one required; combinations are AND-
         intersected):
@@ -1226,35 +1278,112 @@ class ConversationalMemory:
           ``"al"`` hits "alice", "alan", "all". Callers who need word-
           boundary semantics should pre-tokenize.
         - ``subject``: equality on each fact's ``metadata["subject"]``
-          field. Facts stored without that key never match.
+          field. Facts stored without that key never match. Note that
+          the current extractor prompt doesn't emit ``subject`` — this
+          matcher only hits hand-stamped facts until a future extractor
+          phase learns to populate it.
         - ``user_id``: equality on each entry's ``metadata["user_id"]``
           (the Phase 12 multi-user scope). Works across turns, facts,
           and summaries.
 
-        Returns a :class:`ForgetPreview` with the matched turn ids,
-        the facts whose ``source_turn_id`` points into that set (plus
-        facts matched directly by ``subject``/``user_id``), and the
-        summaries whose ``[summarized_turn_start,
-        summarized_turn_end]`` range overlaps any matched turn.
+        ``dry_run=True`` returns a :class:`ForgetPreview` describing
+        what would go away without mutating the store. ``dry_run=False``
+        (default) deletes the matched entries and returns a
+        :class:`ForgetResult` with the ids that were actually removed.
+
+        Deletion order is facts-first then turns. Facts reference
+        their source turn via ``metadata["source_turn_id"]``; dropping
+        turns first would briefly orphan the fact records. Summaries
+        are surfaced in the preview but left untouched in Phase 35 —
+        Phase 36 will wire the summary-cascade rewrite.
+
+        In async-extraction mode the pending future queue is drained
+        via :meth:`flush` **before** the preview is computed, so an
+        in-flight extraction that's about to write a fact derived from
+        a matched turn lands and is then included in the deletion set.
+        In batch-extraction mode the pending buffer is dropped — the
+        user is asking to forget those turns, so extracting facts from
+        them first would just create more work for the delete loop.
+
+        Dry-run deliberately skips both flush and drop so the preview
+        reflects the current persisted state rather than triggering
+        side effects on a read-only call.
 
         Raises:
-            ValueError: when no criterion is passed (zero-criteria
+            ValueError: when no criterion is passed. Zero-criteria
                 ``forget()`` would implicitly match everything; refuse
-                so callers can't wipe a bundle by omission).
-            NotImplementedError: when ``dry_run=False`` — Phase 35
-                wires the deletion path.
+                so callers can't wipe a bundle by omission.
         """
         if text_matches is None and subject is None and user_id is None:
             raise ValueError(
                 "forget() requires at least one criterion "
                 "(text_matches=, subject=, or user_id=)"
             )
-        if not dry_run:
-            raise NotImplementedError(
-                "forget(dry_run=False) is wired in Phase 35; "
-                "call with dry_run=True to preview the target set."
-            )
 
+        # Pre-flight: drain async in-flight extractions and drop the
+        # batch buffer so the preview reflects everything that *will*
+        # exist post-wipe. Dry-run skips this — it's a read call and we
+        # don't want side effects on inspect.
+        if not dry_run:
+            if self._extraction_mode == "async":
+                # flush() blocks until the single worker drains; any
+                # exception from the executor re-raises here. Callers
+                # that want fire-and-forget forget() semantics should
+                # wrap the call in try/except themselves.
+                self.flush()
+            elif self._extraction_mode == "batch":
+                # Don't extract facts from turns the user is asking us
+                # to forget. Matches clear_session semantics (Phase 25).
+                self._pending_batch = []
+
+        preview = self._compute_forget_preview(
+            text_matches=text_matches,
+            subject=subject,
+            user_id=user_id,
+            case_sensitive=case_sensitive,
+        )
+        if dry_run:
+            return preview
+
+        # Delete facts FIRST so source_turn_id never dangles on an
+        # intermediate state. Use MemoryLayer.forget(node_id) in a loop
+        # — the single-id API already cascades to the vector backend
+        # via backend.remove([node_id]), so no extra step is needed.
+        deleted_facts: list[str] = [
+            fid for fid in preview.derived_facts if self._memory.forget(fid)
+        ]
+        deleted_turns: list[str] = [
+            tid for tid in preview.raw_turns if self._memory.forget(tid)
+        ]
+        # Phase 36 will populate deleted_summaries when the cascade-
+        # rewrite lands. For now the preview surfaces overlapping
+        # summaries for audit, but the delete path leaves them alone.
+        deleted_summaries: list[str] = []
+        return ForgetResult(
+            deleted_turns=deleted_turns,
+            deleted_facts=deleted_facts,
+            deleted_summaries=deleted_summaries,
+            total_deleted=(
+                len(deleted_turns)
+                + len(deleted_facts)
+                + len(deleted_summaries)
+            ),
+        )
+
+    def _compute_forget_preview(
+        self,
+        *,
+        text_matches: str | None,
+        subject: str | None,
+        user_id: str | None,
+        case_sensitive: bool,
+    ) -> ForgetPreview:
+        """Build a :class:`ForgetPreview` for the given criteria.
+
+        Shared by the dry-run branch of :meth:`forget` and the
+        delete-path's target-set enumeration. Pure read of the
+        MemoryLayer — no mutations, no LLM calls.
+        """
         raw_turns = _raw_turns_matching(
             self._memory,
             session_id=self._session_id,

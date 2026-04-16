@@ -22,17 +22,26 @@ from dataclasses import dataclass
 PEOPLE = [
     "Alex", "Jordan", "Sam", "Morgan", "Taylor", "Casey", "Riley",
     "Quinn", "Avery", "Jamie", "Dana", "Pat", "Lee", "Robin", "Skyler",
-    "Cameron", "Drew", "Parker", "Reese", "Sage",
+    "Cameron", "Drew", "Parker", "Reese", "Sage", "Blake", "Harper",
+    "Emerson", "Finley", "Rowan", "Shay", "Teagan", "Wren", "Ari",
+    "Kai", "Marlow", "Phoenix", "Ridley", "Sloan", "Tatum", "Vale",
+    "Oakley", "Nico", "Linden", "Kieran",
 ]
 CITIES = [
     "Portland", "Seattle", "Denver", "Austin", "Boston", "Chicago",
     "Miami", "Phoenix", "Nashville", "Minneapolis", "Pittsburgh",
-    "Raleigh", "Richmond", "Tampa", "Orlando", "Atlanta",
+    "Raleigh", "Richmond", "Tampa", "Orlando", "Atlanta", "Baltimore",
+    "Charlotte", "Columbus", "Milwaukee", "Sacramento", "Kansas City",
+    "Oklahoma City", "Albuquerque", "Tucson", "Fresno", "Omaha",
+    "Louisville", "Spokane", "Anchorage",
 ]
 COMPANIES = [
     "ArcMotion", "NovaGrid", "PulseLabs", "OrbitalML", "Northwind",
     "TriForce", "HelioSoft", "RiverRun", "Kestrel", "BlueSpruce",
-    "Fathom", "PineCone", "Solace", "MagnaTech", "Zenith",
+    "Fathom", "PineCone", "Solace", "MagnaTech", "Zenith", "Ironclad",
+    "Waypoint", "Harbinger", "Quill", "Ember", "Lyra", "Voyager",
+    "Keystone", "Aperture", "Beacon", "Parallax", "Crescent", "Meridian",
+    "Lattice", "Canopy",
 ]
 ROLES = [
     "senior engineer", "designer", "architect", "product manager",

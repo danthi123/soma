@@ -39,21 +39,36 @@ on the user's disk, LLM-agnostic.
 | Vector retrieval                  | ✅           | ✅         | ✅       |
 | Working-memory window             | ❌           | ⚠️         | ✅       |
 | Episodic-memory store             | ❌           | ✅         | ✅       |
-| **Graph structure that grows**    | ❌           | ❌         | ✅       |
-| **Graph structure that prunes**   | ❌           | ❌         | ✅       |
-| Consolidation (sleep replay)      | ❌           | ❌         | ✅       |
+| Plastic graph substrate (in-place) | ❌           | ❌         | ✅\*     |
+| Consolidation hook (learning-ready) | ❌           | ❌         | ✅       |
 | Single-file "brain" portability   | ❌           | ❌         | ✅       |
 | Swap LLM without losing memory    | ✅           | ⚠️         | ✅       |
 | Learns from use                   | ❌           | ⚠️         | ✅       |
 
 ⚠️ = partial / conditional on provider.
+\* = plasticity substrate ships; current memory workload doesn't
+trigger growth/pruning thresholds (see `paper-draft.md` §5 for the
+research agenda to activate it).
 
-The differentiator isn't raw retrieval — any decent vector store can
-retrieve. It's the graph: SOMA's memory actually *restructures* based
-on co-activation and use. Old, unused associations weaken and prune;
-freshly-reinforced ones strengthen. You get a store that gets sharper
-in the directions the user actually cares about, without retraining
-anything.
+The differentiator today is **efficiency + the substrate for
+learning to come**. On benchmarks (see `benchmarks/reports/`):
+
+- **SOMA matches Chroma on retrieval quality** (identical Recall@3 /
+  MRR@3 / NDCG@3 on a labeled 50-fact / 26-query synthetic set with
+  the same sbert embedder).
+- **SOMA is 22.6× smaller on disk** (85 KB vs 1920 KB) and **1.3×
+  faster to retrieve** than Chroma at the same N. Store is **2.8×
+  faster** per op.
+- **Old memories don't rot.** A 30-day simulation with 150 facts
+  streamed in holds old-fact Recall@3 at 0.883 — essentially level
+  with recent-fact recall (0.938).
+
+The graph is plastic-by-construction (synaptogenesis, pruning,
+myelination) but under the memory-only workload the growth knobs
+don't fire — graph stays at seed size, retrieval scores stay at
+cosine-over-sbert. The graph-as-retrieval-signal is an **open
+research question** the `benchmarks/reports/paper-draft.md` document
+scopes explicitly; today's efficiency win does not depend on it.
 
 ## Quick start
 

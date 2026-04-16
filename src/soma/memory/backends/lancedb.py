@@ -44,6 +44,7 @@ from typing import Any, Literal
 
 import numpy as np
 
+from soma.memory.backend import FilterPushdownUnsupported
 from soma.memory.backends.lancedb_filter import to_lancedb_where
 
 # LanceDB indexes only become worthwhile past a few thousand rows.
@@ -324,7 +325,29 @@ class LanceDBBackend:
         # Over-fetch a handful when exclusions are active in case the
         # planner can't push them into the ANN search itself.
         limit = k + (len(exclude_ids) if exclude_ids else 0)
-        rows = builder.limit(limit).to_list()
+        try:
+            rows = builder.limit(limit).to_list()
+        except Exception as exc:
+            # LanceDB raises RuntimeError (wrapping a schema error)
+            # when the filter references a column that doesn't exist
+            # in the current table schema. The current schema is
+            # ``{id, vector}`` so metadata filters on other fields
+            # fail here. Convert to FilterPushdownUnsupported so
+            # MemoryLayer falls back to the Python pre-filter +
+            # ``search_subset`` path, which every backend (including
+            # this one via WHERE id IN (...)) can serve.
+            msg = str(exc)
+            if _is_schema_error(msg):
+                raise FilterPushdownUnsupported(
+                    op="schema",
+                    field=_extract_missing_field(msg),
+                    message=(
+                        "LanceDB table schema does not include the "
+                        "referenced field(s); MemoryLayer will use its "
+                        "Python pre-filter path instead."
+                    ),
+                ) from exc
+            raise
         out = [
             (
                 str(row["id"]),
@@ -489,6 +512,33 @@ class LanceDBBackend:
             # back to the exact-scan path LanceDB uses when no index
             # is present. The next add/open can retry.
             self._indexed = False
+
+
+def _is_schema_error(message: str) -> bool:
+    """Heuristic: does the LanceDB error message say "no such column"?
+
+    LanceDB wraps a rust-side ``Schema`` error in a Python
+    ``RuntimeError`` whose text contains ``Schema error: No field
+    named ...``. We match on the substring rather than exception
+    type because the exact rust-layer type is not part of the
+    Python API.
+    """
+    low = message.lower()
+    return (
+        "no field named" in low
+        or "schema error" in low
+        or "cannot find column" in low
+    )
+
+
+def _extract_missing_field(message: str) -> str | None:
+    """Pull the offending column name out of a LanceDB schema error."""
+    import re
+
+    match = re.search(r"No field named (\w+)", message)
+    if match is not None:
+        return match.group(1)
+    return None
 
 
 def _list_tables(db: Any) -> list[str]:

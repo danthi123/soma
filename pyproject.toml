@@ -102,6 +102,18 @@ lancedb = [
     # `pip install soma[lancedb]`. See docs/backends.md.
     "lancedb>=0.11",
 ]
+chroma = [
+    # ChromaBackend adapter — optional extra. Drop-in replacement for
+    # existing Chroma users: point MemoryLayer at an existing
+    # chromadb PersistentClient directory and SOMA's memory layer
+    # composes on top (ids/texts/metadata/WAL stay in SOMA; vectors
+    # stay in Chroma). Install with `pip install soma[chroma]`. See
+    # docs/backends.md. Floor pinned to 0.5 because the
+    # delete_collection + recreate semantics and the removal of the
+    # explicit ``persist()`` method landed in 0.5 — supporting the
+    # 0.4.x API would require an adapter-side version switch.
+    "chromadb>=0.5",
+]
 langchain = [
     "langchain-core>=0.1.0",
 ]
@@ -187,6 +199,7 @@ module = [
     "faiss", "faiss.*",
     "qdrant_client", "qdrant_client.*",
     "lancedb", "lancedb.*",
+    "chromadb", "chromadb.*",
     "pyarrow", "pyarrow.*",
     "redis", "redis.*",
     "fakeredis", "fakeredis.*",

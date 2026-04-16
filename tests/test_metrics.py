@@ -117,8 +117,15 @@ def test_histograms_observe() -> None:
 
     m.RETRIEVE_LATENCY.labels(bundle="__h__", backend="linear").observe(0.02)
     m.RETRIEVE_LATENCY.labels(bundle="__h__", backend="linear").observe(0.1)
-    h = m.RETRIEVE_LATENCY.labels(bundle="__h__", backend="linear")
-    assert h._sum.get() >= 0.12
+    # Prometheus-client exposes per-label _sum via the underlying
+    # value wrapper; we read it via the public collect() API below.
+    target = {"bundle": "__h__", "backend": "linear"}
+    total = 0.0
+    for fam in m.RETRIEVE_LATENCY.collect():
+        for s in fam.samples:
+            if s.name.endswith("_sum") and s.labels == target:
+                total = float(s.value)
+    assert total >= 0.12
 
 
 @pytestmark_prom

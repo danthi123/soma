@@ -433,7 +433,7 @@ class MemoryLayer:
         """
         if self._wal is None:
             return
-        with self._bundle_lock():
+        with self._bundle_lock(), _m.WAL_FLUSH_SECONDS.time():
             self._wal.flush()
 
     def reload_if_stale(self) -> int:
@@ -475,6 +475,7 @@ class MemoryLayer:
             self._last_wal_offset = current_size
             if applied:
                 self._faiss_index = None  # invalidate on any change
+                _m.RELOAD_TOTAL.labels(bundle=self._bundle_name).inc()
             return applied
 
     def _apply_record(self, rec: WalRecord) -> None:
@@ -716,6 +717,7 @@ class MemoryLayer:
                         emb_offset=None,
                     )
                 )
+                _m.WAL_APPEND_TOTAL.labels(op="store").inc()
             self._id_to_idx[node_id] = len(self._ids)
             self._ids.append(node_id)
             self._texts.append(text)
@@ -729,6 +731,8 @@ class MemoryLayer:
             if self._wal is not None:
                 self._last_wal_offset = self._wal.ops_size_on_disk()
             self._maybe_compact()
+        _m.STORE_TOTAL.labels(bundle=self._bundle_name).inc()
+        _m.ENTRIES.labels(bundle=self._bundle_name).set(len(self._ids))
         if (
             self._auto_consolidate_every > 0
             and self._soma is not None
@@ -782,6 +786,7 @@ class MemoryLayer:
                             emb_offset=None,
                         )
                     )
+                    _m.WAL_APPEND_TOTAL.labels(op="store").inc()
                 self._id_to_idx[nid] = len(self._ids)
                 self._ids.append(nid)
                 self._texts.append(text)
@@ -796,6 +801,8 @@ class MemoryLayer:
             if self._wal is not None:
                 self._last_wal_offset = self._wal.ops_size_on_disk()
             self._maybe_compact()
+        _m.STORE_BATCH_TOTAL.labels(bundle=self._bundle_name).inc()
+        _m.ENTRIES.labels(bundle=self._bundle_name).set(len(self._ids))
         if (
             self._auto_consolidate_every > 0
             and self._soma is not None
@@ -851,6 +858,8 @@ class MemoryLayer:
             raise ValueError(f"hybrid_alpha must be in [0,1], got {hybrid_alpha}")
 
         self._maybe_build_faiss()
+        backend = self._backend_label()
+        started = time.monotonic()
         q_vec = self._embed(query)
         has_graph_signal = (
             self._graph_rerank_alpha > 0.0
@@ -869,12 +878,13 @@ class MemoryLayer:
                 if _matches_where(meta, where)
             ]
             if not filter_idx:
-                return []
-            candidates = self._rank_subset(q_vec, filter_idx, k=candidate_k)
-            if hybrid_alpha is not None:
-                candidates = self._blend_bm25_subset(
-                    query, candidates, filter_idx, alpha=hybrid_alpha, k=candidate_k
-                )
+                candidates = []
+            else:
+                candidates = self._rank_subset(q_vec, filter_idx, k=candidate_k)
+                if hybrid_alpha is not None:
+                    candidates = self._blend_bm25_subset(
+                        query, candidates, filter_idx, alpha=hybrid_alpha, k=candidate_k
+                    )
         elif hybrid_alpha is not None:
             candidates = self._retrieve_hybrid(
                 query, q_vec, k=candidate_k, alpha=hybrid_alpha
@@ -891,7 +901,13 @@ class MemoryLayer:
                 "rerank_top_n set but no reranker attached. "
                 "Call mem.attach_reranker(CrossEncoderReranker()) first."
             )
-        return candidates[:k]
+        results = candidates[:k]
+        elapsed = time.monotonic() - started
+        _m.RETRIEVE_TOTAL.labels(bundle=self._bundle_name, backend=backend).inc()
+        _m.RETRIEVE_LATENCY.labels(
+            bundle=self._bundle_name, backend=backend
+        ).observe(elapsed)
+        return results
 
     def related(self, node_id: str, k: int = 5) -> list[MemoryHit]:
         """Return up to k entries most similar to the entry at ``node_id``."""
@@ -917,10 +933,12 @@ class MemoryLayer:
             return
         from soma.memory.bm25 import BM25Index
 
-        idx = BM25Index()
-        idx.build(list(self._texts))
-        self._bm25_index = idx
-        self._bm25_version = self._step
+        with _m.BM25_REBUILD_SECONDS.time():
+            idx = BM25Index()
+            idx.build(list(self._texts))
+            self._bm25_index = idx
+            self._bm25_version = self._step
+        _m.BM25_REBUILD_TOTAL.inc()
 
     def _retrieve_hybrid(
         self, query: str, q_vec: torch.Tensor, *, k: int, alpha: float
@@ -1098,6 +1116,7 @@ class MemoryLayer:
                         emb_offset=None,
                     )
                 )
+                _m.WAL_APPEND_TOTAL.labels(op="forget").inc()
             self._id_to_idx.pop(node_id, None)
             self._ids.pop(idx)
             self._texts.pop(idx)
@@ -1111,7 +1130,9 @@ class MemoryLayer:
             if self._wal is not None:
                 self._last_wal_offset = self._wal.ops_size_on_disk()
             self._maybe_compact()
-            return True
+        _m.FORGET_TOTAL.labels(bundle=self._bundle_name).inc()
+        _m.ENTRIES.labels(bundle=self._bundle_name).set(len(self._ids))
+        return True
 
     def consolidate(self) -> int:
         """Push stored entries through SOMA's graph to trigger plasticity.
@@ -1126,6 +1147,12 @@ class MemoryLayer:
         Callers should include ``consolidate()`` in their loops now; it
         becomes load-bearing once a SOMA is attached.
         """
+        _m.CONSOLIDATE_TOTAL.inc()
+        with _m.CONSOLIDATE_SECONDS.time():
+            return self._consolidate_impl()
+
+    def _consolidate_impl(self) -> int:
+        """Internal body of consolidate(), wrapped by metrics in the caller."""
         if self._soma is None:
             return 0
         self._stores_since_consolidation = 0
@@ -1585,6 +1612,7 @@ class MemoryLayer:
             return
         if len(self._ids) < self._faiss_threshold:
             self._faiss_index = None
+            _m.FAISS_INDEX_SIZE.labels(bundle=self._bundle_name).set(0)
             return
         if self._faiss_index is not None:
             return
@@ -1594,20 +1622,29 @@ class MemoryLayer:
         import numpy as np
 
         faiss = _import_faiss()
-        matrix = torch.stack(self._embeddings_list, dim=0).detach().cpu().numpy().astype(np.float32)
-        faiss.normalize_L2(matrix)
-        if self._faiss_index_type == "hnsw":
-            index = faiss.IndexHNSWFlat(
-                self._embed_dim,
-                self._faiss_hnsw_m,
-                faiss.METRIC_INNER_PRODUCT,
+        with _m.FAISS_REBUILD_SECONDS.time():
+            matrix = (
+                torch.stack(self._embeddings_list, dim=0)
+                .detach()
+                .cpu()
+                .numpy()
+                .astype(np.float32)
             )
-            index.hnsw.efConstruction = self._faiss_hnsw_ef_construction
-            index.hnsw.efSearch = self._faiss_hnsw_ef_search
-        else:
-            index = faiss.IndexFlatIP(self._embed_dim)
-        index.add(matrix)
-        self._faiss_index = index
+            faiss.normalize_L2(matrix)
+            if self._faiss_index_type == "hnsw":
+                index = faiss.IndexHNSWFlat(
+                    self._embed_dim,
+                    self._faiss_hnsw_m,
+                    faiss.METRIC_INNER_PRODUCT,
+                )
+                index.hnsw.efConstruction = self._faiss_hnsw_ef_construction
+                index.hnsw.efSearch = self._faiss_hnsw_ef_search
+            else:
+                index = faiss.IndexFlatIP(self._embed_dim)
+            index.add(matrix)
+            self._faiss_index = index
+        _m.FAISS_REBUILD_TOTAL.labels(index_type=self._faiss_index_type).inc()
+        _m.FAISS_INDEX_SIZE.labels(bundle=self._bundle_name).set(index.ntotal)
 
     def _hit_for_index(self, idx: int, *, score: float) -> MemoryHit:
         return MemoryHit(

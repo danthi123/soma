@@ -62,6 +62,7 @@ __all__ = [
     "NoopCounter",
     "NoopGauge",
     "NoopHistogram",
+    "RELOAD_TOTAL",
     "RETRIEVE_LATENCY",
     "RETRIEVE_TOTAL",
     "STORE_BATCH_TOTAL",
@@ -239,6 +240,11 @@ WAL_APPEND_TOTAL = _counter(
     "soma_wal_append_total",
     "WAL records appended, labelled by op (store | forget).",
     ("op",),
+)
+RELOAD_TOTAL = _counter(
+    "soma_reload_total",
+    "reload_if_stale() invocations that applied ≥1 peer-committed record.",
+    ("bundle",),
 )
 
 # --- Gauges ---

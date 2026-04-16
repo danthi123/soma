@@ -1,0 +1,10 @@
+# chart-testing config — consumed by `ct lint` and `ct install`.
+# https://github.com/helm/chart-testing
+chart-dirs:
+  - deploy/helm
+chart-repos: []
+helm-extra-args: --timeout 300s
+target-branch: main
+validate-maintainers: false
+check-version-increment: false
+debug: false

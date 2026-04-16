@@ -1,0 +1,29 @@
+# CI smoke — Ingress path. Proves the mutex validator doesn't misfire
+# and the Ingress manifest renders valid v1.
+replicaCount: 1
+persistence:
+  enabled: true
+  size: 1Gi
+  storageClassName: "standard"
+resources:
+  requests:
+    cpu: 100m
+    memory: 512Mi
+  limits:
+    memory: 1Gi
+ingress:
+  enabled: true
+  className: "nginx"
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-staging
+  hosts:
+    - host: soma.ci.local
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: soma-ci-tls
+      hosts:
+        - soma.ci.local
+httpRoute:
+  enabled: false

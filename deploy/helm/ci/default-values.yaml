@@ -1,0 +1,13 @@
+# CI smoke — every default. kubeconform + ct install both consume this.
+# Keep empty-ish so the chart's documented defaults are what we test.
+replicaCount: 1
+persistence:
+  enabled: true
+  size: 1Gi
+  storageClassName: "standard"   # kind default
+resources:
+  requests:
+    cpu: 100m
+    memory: 512Mi
+  limits:
+    memory: 1Gi

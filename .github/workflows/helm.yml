@@ -1,0 +1,100 @@
+name: helm
+
+on:
+  push:
+    branches: [main]
+    tags: ['chart-v*']
+  pull_request:
+    paths:
+      - 'deploy/helm/**'
+      - '.github/workflows/helm.yml'
+      - 'ct.yaml'
+
+jobs:
+  lint:
+    name: helm lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.14.4
+      - name: helm lint
+        run: helm lint deploy/helm/soma
+
+  kubeconform:
+    name: kubeconform (k8s ${{ matrix.kube-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        kube-version: ['1.28', '1.29', '1.30']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.14.4
+      - name: Render default values
+        run: |
+          helm template soma deploy/helm/soma \
+            --values deploy/helm/ci/default-values.yaml \
+            > rendered-default.yaml
+      - name: Render ingress-enabled values
+        run: |
+          helm template soma deploy/helm/soma \
+            --values deploy/helm/ci/ingress-enabled-values.yaml \
+            > rendered-ingress.yaml
+      - name: Install kubeconform
+        run: |
+          curl -sSLo kubeconform.tar.gz \
+            https://github.com/yannh/kubeconform/releases/latest/download/kubeconform-linux-amd64.tar.gz
+          tar -xzf kubeconform.tar.gz
+          sudo mv kubeconform /usr/local/bin/
+      - name: kubeconform strict (default)
+        run: |
+          kubeconform \
+            -kubernetes-version ${{ matrix.kube-version }} \
+            -strict \
+            -summary \
+            -schema-location default \
+            -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json' \
+            rendered-default.yaml
+      - name: kubeconform strict (ingress-enabled)
+        run: |
+          kubeconform \
+            -kubernetes-version ${{ matrix.kube-version }} \
+            -strict \
+            -summary \
+            -schema-location default \
+            -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json' \
+            rendered-ingress.yaml
+
+  ct-install:
+    name: ct install (kind)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.14.4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          check-latest: true
+      - name: Install chart-testing
+        uses: helm/chart-testing-action@v2.6.1
+      - name: Create kind cluster
+        uses: helm/kind-action@v1.10.0
+        with:
+          wait: 120s
+      - name: List changed charts
+        id: list-changed
+        run: |
+          changed=$(ct list-changed --config ct.yaml)
+          echo "changed=${changed}" >> "$GITHUB_OUTPUT"
+      - name: ct lint
+        run: ct lint --config ct.yaml --target-branch ${{ github.event.repository.default_branch }}
+      - name: ct install
+        run: ct install --config ct.yaml --target-branch ${{ github.event.repository.default_branch }}

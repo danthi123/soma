@@ -1,0 +1,27 @@
+# CI smoke — ServiceMonitor + PodMonitor paths. Requires the
+# Prometheus Operator CRDs installed on the ct-install kind cluster
+# (or the Capabilities gate skips them silently).
+replicaCount: 1
+persistence:
+  enabled: true
+  size: 1Gi
+  storageClassName: "standard"
+resources:
+  requests:
+    cpu: 100m
+    memory: 512Mi
+  limits:
+    memory: 1Gi
+metrics:
+  annotations:
+    enabled: true
+  serviceMonitor:
+    enabled: true
+    interval: 15s
+    scrapeTimeout: 10s
+    labels:
+      release: prometheus
+  podMonitor:
+    enabled: true
+    interval: 15s
+    scrapeTimeout: 10s

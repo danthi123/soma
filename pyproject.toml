@@ -82,6 +82,17 @@ qdrant = [
     # scale path and local-file mode. See docs/backends.md.
     "qdrant-client>=1.10",
 ]
+qdrant-test = [
+    # Cross-version snapshot/restore compatibility tests for
+    # QdrantBackend. Spins up real Qdrant containers (1.11/1.12/1.13)
+    # via testcontainers-python and exercises snapshot export +
+    # restore between versions. Gated behind
+    # `SOMA_QDRANT_VERSION_MATRIX=1` and the `slow_qdrant` pytest
+    # marker so the default test run stays fast and Docker-free.
+    # See docs/backends.md "Cross-version snapshot testing".
+    "testcontainers>=4",
+    "qdrant-client>=1.10",
+]
 lancedb = [
     # LanceDBBackend adapter — optional extra. Fills the "local-first
     # scale past Qdrant-local's 20K cap, no server" niche between
@@ -144,6 +155,7 @@ markers = [
     "slow: marks tests as slow (integration tests, deselect with '-m \"not slow\"')",
     "cuda: requires a CUDA GPU to run (deselect with '-m \"not cuda\"')",
     "quant: requires bitsandbytes and CUDA for weight quantization tests",
+    "slow_qdrant: cross-version Qdrant snapshot/restore tests via testcontainers (Phase 24); gated by SOMA_QDRANT_VERSION_MATRIX=1",
 ]
 
 [tool.mypy]

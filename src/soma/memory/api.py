@@ -31,6 +31,60 @@ from soma.io.text_encoder import TextEncoder, load_tokenizer
 EmbedFn = Callable[[str], torch.Tensor]
 
 
+# ----------------------------------------------------------------------
+# Metadata filter — Chroma-compatible subset of `where` semantics.
+# ----------------------------------------------------------------------
+_COMPARE_OPS = {
+    "$eq": lambda a, b: a == b,
+    "$ne": lambda a, b: a != b,
+    "$gt": lambda a, b: a > b,
+    "$gte": lambda a, b: a >= b,
+    "$lt": lambda a, b: a < b,
+    "$lte": lambda a, b: a <= b,
+}
+
+
+def _matches_where(meta: dict[str, Any], where: dict[str, Any]) -> bool:
+    """Chroma-compatible subset of ``where`` filters:
+
+    - ``{"f": v}`` exact match
+    - ``{"f": {"$eq": v}}`` / ``$ne`` / ``$gt`` / ``$gte`` / ``$lt`` / ``$lte``
+    - ``{"f": {"$in": [...]}}`` value-in-list
+
+    Multiple fields = AND (same as Chroma's default). Missing fields
+    on an entry fail the filter.
+    """
+    for field_name, spec in where.items():
+        if isinstance(spec, dict):
+            actual = meta.get(field_name)
+            for op, expected in spec.items():
+                if op == "$in":
+                    if not isinstance(expected, (list, tuple, set)):
+                        raise ValueError(f"$in expects a list, got {type(expected).__name__}")
+                    if actual not in expected:
+                        return False
+                elif op == "$nin":
+                    if not isinstance(expected, (list, tuple, set)):
+                        raise ValueError(f"$nin expects a list, got {type(expected).__name__}")
+                    if actual in expected:
+                        return False
+                elif op in _COMPARE_OPS:
+                    fn = _COMPARE_OPS[op]
+                    if actual is None:
+                        return False
+                    try:
+                        if not fn(actual, expected):
+                            return False
+                    except TypeError:
+                        return False
+                else:
+                    raise ValueError(f"unsupported operator {op!r} in where clause")
+        else:
+            if meta.get(field_name) != spec:
+                return False
+    return True
+
+
 @dataclass(frozen=True)
 class MemoryHit:
     """One retrieved entry. Immutable so callers can pass them around safely."""
@@ -238,6 +292,7 @@ class MemoryLayer:
         query: str,
         k: int = 5,
         *,
+        where: dict[str, Any] | None = None,
         hybrid_alpha: float | None = None,
         rerank_top_n: int | None = None,
     ) -> list[MemoryHit]:
@@ -249,8 +304,20 @@ class MemoryLayer:
         of cosine score and graph-proximity score derived from SOMA's
         output activations.
 
-        Optional recall boosts:
+        Optional parameters:
 
+        - ``where``: metadata filter applied *before* ranking so we
+          don't run out of candidates on selective filters. Supported
+          forms::
+
+              {"field": "value"}                 # exact match
+              {"field1": "a", "field2": "b"}     # AND across fields
+              {"field": {"$in": ["a", "b"]}}     # value-list match
+              {"field": {"$ne": "x"}}            # not-equal
+              {"field": {"$gt": 3}}              # comparisons ($gt/$lt/$gte/$lte)
+
+          Matches Chroma's ``where`` semantics for the subset people
+          actually use. Missing fields on an entry fail the filter.
         - ``hybrid_alpha`` in [0, 1]: blend cosine with BM25 lexical
           scores. ``0.0`` = pure BM25, ``1.0`` = pure cosine, ``0.5``
           is a reasonable default. BM25 index is built lazily.
@@ -275,7 +342,22 @@ class MemoryLayer:
 
         # Pre-rerank candidate pool: hybrid > graph rerank > plain cosine.
         candidate_k = rerank_top_n if rerank_top_n else k
-        if hybrid_alpha is not None:
+        if where is not None:
+            # Pre-filter mode: skip FAISS, brute-force cosine on the
+            # subset passing the metadata filter. Keeps top-k honest
+            # on selective filters.
+            filter_idx = [
+                i for i, meta in enumerate(self._metadatas)
+                if _matches_where(meta, where)
+            ]
+            if not filter_idx:
+                return []
+            candidates = self._rank_subset(q_vec, filter_idx, k=candidate_k)
+            if hybrid_alpha is not None:
+                candidates = self._blend_bm25_subset(
+                    query, candidates, filter_idx, alpha=hybrid_alpha, k=candidate_k
+                )
+        elif hybrid_alpha is not None:
             candidates = self._retrieve_hybrid(
                 query, q_vec, k=candidate_k, alpha=hybrid_alpha
             )
@@ -399,6 +481,60 @@ class MemoryLayer:
             )
         rescored.sort(key=lambda h: -h.score)
         return rescored[:top_k]
+
+    def _rank_subset(
+        self, q_vec: torch.Tensor, indices: list[int], *, k: int
+    ) -> list[MemoryHit]:
+        """Brute-force cosine over a pre-filtered subset of entries."""
+        if not indices:
+            return []
+        # Stack the subset's embeddings into one tensor, compute cosine
+        # against q_vec, sort.
+        emb_subset = torch.stack([self._embeddings_list[i] for i in indices])
+        q = q_vec.unsqueeze(0)
+        sims = F.cosine_similarity(q, emb_subset, dim=1)
+        scores = sims.detach().cpu().tolist()
+        order = sorted(range(len(indices)), key=lambda j: -scores[j])[:k]
+        return [
+            self._hit_for_index(indices[j], score=float(scores[j])) for j in order
+        ]
+
+    def _blend_bm25_subset(
+        self,
+        query: str,
+        cos_hits: list[MemoryHit],
+        indices: list[int],
+        *,
+        alpha: float,
+        k: int,
+    ) -> list[MemoryHit]:
+        """Hybrid cosine+BM25 restricted to the filtered subset."""
+        self._maybe_build_bm25()
+        assert self._bm25_index is not None
+        bm25_all = self._bm25_index.search(query, len(self._ids))
+        allowed = set(indices)
+        bm25_filtered = [(i, s) for i, s in bm25_all if i in allowed]
+        cos_max = max((h.score for h in cos_hits), default=1e-9)
+        bm25_max = max((s for _, s in bm25_filtered), default=1e-9)
+        cos_scores: dict[str, float] = {
+            h.node_id: (h.score / cos_max if cos_max > 0 else 0.0)
+            for h in cos_hits
+        }
+        bm25_scores: dict[str, float] = {
+            self._ids[i]: (s / bm25_max if bm25_max > 0 else 0.0)
+            for i, s in bm25_filtered
+        }
+        blended: dict[str, float] = {}
+        for node_id in set(cos_scores) | set(bm25_scores):
+            c = cos_scores.get(node_id, 0.0)
+            b = bm25_scores.get(node_id, 0.0)
+            blended[node_id] = alpha * c + (1.0 - alpha) * b
+        id_to_idx = {nid: i for i, nid in enumerate(self._ids)}
+        ranked = sorted(blended.items(), key=lambda kv: -kv[1])[:k]
+        return [
+            self._hit_for_index(id_to_idx[nid], score=float(score))
+            for nid, score in ranked
+        ]
 
     def get(self, node_id: str) -> MemoryHit | None:
         """Fetch an entry by id; ``None`` if unknown. Score is self-cosine (1.0)."""

@@ -145,6 +145,9 @@ class StoreResponse(BaseModel):
 class RetrieveRequest(BaseModel):
     query: str
     k: int = 5
+    where: dict[str, Any] | None = None
+    hybrid_alpha: float | None = None
+    rerank_top_n: int | None = None
 
 
 class HitResponse(BaseModel):
@@ -228,7 +231,14 @@ def store(req: StoreRequest) -> StoreResponse:
 @app.post("/retrieve", response_model=RetrieveResponse, dependencies=[Depends(require_api_key)])
 def retrieve(req: RetrieveRequest) -> RetrieveResponse:
     mem = _get_mem()
-    return RetrieveResponse(hits=[_hit(h) for h in mem.retrieve(req.query, k=req.k)])
+    kwargs: dict[str, Any] = {}
+    if req.where is not None:
+        kwargs["where"] = req.where
+    if req.hybrid_alpha is not None:
+        kwargs["hybrid_alpha"] = req.hybrid_alpha
+    if req.rerank_top_n is not None:
+        kwargs["rerank_top_n"] = req.rerank_top_n
+    return RetrieveResponse(hits=[_hit(h) for h in mem.retrieve(req.query, k=req.k, **kwargs)])
 
 
 @app.get("/get/{node_id}", response_model=HitResponse, dependencies=[Depends(require_api_key)])
@@ -298,7 +308,14 @@ def store_bundle(name: str, req: StoreRequest) -> StoreResponse:
 )
 def retrieve_bundle(name: str, req: RetrieveRequest) -> RetrieveResponse:
     mem = _get_mem(name)
-    return RetrieveResponse(hits=[_hit(h) for h in mem.retrieve(req.query, k=req.k)])
+    kwargs: dict[str, Any] = {}
+    if req.where is not None:
+        kwargs["where"] = req.where
+    if req.hybrid_alpha is not None:
+        kwargs["hybrid_alpha"] = req.hybrid_alpha
+    if req.rerank_top_n is not None:
+        kwargs["rerank_top_n"] = req.rerank_top_n
+    return RetrieveResponse(hits=[_hit(h) for h in mem.retrieve(req.query, k=req.k, **kwargs)])
 
 
 @app.get(

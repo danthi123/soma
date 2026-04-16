@@ -69,17 +69,24 @@ any vector DB with the same embedder achieves on the same corpus.
 
 ## Not-yet-shipped — ranked by expected impact
 
-### 4. In-index metadata filtering at retrieve time
+### 4. In-index metadata filtering at retrieve time — SHIPPED (2026-04-16)
 
-Chroma supports `where` clauses during retrieve that filter candidates
-by metadata *before* ranking. SOMA requires post-filtering, so on
-heavily-filtered queries we're slower and can miss candidates that
-a pre-filter would have caught inside the top-N. Matching parity here
-is a latency + ergonomics win, not a recall win — but "ergonomics
-parity with Chroma" is table stakes for drop-in replacement.
+Chroma-compatible `where` filter applied *before* ranking so
+selective filters don't exhaust top-k. Supports exact match, AND
+across fields, `$eq`/`$ne`/`$gt`/`$gte`/`$lt`/`$lte`/`$in`/`$nin`.
 
-**Shape:** `mem.retrieve(query, k=5, where={"user_id": "alex"})` →
-pre-filters indexable metadata fields via a secondary posting list.
+```python
+hits = mem.retrieve(
+    "food preferences?", k=5,
+    where={"user_id": "alex", "priority": {"$gte": 3}},
+)
+```
+
+Pre-filter mode brute-forces cosine over the filtered subset (skips
+FAISS); with the hybrid kwarg, BM25 rescoring is also restricted to
+the subset. Composes with `rerank_top_n` too. REST API's
+`/retrieve` + `/bundles/{name}/retrieve` both accept `where`,
+`hybrid_alpha`, and `rerank_top_n`.
 
 ### 5. Query expansion via LLM
 

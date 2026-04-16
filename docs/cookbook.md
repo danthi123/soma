@@ -53,9 +53,14 @@ mem = MemoryLayer.with_sbert()  # one shared store
 mem.store("Alex prefers vegetarian recipes",  metadata={"user_id": "alex"})
 mem.store("Bobbi prefers seafood",            metadata={"user_id": "bobbi"})
 
-# Retrieve top-k overall, then filter post-hoc:
-hits = mem.retrieve("food preferences?", k=20)
-alex_hits = [h for h in hits if h.metadata.get("user_id") == "alex"]
+# In-index pre-filter (same semantics as Chroma's `where`):
+alex_hits = mem.retrieve("food preferences?", k=5, where={"user_id": "alex"})
+
+# Multi-field = AND; value-list via $in; numeric comparisons:
+hits = mem.retrieve(
+    "q", k=5,
+    where={"user_id": {"$in": ["alex", "bobbi"]}, "priority": {"$gte": 3}},
+)
 ```
 
 If you'd rather isolate physically, use one bundle per user:

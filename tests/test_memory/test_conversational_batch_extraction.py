@@ -1,6 +1,6 @@
 """Phase 25: batch extraction mode for :class:`ConversationalMemory`.
 
-Covers the Task-1 contracts pinned in
+Covers the contracts pinned in
 ``docs/plans/2026-04-16-phase-25-batch-extraction.md``:
 
 1. Batch mode accumulates up to ``batch_size`` turns before a single
@@ -16,13 +16,19 @@ Covers the Task-1 contracts pinned in
    pre-Phase-25 semantics.
 8. ``batch_size < 1`` in batch mode raises at construction time.
 
-Task 2 adds per-turn prompt routing / missing-``turn_index`` fallback
-tests in a follow-up commit.
+Task 2 adds two more tests on top:
+
+9. A LLM reply with explicit per-fact ``turn_index`` routes facts to
+   the matching raw-turn's ``source_turn_id`` even when the order is
+   scrambled; the batched prompt mentions each numbered turn.
+10. A LLM reply missing ``turn_index`` falls back to the last turn in
+    the batch (conservative fallback, logged at WARNING).
 """
 
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import dataclass, field
 
 import pytest
@@ -93,6 +99,13 @@ def _fact_reply_with_indices(
             {"category": "other", "text": text, "turn_index": idx}
             for idx, text in entries
         ]
+    )
+
+
+def _fact_reply_no_indices(texts: list[str]) -> str:
+    """Build an extract reply missing the ``turn_index`` field."""
+    return json.dumps(
+        [{"category": "other", "text": t} for t in texts]
     )
 
 
@@ -328,3 +341,114 @@ def test_batch_size_validation() -> None:
             memory=mem, llm=llm, session_id="s1",
             extraction_mode="batch", batch_size=0,
         )
+
+
+# ----------------------------------------------------------------------
+# Task 2: batched extractor prompt — per-turn routing + fallback
+# ----------------------------------------------------------------------
+
+
+def test_batch_prompt_routes_facts_to_right_turn() -> None:
+    """Explicit turn_index per fact routes source_turn_id correctly.
+
+    Scramble the order: fact index 2 comes before fact index 0 in the
+    reply. The router must still attribute each to the matching turn id.
+    The batched prompt must also mention each of the N turns with its
+    role label so the model knows how to index them.
+    """
+    mem = MemoryLayer(embed_fn=_stub_embed, embed_dim=8)
+    llm = _BatchBackend(
+        extract_replies=[
+            json.dumps(
+                [
+                    {"category": "other", "text": "fact-for-turn-2", "turn_index": 2},
+                    {"category": "other", "text": "fact-for-turn-0", "turn_index": 0},
+                    {"category": "other", "text": "fact-for-turn-1", "turn_index": 1},
+                ]
+            )
+        ]
+    )
+    cm = ConversationalMemory(
+        memory=mem, llm=llm, session_id="s1",
+        ambiguous_threshold=0.0, near_dup_threshold=0.99,
+        summary_every=999,
+        extraction_mode="batch",
+        batch_size=3,
+    )
+    try:
+        cm.add_message("user", "turn zero text")
+        cm.add_message("user", "turn one text")
+        cm.add_message("user", "turn two text")
+        assert llm._extract_calls == 1
+        # The batched prompt must enumerate each turn with its role label
+        # so the model can bind facts to a specific turn_index.
+        prompt = llm.extract_prompts[0]
+        assert "Turn 0 (user): turn zero text" in prompt
+        assert "Turn 1 (user): turn one text" in prompt
+        assert "Turn 2 (user): turn two text" in prompt
+        # Routing: each fact's source_turn_id is the originating raw-turn id.
+        turn_id_by_text = {
+            mem.get(nid).text: nid
+            for nid in mem._ids
+            if mem.get(nid) is not None
+            and mem.get(nid).metadata.get("type") == "turn"
+        }
+        facts_by_text = {f.text: f for f in cm.list_facts()}
+        assert facts_by_text["fact-for-turn-0"].metadata["source_turn_id"] == (
+            turn_id_by_text["turn zero text"]
+        )
+        assert facts_by_text["fact-for-turn-1"].metadata["source_turn_id"] == (
+            turn_id_by_text["turn one text"]
+        )
+        assert facts_by_text["fact-for-turn-2"].metadata["source_turn_id"] == (
+            turn_id_by_text["turn two text"]
+        )
+    finally:
+        cm.close()
+
+
+def test_batch_prompt_missing_turn_index_falls_back_to_last(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Facts without turn_index attribute to the last turn in the batch.
+
+    Conservative: keep the fact rather than drop it, but log loudly
+    so operators can spot a model that's systematically dropping the
+    routing field.
+    """
+    mem = MemoryLayer(embed_fn=_stub_embed, embed_dim=8)
+    llm = _BatchBackend(
+        extract_replies=[_fact_reply_no_indices(["orphan-fact"])]
+    )
+    cm = ConversationalMemory(
+        memory=mem, llm=llm, session_id="s1",
+        ambiguous_threshold=0.0, near_dup_threshold=0.99,
+        summary_every=999,
+        extraction_mode="batch",
+        batch_size=3,
+    )
+    try:
+        with caplog.at_level(logging.WARNING, logger="soma.memory"):
+            cm.add_message("user", "turn zero text")
+            cm.add_message("user", "turn one text")
+            cm.add_message("user", "turn two text")
+        assert llm._extract_calls == 1
+        turn_id_by_text = {
+            mem.get(nid).text: nid
+            for nid in mem._ids
+            if mem.get(nid) is not None
+            and mem.get(nid).metadata.get("type") == "turn"
+        }
+        facts_by_text = {f.text: f for f in cm.list_facts()}
+        assert "orphan-fact" in facts_by_text, (
+            "fact without turn_index must be kept, attributed to last turn"
+        )
+        assert facts_by_text["orphan-fact"].metadata["source_turn_id"] == (
+            turn_id_by_text["turn two text"]
+        )
+        # WARNING about the missing turn_index.
+        assert any(
+            "turn_index" in r.getMessage() for r in caplog.records
+        ), [r.getMessage() for r in caplog.records]
+    finally:
+        cm.close()

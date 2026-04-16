@@ -748,6 +748,7 @@ class ConversationalMemory:
             )
             return []
 
+        last_turn_id = batch[-1][2]
         results: list[tuple[ExtractedFact, str]] = []
         for entry in parsed:
             if not isinstance(entry, dict):
@@ -774,13 +775,14 @@ class ConversationalMemory:
             if isinstance(raw_idx, int) and 0 <= raw_idx < len(batch):
                 source_turn_id = batch[raw_idx][2]
             else:
-                # Task 1 baseline: drop facts with missing/invalid
-                # turn_index. Task 2 refines this to a last-turn
-                # fallback so a quirky model doesn't silently eat
-                # facts every batch.
+                # Missing or out-of-range turn_index → attribute to
+                # the last turn in the batch. Conservative: keep the
+                # fact rather than silently drop it, but log loudly so
+                # operators can spot a model that's systematically
+                # dropping the routing field.
                 logger.warning(
                     "extract: batched fact missing/invalid turn_index "
-                    "(%r); dropping",
+                    "(%r); falling back to last turn in batch",
                     raw_idx,
                     extra={
                         "event": "batch_extract_missing_turn_index",
@@ -788,7 +790,7 @@ class ConversationalMemory:
                         "batch_size": len(batch),
                     },
                 )
-                continue
+                source_turn_id = last_turn_id
             results.append((fact, source_turn_id))
 
         if not results and parsed:

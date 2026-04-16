@@ -24,6 +24,7 @@ Backend selection follows :func:`soma.llm.backend_from_env`: pass
 from __future__ import annotations
 
 import argparse
+import atexit
 import json
 import os
 import re
@@ -48,12 +49,110 @@ def _cmd_index(args: argparse.Namespace) -> int:
 
 def _cmd_chat(args: argparse.Namespace) -> int:
     from scripts.demo_wiki_chat import _chat
+    from soma.memory import MemoryLayer
 
+    # --ephemeral is mutually exclusive with --bundle (argparse treats the
+    # two as optional individually; we enforce the pairing here so users
+    # get a clear, non-argparse-generic message).
+    if args.ephemeral and args.bundle is not None:
+        print(
+            "error: --ephemeral and --bundle are mutually exclusive; pick one",
+            file=sys.stderr,
+        )
+        return 2
+
+    if args.ephemeral:
+        # Fresh in-RAM memory. Uses the same sbert default the server
+        # falls back to so the CLI behaves like a disposable chat client.
+        model_name = os.environ.get("SOMA_EMBED_MODEL", "all-MiniLM-L6-v2")
+        mem = MemoryLayer.with_sbert(model_name)
+        if args.save_on_exit is not None:
+            _register_save_on_exit(mem, args.save_on_exit)
+        _run_chat_repl(
+            mem, backend_name=args.backend, k=args.k, dry_run=args.dry_run
+        )
+        return 0
+
+    if args.bundle is None:
+        print(
+            "error: --bundle is required unless --ephemeral is passed",
+            file=sys.stderr,
+        )
+        return 2
     if not args.bundle.exists():
         print(f"error: bundle {args.bundle} not found", file=sys.stderr)
         return 2
+    if args.save_on_exit is not None:
+        # Bundle-backed chat with an explicit save-on-exit bundle. We
+        # load the bundle once ourselves and wire the atexit hook to
+        # the same MemoryLayer instance.
+        mem = MemoryLayer.load(args.bundle)
+        _register_save_on_exit(mem, args.save_on_exit)
+        _run_chat_repl(
+            mem, backend_name=args.backend, k=args.k, dry_run=args.dry_run
+        )
+        return 0
     _chat(args.bundle, backend_name=args.backend, k=args.k, dry_run=args.dry_run)
     return 0
+
+
+def _run_chat_repl(
+    mem: Any, *, backend_name: str, k: int, dry_run: bool
+) -> None:
+    """Run the RAG REPL against an already-constructed MemoryLayer.
+
+    Used by the ``--ephemeral`` and ``--save-on-exit`` paths where the
+    MemoryLayer is built in-process (not loaded from a bundle). Mirrors
+    the loop in ``scripts.demo_wiki_chat._chat`` but takes the memory
+    instance as input so the caller can register atexit hooks on it.
+    """
+    from scripts.demo_wiki_chat import _resolve_backend
+    from soma.llm.rag import RAGSession
+
+    backend = _resolve_backend(backend_name, dry_run=dry_run)
+    print(f"  LLM backend: {backend.name}\n")
+
+    session = RAGSession(memory=mem, llm=backend, k=k)
+    print("Type a question, or 'quit' to exit. Ctrl-C also works.\n")
+    try:
+        while True:
+            question = input("You: ").strip()
+            if not question:
+                continue
+            if question.lower() in {"quit", "exit", "q"}:
+                break
+            answer = session.ask(question)
+            print(f"Assistant: {answer.text}\n")
+            if answer.hits:
+                print("  Sources:")
+                for line in answer.cite_lines():
+                    print(f"    {line}")
+                print()
+    except (EOFError, KeyboardInterrupt):
+        print("\nExiting.")
+
+
+def _register_save_on_exit(mem: Any, path: Path) -> None:
+    """Register an ``atexit`` hook that calls ``mem.save(path)``.
+
+    Swallows any exception so a save failure at interpreter shutdown
+    doesn't mask the exit code or dump a traceback on top of whatever
+    killed the process. The resolved absolute path is printed so the
+    operator sees where the bundle landed.
+    """
+    resolved = Path(path).expanduser().resolve()
+
+    def _save() -> None:
+        try:
+            mem.save(resolved)
+            print(f"saved ephemeral memory to {resolved}", file=sys.stderr)
+        except Exception as exc:  # noqa: BLE001 — last-chance shutdown hook
+            print(
+                f"warning: --save-on-exit {resolved} failed: {exc}",
+                file=sys.stderr,
+            )
+
+    atexit.register(_save)
 
 
 def _cmd_stats(args: argparse.Namespace) -> int:
@@ -693,7 +792,24 @@ def build_parser() -> argparse.ArgumentParser:
     p_index.add_argument("--no-pdf", action="store_true", help="Skip PDFs")
     p_index.set_defaults(func=_cmd_index)
 
-    p_chat = sub.add_parser("chat", parents=[bundle_arg], help="REPL chat against a bundle")
+    # `chat` intentionally does NOT inherit the shared bundle_arg — with
+    # --ephemeral the bundle is optional, so the parser has its own
+    # non-required --bundle. _cmd_chat enforces the pairing (bundle
+    # required unless --ephemeral; mutually exclusive with --ephemeral).
+    p_chat = sub.add_parser("chat", help="REPL chat against a bundle or ephemeral memory")
+    p_chat.add_argument("--bundle", type=Path, default=None)
+    p_chat.add_argument(
+        "--ephemeral",
+        action="store_true",
+        help="Start with an empty in-RAM memory (no WAL / no bundle on disk)",
+    )
+    p_chat.add_argument(
+        "--save-on-exit",
+        type=Path,
+        default=None,
+        metavar="PATH",
+        help="At exit, save the memory bundle to PATH (works with or without --ephemeral)",
+    )
     p_chat.add_argument(
         "--backend",
         choices=("auto", "ollama", "openai", "anthropic", "openai-compat", "hf", "dry-run"),

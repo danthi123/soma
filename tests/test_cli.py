@@ -7,6 +7,7 @@ import io
 import json
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -58,6 +59,141 @@ def test_parser_chat_rejects_unknown_backend() -> None:
 def test_parser_search_requires_query() -> None:
     with pytest.raises(SystemExit):
         build_parser().parse_args(["search", "--bundle", "b"])
+
+
+# ------------------------------------------------------------------
+# Phase 19 — `soma chat --ephemeral` / `--save-on-exit`
+# ------------------------------------------------------------------
+def test_parser_chat_ephemeral_flag_parsed() -> None:
+    """--ephemeral lands on args.ephemeral as True."""
+    args = build_parser().parse_args(["chat", "--ephemeral"])
+    assert args.ephemeral is True
+    # --bundle is optional in ephemeral mode.
+    assert args.bundle is None
+
+
+def test_parser_chat_save_on_exit_flag_parsed() -> None:
+    """--save-on-exit lands as a Path on args.save_on_exit."""
+    args = build_parser().parse_args(
+        ["chat", "--ephemeral", "--save-on-exit", "out/bundle"]
+    )
+    assert args.save_on_exit == Path("out/bundle")
+    assert args.ephemeral is True
+
+
+def test_parser_chat_without_bundle_or_ephemeral_defaults() -> None:
+    """Parser itself accepts bare `chat`; _cmd_chat does the pairing check."""
+    args = build_parser().parse_args(["chat"])
+    assert args.bundle is None
+    assert args.ephemeral is False
+
+
+def test_chat_ephemeral_and_bundle_mutually_exclusive(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Passing --ephemeral and --bundle together errors with a clear message."""
+    # The bundle dir must exist for the current-bundle branch not to
+    # return its own error first — we want the mutual-exclusion branch
+    # to fire.
+    bundle = tmp_path / "b"
+    bundle.mkdir()
+    rc = main(["chat", "--ephemeral", "--bundle", str(bundle)])
+    err = capsys.readouterr().err
+    assert rc == 2
+    assert "mutually exclusive" in err.lower()
+
+
+def test_chat_requires_bundle_unless_ephemeral(capsys: pytest.CaptureFixture[str]) -> None:
+    """Bare `soma chat` (no --ephemeral, no --bundle) errors out."""
+    rc = main(["chat"])
+    err = capsys.readouterr().err
+    assert rc == 2
+    assert "--bundle is required" in err or "bundle" in err.lower()
+
+
+def test_chat_save_on_exit_registers_atexit_handler(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """--save-on-exit calls mem.save(path) when the atexit hook fires.
+
+    We monkeypatch _chat_with_memory to a no-op (skip the REPL) and
+    capture the atexit registration via a fake atexit.register. The
+    captured callable then gets invoked directly to verify behaviour.
+    """
+    import soma.cli as cli_mod
+
+    saves: list[tuple[Any, Path]] = []
+
+    class _FakeMem:
+        def save(self, path: Path) -> None:
+            saves.append((self, Path(path)))
+
+    fake_mem = _FakeMem()
+
+    # Patch MemoryLayer.with_sbert so --ephemeral doesn't try to download
+    # a real sentence-transformers model.
+    monkeypatch.setattr(
+        "soma.memory.MemoryLayer.with_sbert",
+        classmethod(lambda cls, *a, **kw: fake_mem),
+    )
+
+    # Patch _run_chat_repl so the REPL is a no-op in the test.
+    monkeypatch.setattr(cli_mod, "_run_chat_repl", lambda *a, **kw: None)
+
+    # Capture atexit registrations instead of letting them run at
+    # interpreter shutdown — keeps the test deterministic.
+    registered: list[Any] = []
+    monkeypatch.setattr(cli_mod.atexit, "register", registered.append)
+
+    target = tmp_path / "out_bundle"
+    rc = main(["chat", "--ephemeral", "--save-on-exit", str(target)])
+    assert rc == 0
+    assert len(registered) == 1
+
+    # Fire the registered hook — should call mem.save(target).
+    registered[0]()
+    assert saves, "atexit hook did not call mem.save"
+    mem_ref, saved_path = saves[0]
+    assert mem_ref is fake_mem
+    assert saved_path == target.expanduser().resolve()
+
+
+def test_chat_save_on_exit_swallows_save_errors(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A save failure at shutdown logs a warning but does not raise.
+
+    atexit hooks that raise pollute stderr with a traceback and may
+    mask the exit code — always undesirable for a "best-effort" save.
+    """
+    import soma.cli as cli_mod
+
+    class _ExplodingMem:
+        def save(self, path: Path) -> None:
+            raise OSError("disk full")
+
+    monkeypatch.setattr(
+        "soma.memory.MemoryLayer.with_sbert",
+        classmethod(lambda cls, *a, **kw: _ExplodingMem()),
+    )
+    monkeypatch.setattr(cli_mod, "_run_chat_repl", lambda *a, **kw: None)
+
+    registered: list[Any] = []
+    monkeypatch.setattr(cli_mod.atexit, "register", registered.append)
+
+    rc = main(["chat", "--ephemeral", "--save-on-exit", str(tmp_path / "x")])
+    assert rc == 0
+    capsys.readouterr()  # drain
+
+    # Running the registered hook must not raise.
+    registered[0]()
+    err = capsys.readouterr().err
+    assert "disk full" in err
+    assert "warning" in err.lower() or "failed" in err.lower()
 
 
 def test_version_prints_something(capsys: pytest.CaptureFixture[str]) -> None:

@@ -54,7 +54,7 @@ Things that came up during the 2026-04-16 gap-closing push (Phases 1-7b) but wer
 
 - **npm scope claim** (`@soma-ai`) — operator-only manual step before first publish. Fallback scopes documented: `@soma-memory`, `@soma-ml`.
 - **`soma-memory-client` unscoped alias** pointing at the scoped package via `deprecate` — captures npm-search hits. ~15 min.
-- **Retry middleware as optional re-exports.** Not forks of generated code — simple fetch-level wrapper. ~2 h.
+- ✅ ~~**Retry middleware as optional re-exports.**~~ Shipped in `c01b4f5`. `withRetry(fetchImpl, opts)` wrapper plugs into `createClient`'s existing `fetch` option — no fork of generated code.
 - **React Query integration** via `openapi-react-query` plugin. ~4 h, only if React users ask.
 
 ## Tier 2 — k8s / cloud
@@ -83,7 +83,7 @@ Things that came up during the 2026-04-16 gap-closing push (Phases 1-7b) but wer
 
 - ✅ ~~**Task #173 — Lazy stable-capture.**~~ Shipped in Phase 13 (`25ffb15`, `916717c`, `7c3a4c2`). Removes O(N²/K) cost from consolidate; benchmark adapter pins eager behaviour so existing reports stay comparable. Alpha=0 default means zero user-visible change; becomes load-bearing if graph-rerank reactivates.
 - **Task #174 — Enterprise scale benchmark (100K + 1M).** 1M still running at time of writing.
-- **Pre-existing mypy errors** in `src/soma/memory/api.py` (~5 errors, all from the `has_encoder` pattern). Harmless but eventually worth fixing for `mypy --strict` cleanliness.
+- ✅ ~~**Pre-existing mypy errors** in `src/soma/memory/api.py`~~ Closed in `0f5a029` (9 errors total — 5 `has_encoder` narrowing, 2 `np.ndarray` generics, 1 `_COMPARE_OPS` dict typing, 1 `with_sbert` None guard).
 
 ## Research agenda (out-of-sprint)
 

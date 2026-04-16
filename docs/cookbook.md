@@ -383,6 +383,47 @@ Design notes:
   `metadata.superseded_by = new_id`. `retrieve()` filters them out by
   default; pass `include_superseded=True` to see the audit trail.
 
+### 18.1 Multi-user scoping on a shared bundle
+
+One bundle, many users (e.g. a multi-tenant chat app). Pass `user_id=`
+to `ConversationalMemory` and every stored turn / fact / summary is
+tagged with `metadata.user_id`; `retrieve()`, `clear_session()`, and
+`supersede()` auto-scope to that user.
+
+```python
+cm_alice = ConversationalMemory(
+    memory=mem, llm=llm, session_id="chat-1", user_id="alice",
+)
+cm_bob   = ConversationalMemory(
+    memory=mem, llm=llm, session_id="chat-1", user_id="bob",
+)
+
+cm_alice.add_message("user", "my dog is Rex")  # stored as alice
+cm_bob.add_message("user",   "my cat is Mia")  # stored as bob
+
+# retrieve() scopes to the constructor's user_id by default
+cm_alice.retrieve("pets")   # -> only Alice's Rex entry
+cm_bob.retrieve("pets")     # -> only Bob's Mia entry
+
+# Per-call override; user_id=None is the admin drill-down
+cm_alice.add_message("user", "typing on behalf of Bob", user_id="bob")
+admin_hits = cm_alice.retrieve("pets", user_id=None)  # sees both
+
+# supersede() refuses cross-user mutation on a shared bundle
+cm_alice.supersede(bob_fact_id, "…")  # raises PermissionError
+```
+
+Non-breaking: leaving `user_id` unset (single-tenant deploys,
+pre-Phase-12 callers) preserves the old behaviour and writes no
+`user_id` key into metadata.
+
+**REST pattern.** The REST surface (`POST /store`, `/retrieve`, …)
+already accepts arbitrary `metadata`, so no new endpoints are needed.
+Clients pass `{"metadata": {"user_id": "alice"}}` in request bodies
+and filter with the same key in `where` on retrieval. A JWT claim
+layer that auto-routes the `user_id` from the token is Phase 13+
+territory; the core plumbing ships here.
+
 ---
 
 Missing a recipe you want? Open an issue with the use case — most

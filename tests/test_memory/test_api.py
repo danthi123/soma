@@ -144,6 +144,73 @@ def test_save_load_round_trip(embedder, tmp_path: Path) -> None:
         assert hit.metadata == {"idx": i}
 
 
+def test_save_is_atomic_under_crash(embedder, tmp_path: Path, monkeypatch) -> None:
+    """If a write raises mid-way through save(), the on-disk bundle
+    must still be the previous consistent version (never a half-written
+    mix), and no ``.tmp`` leftovers remain. Implemented via tmp-file
+    writes + ``os.replace`` so each file flips atomically.
+    """
+    tokenizer, encoder = embedder
+    mem = MemoryLayer(tokenizer=tokenizer, encoder=encoder)
+    for i in range(3):
+        mem.store(f"fact {i}", metadata={"idx": i})
+
+    # First, a clean save that lays down a consistent bundle.
+    bundle = tmp_path / "mem"
+    mem.save(bundle)
+    original_index = (bundle / "memory_index.json").read_text(encoding="utf-8")
+    original_embeds = (bundle / "memory_embeddings.pt").read_bytes()
+
+    # Now mutate state and attempt another save, but arrange for the
+    # embeddings write to blow up. Under atomic writes the crash hits
+    # only the ``.tmp`` file, and the real file still matches ``original``.
+    mem.store("post-state change")
+
+    import soma.memory.api as api_mod
+
+    real_torch_save = api_mod.torch.save
+
+    def _boom_on_embeddings(obj, path, *args, **kwargs):
+        # Start writing, then truncate hard — simulates a crash after
+        # torch.save has opened and partially flushed.
+        p = Path(str(path))
+        real_torch_save(obj, p, *args, **kwargs)
+        # Corrupt the file that was just written.
+        with open(p, "wb") as fh:
+            fh.write(b"\x00" * 8)
+        raise RuntimeError("simulated crash mid-save")
+
+    def _selective(obj, path, *args, **kwargs):
+        # Only blow up for memory_embeddings.pt (and its .tmp sibling).
+        name = Path(str(path)).name
+        if name in ("memory_embeddings.pt", "memory_embeddings.pt.tmp"):
+            return _boom_on_embeddings(obj, path, *args, **kwargs)
+        return real_torch_save(obj, path, *args, **kwargs)
+
+    monkeypatch.setattr(api_mod.torch, "save", _selective)
+    with pytest.raises(RuntimeError, match="simulated crash"):
+        mem.save(bundle)
+
+    # The old bundle must still parse and still match what we wrote first.
+    assert (
+        bundle / "memory_index.json"
+    ).read_text(encoding="utf-8") == original_index, (
+        "memory_index.json corrupted by crashed save"
+    )
+    assert (
+        bundle / "memory_embeddings.pt"
+    ).read_bytes() == original_embeds, (
+        "memory_embeddings.pt corrupted by crashed save"
+    )
+    # No .tmp leftovers.
+    leftovers = list(bundle.glob("*.tmp"))
+    assert leftovers == [], f"found leftover .tmp files: {leftovers}"
+
+    # And loading the bundle still works — has the pre-crash 3 entries.
+    restored = MemoryLayer.load(bundle)
+    assert len(restored) == 3
+
+
 def test_save_load_retrieve_matches_pre_save(embedder, tmp_path: Path) -> None:
     tokenizer, encoder = embedder
     mem = MemoryLayer(tokenizer=tokenizer, encoder=encoder)

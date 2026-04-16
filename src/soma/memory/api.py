@@ -16,7 +16,9 @@ path lands.
 
 from __future__ import annotations
 
+import contextlib
 import json
+import os
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -27,6 +29,74 @@ import torch
 from torch.nn import functional as F  # noqa: N812
 
 from soma.io.text_encoder import TextEncoder, load_tokenizer
+
+
+def _atomic_write_bytes(path: Path, data: bytes) -> None:
+    """Write ``data`` to ``path`` atomically.
+
+    Writes to ``<path>.tmp``, fsyncs the fd, then ``os.replace`` swaps it
+    into place. On Unix we also fsync the parent directory so the rename
+    itself is durable; on Windows that's a no-op (``os.open`` on a
+    directory raises). Removes the ``.tmp`` file on any error so callers
+    see a clean bundle dir when save() partially fails.
+    """
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    try:
+        fd = os.open(str(tmp), os.O_WRONLY | os.O_CREAT | os.O_TRUNC)
+        try:
+            with os.fdopen(fd, "wb") as fh:
+                fh.write(data)
+                fh.flush()
+                os.fsync(fh.fileno())
+        except BaseException:
+            # fd already handed off to fdopen; nothing else to close.
+            raise
+        os.replace(str(tmp), str(path))
+        # Best-effort parent-dir fsync on POSIX; Windows doesn't let us
+        # open a directory, so we just skip it there.
+        if os.name != "nt":
+            with contextlib.suppress(OSError):
+                dfd = os.open(str(path.parent), os.O_RDONLY)
+                try:
+                    os.fsync(dfd)
+                finally:
+                    os.close(dfd)
+    except BaseException:
+        with contextlib.suppress(OSError):
+            tmp.unlink()
+        raise
+
+
+def _atomic_torch_save(obj: Any, path: Path) -> None:
+    """torch.save wrapper that goes through ``<path>.tmp`` + os.replace.
+
+    ``torch.save`` writes the file directly in place, so a crash mid-write
+    leaves a half-file. We route it through a sibling ``.tmp`` and flip
+    atomically. Errors delete the ``.tmp`` leftover.
+    """
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    try:
+        torch.save(obj, str(tmp))
+        # Fsync the tmp before the rename so the bytes are on stable
+        # storage before anyone can see the file at its final name.
+        with contextlib.suppress(OSError):
+            fd = os.open(str(tmp), os.O_RDONLY)
+            try:
+                os.fsync(fd)
+            finally:
+                os.close(fd)
+        os.replace(str(tmp), str(path))
+        if os.name != "nt":
+            with contextlib.suppress(OSError):
+                dfd = os.open(str(path.parent), os.O_RDONLY)
+                try:
+                    os.fsync(dfd)
+                finally:
+                    os.close(dfd)
+    except BaseException:
+        with contextlib.suppress(OSError):
+            tmp.unlink()
+        raise
 
 EmbedFn = Callable[[str], torch.Tensor]
 
@@ -723,18 +793,26 @@ class MemoryLayer:
     # Persistence
     # ------------------------------------------------------------------
     def save(self, path: str | Path) -> None:
-        """Write a self-contained memory bundle to ``path`` (a directory)."""
+        """Write a self-contained memory bundle to ``path`` (a directory).
+
+        Each file is written to a sibling ``.tmp`` and swapped into
+        place with ``os.replace`` so a crash mid-save leaves the old
+        (consistent) bundle intact, never a half-written mix. Any
+        leftover ``.tmp`` file is deleted on error.
+        """
         out = Path(path)
         out.mkdir(parents=True, exist_ok=True)
         has_encoder = self._encoder is not None
         if has_encoder:
+            # save_tokenizer goes through its own write path; torch.save
+            # we route through the atomic wrapper.
             self._encoder.save_tokenizer(out / "tokenizer.json")
-            torch.save(self._encoder.state_dict(), out / "encoder.pt")
+            _atomic_torch_save(self._encoder.state_dict(), out / "encoder.pt")
         if self._embeddings_list:
             stacked = torch.stack(self._embeddings_list, dim=0).detach().cpu()
         else:
             stacked = torch.empty((0, self._embed_dim))
-        torch.save(stacked, out / "memory_embeddings.pt")
+        _atomic_torch_save(stacked, out / "memory_embeddings.pt")
         index: dict[str, Any] = {
             "schema_version": 1,
             "embed_dim": self._embed_dim,
@@ -758,9 +836,9 @@ class MemoryLayer:
         }
         if has_encoder:
             index["max_seq_len"] = int(self._encoder.max_seq_len)
-        (out / "memory_index.json").write_text(
-            json.dumps(index, indent=2),
-            encoding="utf-8",
+        _atomic_write_bytes(
+            out / "memory_index.json",
+            json.dumps(index, indent=2).encode("utf-8"),
         )
 
     @classmethod

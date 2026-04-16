@@ -289,29 +289,68 @@ class WAL:
     # ------------------------------------------------------------------
     def replay(self) -> Iterator[WalRecord]:
         """Yield records from disk; stop at the first torn/bad record."""
+        yield from self._replay_bytes(self._read_raw(), start=0)
+
+    def replay_tail(self, start_offset: int) -> Iterator[WalRecord]:
+        """Yield records whose jsonl lines start at or after ``start_offset``.
+
+        Used by :meth:`soma.memory.api.MemoryLayer.reload_if_stale` to
+        apply only the WAL tail written since the last read. When
+        ``start_offset`` is beyond the file end (e.g. because a compaction
+        truncated the WAL), yields nothing — callers interpret that as
+        "nothing new to apply".
+        """
+        raw = self._read_raw()
+        if start_offset < 0:
+            start_offset = 0
+        if start_offset >= len(raw):
+            return
+        yield from self._replay_bytes(raw, start=start_offset)
+
+    def ops_size_on_disk(self) -> int:
+        """Live size of the ops jsonl file. Used by reload_if_stale to
+        detect whether a peer writer appended since our last read."""
         if not self._ops_path.exists():
-            return
-        # Read all lines; drop the header line; parse the rest.
+            return 0
+        return self._ops_path.stat().st_size
+
+    def _read_raw(self) -> bytes:
+        if not self._ops_path.exists():
+            return b""
         with open(self._ops_path, "rb") as fh:
-            raw = fh.read()
-        lines = raw.split(b"\n")
-        # Skip the header (first line); the last element after split is
-        # either empty (trailing newline) or a torn partial — recovery
-        # already truncated it, but defensively ignore empty/torn tails.
-        if not lines:
+            return fh.read()
+
+    def _replay_bytes(self, raw: bytes, *, start: int) -> Iterator[WalRecord]:
+        """Shared replay body. ``start`` skips past already-applied bytes.
+
+        When ``start == 0`` we also skip the header line (first line of
+        the file). Otherwise we resume mid-file from a record boundary
+        the caller tracked via :meth:`ops_size_on_disk` earlier.
+        """
+        if not raw:
             return
-        record_lines = lines[1:]
-        if record_lines and record_lines[-1] == b"":
-            record_lines = record_lines[:-1]
 
         emb_data: bytes = b""
         if self._emb_path.exists():
             emb_data = self._emb_path.read_bytes()
 
-        for line in record_lines:
+        pos = start
+        if pos == 0:
+            # Skip the header line.
+            nl = raw.find(b"\n", pos)
+            if nl == -1:
+                return
+            pos = nl + 1
+
+        while pos < len(raw):
+            nl = raw.find(b"\n", pos)
+            if nl == -1:
+                return
+            line = raw[pos:nl]
+            pos = nl + 1
             if not line:
-                # Blank in the middle — shouldn't happen after recovery,
-                # but stop rather than guess.
+                # Blank line — shouldn't happen after recovery but stop
+                # rather than guess.
                 return
             try:
                 obj = json.loads(line.decode("utf-8"))

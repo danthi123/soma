@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import logging
 import os
 import threading
 import time
@@ -31,8 +32,11 @@ import portalocker
 import torch
 from torch.nn import functional as F  # noqa: N812
 
+from soma import metrics as _m
 from soma.io.text_encoder import TextEncoder, load_tokenizer
 from soma.memory.wal import WAL, WalRecord
+
+logger = logging.getLogger("soma.memory")
 
 _VALID_DURABILITY = {"sync", "batch", "async"}
 
@@ -299,6 +303,12 @@ class MemoryLayer:
         # Cross-encoder (or any Reranker) for re-ranking top-N.
         self._reranker: Any = None
 
+        # Bundle name for metric labels. Defaulted to "__default__" so
+        # in-memory MemoryLayers (bundle_path=None) still produce stable
+        # labelled series. Callers running multi-tenant servers set this
+        # explicitly when constructing or loading a bundle.
+        self._bundle_name: str = "__default__"
+
         # Durability / persistence state. When bundle_path is None the
         # MemoryLayer runs in-memory only and keeps its pre-WAL behavior.
         self._bundle_path: Path | None = (
@@ -333,6 +343,11 @@ class MemoryLayer:
                 durability=self._durability,
             )
             self._wal.open()
+            # For a freshly-opened WAL on a shared bundle, any existing
+            # records belong to a peer. Start the cursor at 0 so the
+            # first reload_if_stale() catches up; our own appends advance
+            # it lazily via the same path.
+            self._last_wal_offset = 0
 
     # ------------------------------------------------------------------
     # Factory methods
@@ -420,6 +435,77 @@ class MemoryLayer:
             return
         with self._bundle_lock():
             self._wal.flush()
+
+    def reload_if_stale(self) -> int:
+        """Apply any WAL records a peer writer appended since our last read.
+
+        When two processes share a bundle (the multi-worker uvicorn case),
+        the reader process's in-memory state can lag a writer's commits.
+        This method re-reads the WAL tail past ``_last_wal_offset`` and
+        applies each record on top of the in-memory state. If the WAL
+        shrank (i.e. a peer ran compaction), we conservatively reset the
+        cursor to zero and do a full re-replay from the snapshot.
+
+        Returns the number of records applied. No-op (returns 0) when
+        no bundle is attached or the WAL is unchanged.
+
+        Meant to be called on retrieve paths in ``serve.py`` so every
+        read sees the freshest committed state. Stores already take the
+        bundle lock and see their own writes immediately, so we do NOT
+        call this on the write path.
+        """
+        if self._wal is None:
+            return 0
+        with self._bundle_lock():
+            if self._wal is None:
+                return 0
+            current_size = self._wal.ops_size_on_disk()
+            if current_size == self._last_wal_offset:
+                return 0
+            if current_size < self._last_wal_offset:
+                # WAL shrank (compaction by a peer, or truncate). We
+                # can't trust our in-memory state anymore; reset and
+                # do a full replay. This is rare — only fires when a
+                # peer process compacts the shared bundle.
+                self._last_wal_offset = 0
+            applied = 0
+            for rec in self._wal.replay_tail(self._last_wal_offset):
+                self._apply_record(rec)
+                applied += 1
+            self._last_wal_offset = current_size
+            if applied:
+                self._faiss_index = None  # invalidate on any change
+            return applied
+
+    def _apply_record(self, rec: WalRecord) -> None:
+        """Apply one WAL record to the in-memory state. Used by
+        reload_if_stale; mirrors the branches in :meth:`load`."""
+        if rec.op == "store":
+            if rec.node_id in self._id_to_idx:
+                return  # already applied — idempotent on repeated replay
+            self._id_to_idx[rec.node_id] = len(self._ids)
+            self._ids.append(rec.node_id)
+            self._texts.append(rec.text or "")
+            self._metadatas.append(dict(rec.metadata))
+            self._timestamps.append(int(rec.timestamp_step))
+            emb = rec.embedding
+            assert emb is not None
+            self._embeddings_list.append(emb.to(self._device))
+            self._soma_activations.append(None)
+            self._step = max(self._step, int(rec.timestamp_step) + 1)
+        elif rec.op == "forget":
+            idx = self._id_to_idx.pop(rec.node_id, None)
+            if idx is None:
+                return
+            self._ids.pop(idx)
+            self._texts.pop(idx)
+            self._metadatas.pop(idx)
+            self._timestamps.pop(idx)
+            self._embeddings_list.pop(idx)
+            self._soma_activations.pop(idx)
+            for later_id in self._ids[idx:]:
+                self._id_to_idx[later_id] -= 1
+            self._step = max(self._step, int(rec.timestamp_step) + 1)
 
     def close(self) -> None:
         """Close the WAL, flushing any buffered state. Safe to call
@@ -640,6 +726,8 @@ class MemoryLayer:
             self._step += 1
             self._faiss_index = None  # invalidate; rebuilt on next retrieve
             self._stores_since_consolidation += 1
+            if self._wal is not None:
+                self._last_wal_offset = self._wal.ops_size_on_disk()
             self._maybe_compact()
         if (
             self._auto_consolidate_every > 0
@@ -705,6 +793,8 @@ class MemoryLayer:
                 node_ids.append(nid)
             self._faiss_index = None
             self._stores_since_consolidation += len(texts)
+            if self._wal is not None:
+                self._last_wal_offset = self._wal.ops_size_on_disk()
             self._maybe_compact()
         if (
             self._auto_consolidate_every > 0
@@ -1018,6 +1108,8 @@ class MemoryLayer:
             for later_id in self._ids[idx:]:
                 self._id_to_idx[later_id] -= 1
             self._faiss_index = None  # invalidate
+            if self._wal is not None:
+                self._last_wal_offset = self._wal.ops_size_on_disk()
             self._maybe_compact()
             return True
 
@@ -1324,13 +1416,34 @@ class MemoryLayer:
                         instance._step, int(rec.timestamp_step) + 1
                     )
         instance._faiss_index = None  # fresh replay invalidates any prior index
+        # Mark where we've caught up to; reload_if_stale() starts scanning
+        # from here so a peer writer's tail appends are cheap to detect.
+        if instance._wal is not None:
+            instance._last_wal_offset = instance._wal.ops_size_on_disk()
         return instance
 
     # ------------------------------------------------------------------
     # Internals
     # ------------------------------------------------------------------
+    def _backend_label(self) -> str:
+        """Label the active retrieve path for Prometheus series keys.
+
+        Returns ``"faiss"`` when a FAISS index is built (exact flat or
+        HNSW) and the next ``_rank()`` call will take the FAISS branch,
+        ``"linear"`` otherwise. Callers inspect the label *after*
+        ``_maybe_build_faiss`` so it reflects the path actually used.
+        """
+        return "faiss" if self._faiss_index is not None else "linear"
+
     def _embed(self, text: str) -> torch.Tensor:
         """Embed ``text`` into a (embed_dim,) vector."""
+        with _m.EMBED_LATENCY.labels(batch_size_bucket=_m.batch_bucket(1)).time():
+            return self._embed_raw(text)
+
+    def _embed_raw(self, text: str) -> torch.Tensor:
+        """Raw embed without metric instrumentation; used inside batch paths
+        that already own the ``EMBED_LATENCY`` observation so we don't
+        double-count."""
         if self._custom_embed_fn is not None:
             vec = self._custom_embed_fn(text)
             return vec.detach().to(self._device)
@@ -1344,12 +1457,14 @@ class MemoryLayer:
 
     def _embed_batch(self, texts: list[str]) -> list[torch.Tensor]:
         """Embed a list of texts, using a fused path if the backend has one."""
-        fn = self._custom_embed_fn
-        batch_fn = getattr(fn, "encode_many", None) if fn is not None else None
-        if batch_fn is not None:
-            stacked = batch_fn(texts)  # (N, embed_dim) tensor
-            return [row.detach().to(self._device) for row in stacked]
-        return [self._embed(t) for t in texts]
+        bucket = _m.batch_bucket(len(texts))
+        with _m.EMBED_LATENCY.labels(batch_size_bucket=bucket).time():
+            fn = self._custom_embed_fn
+            batch_fn = getattr(fn, "encode_many", None) if fn is not None else None
+            if batch_fn is not None:
+                stacked = batch_fn(texts)  # (N, embed_dim) tensor
+                return [row.detach().to(self._device) for row in stacked]
+            return [self._embed_raw(t) for t in texts]
 
     def _retrieve_with_rerank(
         self,

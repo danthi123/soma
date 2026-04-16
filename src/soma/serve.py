@@ -188,7 +188,9 @@ def _get_mem(name: str | None = None) -> MemoryLayer:
     key = name or "__default__"
     with _cache_lock:
         if key in _mem_cache:
-            return _mem_cache[key]
+            mem = _mem_cache[key]
+            mem.reload_if_stale()  # pick up peer-worker WAL appends
+            return mem
         path = _path_for(name)
         if path.exists() and (path / "memory_index.json").exists():
             mem = MemoryLayer.load(path, embed_fn=_embed_fn())

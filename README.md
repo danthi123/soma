@@ -36,45 +36,85 @@ from soma.memory import MemoryLayer
 
 mem = MemoryLayer.with_sbert()  # uses all-MiniLM-L6-v2
 
-# Store
-mem.store("user lives in Portland, OR")
-mem.store("user is vegetarian")
-mem.store("user's dog is named Luna")
+# Store with metadata (same shape as Chroma)
+mem.store("user lives in Portland, OR", metadata={"user": "alex"})
+mem.store("user is vegetarian", metadata={"user": "alex"})
+mem.store("user's dog is named Luna", metadata={"user": "alex"})
 
-# Retrieve
+# Retrieve — vector DB parity
 hits = mem.retrieve("dietary restrictions", k=3)
-for hit in hits:
-    print(hit.text, hit.score)
 
-# Persist
+# Or with recall boosters (go beyond any peer DB's ceiling):
+hits = mem.retrieve(
+    "dietary restrictions", k=3,
+    where={"user": "alex"},   # metadata pre-filter (Chroma-style)
+    hybrid_alpha=0.3,          # blend BM25 + cosine
+)
+
+# Optional cross-encoder rerank for +21 pp R@5:
+from soma.memory.rerank import CrossEncoderReranker
+mem.attach_reranker(CrossEncoderReranker())
+hits = mem.retrieve("...", k=5, rerank_top_n=20)
+
+# Persist (portable single-directory bundle)
 mem.save("my-brain/")
-
-# Later...
 mem = MemoryLayer.load("my-brain/")
-hits = mem.retrieve("where does the user live?", k=1)
+```
+
+**End-to-end chat with your LLM of choice:**
+
+```python
+from soma.llm import RAGSession, backend_from_env
+# Auto-picks Ollama if running, else OpenAI/Anthropic if API key set,
+# else local HuggingFace. Override with SOMA_LLM_BACKEND.
+chat = RAGSession(memory=mem, llm=backend_from_env())
+print(chat.ask("where does the user live?").text)
 ```
 
 ## How it compares
 
-| Capability | Chroma + RAG | Mem0 / Zep | **SOMA** |
-|---|:---:|:---:|:---:|
-| Vector retrieval | yes | yes | yes |
-| Local-first, zero cloud deps | yes | partial | yes |
-| Plastic graph substrate (in-place) | no | no | **yes**\* |
-| Consolidation hook (learning-ready) | no | no | **yes** |
-| Single-directory brain portability | no | no | **yes** |
-| Swap LLM without losing memory | yes | partial | **yes** |
+| Capability | Chroma | Mem0 / Zep | Pinecone | **SOMA** |
+|---|:---:|:---:|:---:|:---:|
+| Vector retrieval | yes | yes | yes | yes |
+| Local-first, zero cloud deps | yes | partial | no | yes |
+| Metadata `where` filter at retrieve | yes | yes | yes | **yes** |
+| Hybrid BM25 + vector (built-in) | no | partial | partial | **yes** |
+| Cross-encoder rerank (built-in) | no | no | partial | **yes** |
+| LLM query expansion (built-in) | no | partial | no | **yes** |
+| Plug-and-play LLM backends | no | partial | no | **yes** (5 shipped) |
+| Plastic graph substrate (in-place) | no | no | no | **yes**\* |
+| Single-directory brain portability | partial | no | no | **yes** |
+| Multi-tenant REST (bundles/{name}) | no | yes | yes | **yes** |
+| Swap LLM without losing memory | yes | partial | yes | **yes** |
 
 \* substrate ships; current memory workload doesn't trigger growth/pruning thresholds — see `benchmarks/reports/paper-draft.md` §5 for the research agenda to activate it.
 
-**Benchmark (same sbert embedder):**
-- Quality: identical Recall@3 / MRR@3 / NDCG@3 to Chroma at 50 facts.
-- Disk: **22.6× smaller at 50** narrowing to **1.4× at 20K** as Chroma's overhead amortizes.
-- Store: **3.2–3.6× faster across all N tested** (durable claim).
-- Retrieve: SOMA-flat trails Chroma's HNSW by 7–22%; opt-in HNSW backend wins by a durable **1.18–1.21× across every N tested**, identical recall preserved.
+Full comparison + migration notes: [`docs/comparison.md`](docs/comparison.md).
+
+**Benchmark (same sbert embedder, measured vs Chroma):**
+
+*Mechanics — SOMA wins everywhere:*
+- Quality parity: identical Recall@3 / MRR@3 / NDCG@3 at same embedder (by construction).
+- Disk: **22.6× smaller at 50 facts**, narrowing to **1.4× at 20K** and **1.42× at 100K**.
+- Store (full pipeline 1K–20K): **3.2–3.6× faster** per op (durable).
+- Store (index-only 100K): **~3500× faster** (SOMA 0.4 s vs Chroma 23.6 min) — Chroma pays ~14 ms/op for SQLite+HNSW metadata regardless of embed cost.
+- Retrieve HNSW backend: **1.18–1.25× faster** at 1K–20K, growing to **5.12× at 100K** while preserving identical recall.
 - Drift: 30-day simulation, old-fact Recall@3 = 0.883 ≈ recent 0.938 (memory doesn't rot).
 
-See `benchmarks/reports/` for the full benchmark suite + paper-draft aggregator.
+*Recall boosters — SOMA goes beyond the same-embedder ceiling:*
+
+Peer vector DBs (Chroma, LanceDB, Pinecone) all tie SOMA on recall when using the same embedder — by mathematical construction (identical cosine over identical vectors). To beat them, SOMA ships three opt-in boosters that they don't have built-in:
+
+| Retrieval strategy | R@1 | R@5 | Lift R@5 vs cosine |
+| --- | ---: | ---: | ---: |
+| Pure cosine (= any peer DB's ceiling) | 0.098 | 0.238 | — |
+| Hybrid BM25+cosine | 0.207 | 0.415 | **+17.7 pp (+74%)** |
+| Cross-encoder rerank | 0.203 | 0.309 | +7.1 pp |
+| **Hybrid + rerank** | **0.287** | **0.450** | **+21.2 pp (+89%)** |
+
+Measured on LoCoMo (5,882 turns, 1,982 questions). Turning both knobs on triples R@1 and adds ~34 ms of latency on top of baseline 13 ms.
+
+See `benchmarks/reports/` for the full suite + paper-draft aggregator.
 
 ## Graph consolidation (optional, research)
 

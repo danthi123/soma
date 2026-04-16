@@ -396,7 +396,38 @@ Design notes:
   `metadata.superseded_by = new_id`. `retrieve()` filters them out by
   default; pass `include_superseded=True` to see the audit trail.
 
-### 18.1 Multi-user scoping on a shared bundle
+### 18.1 Async extraction for low-latency chat
+
+For interactive chat paths where the UI is waiting on the turn to
+persist but doesn't need extracted facts synchronously available,
+pass `extraction_mode="async"`. `add_message()` returns as soon as the
+raw turn is stored; extract + reconcile run on a single background
+thread (`ThreadPoolExecutor(max_workers=1)`, so within-session
+extraction order is preserved). Call `flush()` — or use the
+context-manager protocol — before reading extracted facts.
+
+```python
+with ConversationalMemory(
+    memory=mem, llm=llm, session_id="alex",
+    extraction_mode="async",
+) as cm:
+    cm.add_message("user", "I moved to Boston")   # returns immediately
+    cm.add_message("user", "I work at Acme Corp") # returns immediately
+    # ...respond to user while extraction runs in the background...
+    cm.flush()                                    # facts now queryable
+    hits = cm.retrieve("where does the user live?")
+# __exit__ drains pending futures + shuts down the executor.
+```
+
+`close()` is idempotent; `clear_session()` flushes first so in-flight
+facts land and are then wiped rather than leaking in after the reset.
+Exceptions raised on the executor thread surface on the next `flush()`
+call (they are not silently swallowed). Python's GIL means the async
+win is I/O overlap with the LLM network call — local CPU-bound
+backends will not see a speedup. Prefer `"sync"` for batch ingest
+where strict per-turn ordering matters and latency is a non-concern.
+
+### 18.2 Multi-user scoping on a shared bundle
 
 One bundle, many users (e.g. a multi-tenant chat app). Pass `user_id=`
 to `ConversationalMemory` and every stored turn / fact / summary is

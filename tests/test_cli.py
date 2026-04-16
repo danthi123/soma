@@ -593,3 +593,50 @@ def test_bundle_list_default_root_is_cwd(
     assert rc == 0
     out = capsys.readouterr().out
     assert "solo" in out
+
+
+def test_bundle_info_prints_detail(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    bundle = tmp_path / "alex"
+    _seed_healthy_bundle(bundle, entries=7, embed_dim=384)
+
+    rc = main(["bundle", "info", str(bundle)])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "entries" in out.lower()
+    assert "7" in out
+    assert "384" in out
+    assert "inproc-flat" in out
+    # disk_bytes row should be present.
+    assert "disk_bytes" in out
+
+
+def test_bundle_info_returns_2_for_missing_path(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    rc = main(["bundle", "info", str(tmp_path / "nope")])
+    err = capsys.readouterr().err
+    assert rc == 2
+    assert "does not exist" in err.lower() or "not found" in err.lower()
+
+
+def test_bundle_info_returns_2_for_corrupt_bundle(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _seed_corrupt_bundle(tmp_path / "bad")
+    rc = main(["bundle", "info", str(tmp_path / "bad")])
+    err = capsys.readouterr().err
+    assert rc == 2
+    assert "corrupt" in err.lower()
+
+
+def test_bundle_info_returns_2_for_non_bundle_dir(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    rc = main(["bundle", "info", str(empty)])
+    err = capsys.readouterr().err
+    assert rc == 2
+    assert "bundle" in err.lower()

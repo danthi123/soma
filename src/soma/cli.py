@@ -559,6 +559,49 @@ def _cmd_bundle_list(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_bundle_info(args: argparse.Namespace) -> int:
+    """Print a detailed view of a single bundle.
+
+    Loads one :class:`BundleInfo` and additionally computes the total
+    bytes on disk via a recursive walk. Exits 2 on a missing path, a
+    non-bundle directory, or a corrupt bundle (reason printed to
+    stderr).
+    """
+    from soma.bundle import is_bundle_dir, load_info
+
+    path = args.path
+    if not path.exists():
+        print(f"error: {path} does not exist", file=sys.stderr)
+        return 2
+    if not is_bundle_dir(path):
+        print(f"error: {path} is not a SOMA bundle", file=sys.stderr)
+        return 2
+
+    info = load_info(path)
+    if info.corrupt:
+        print(f"error: bundle is corrupt: {info.corrupt_reason}", file=sys.stderr)
+        return 2
+
+    total_bytes = 0
+    for p in path.rglob("*"):
+        try:
+            if p.is_file():
+                total_bytes += p.stat().st_size
+        except OSError:
+            continue
+
+    print(f"path:          {info.path}")
+    print(f"entries:       {info.entries:,}")
+    print(f"embed_dim:     {info.embed_dim}")
+    print(f"backend:       {info.backend}")
+    print(f"last_modified: {info.last_modified.isoformat(timespec='seconds')}")
+    if info.snapshot_ts:
+        print(f"snapshot_ts:   {info.snapshot_ts}")
+    print(f"wal_bytes:     {info.wal_bytes:,}  ({_format_bytes(info.wal_bytes)})")
+    print(f"disk_bytes:    {total_bytes:,}  ({_format_bytes(total_bytes)})")
+    return 0
+
+
 def _cmd_auth_gc(_: argparse.Namespace) -> int:
     """Drop past-exp entries from the blocklist file.
 
@@ -739,6 +782,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="Directory to scan (default: .)",
     )
     p_bundle_list.set_defaults(func=_cmd_bundle_list)
+
+    p_bundle_info = bundle_sub.add_parser(
+        "info",
+        help="Detailed view of a single bundle",
+    )
+    p_bundle_info.add_argument("path", type=Path, help="Bundle directory")
+    p_bundle_info.set_defaults(func=_cmd_bundle_info)
 
     return p
 

@@ -197,3 +197,98 @@ def test_issue_requires_either_secret_or_private_key() -> None:
             alg="RS256",
             private_key_pem=None,
         )
+
+
+# ------------------------------------------------------------------
+# Revocation — verify_token consults an optional BlocklistBackend
+# ------------------------------------------------------------------
+def test_verify_rejects_revoked_jti(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    """A revoked jti + non-null blocklist => InvalidTokenError('token revoked')."""
+    import time
+
+    from soma.auth_revocation import FileBlocklist, RevocationRecord
+
+    token = issue_token(
+        sub="alex",
+        bundles={"alex": ["read"]},
+        expires_in=timedelta(minutes=5),
+        secret=SECRET,
+    )
+    # Decode to pull the jti off the fresh token.
+    principal = verify_token(token, secret=SECRET)
+    assert principal.jti is not None
+
+    bl = FileBlocklist(tmp_path / "bl.jsonl")
+    now = int(time.time())
+    bl.add(
+        RevocationRecord(
+            jti=principal.jti,
+            revoked_at=now,
+            reason="leaked in test",
+            exp=now + 600,
+        )
+    )
+
+    with pytest.raises(jwt.InvalidTokenError) as exc:
+        verify_token(token, secret=SECRET, blocklist=bl)
+    assert "revoked" in str(exc.value).lower()
+
+
+def test_verify_accepts_unrevoked_jti(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    """Non-empty blocklist that doesn't list this jti => verify passes."""
+    import time
+
+    from soma.auth_revocation import FileBlocklist, RevocationRecord
+
+    token = issue_token(
+        sub="alex",
+        bundles={"alex": ["read"]},
+        expires_in=timedelta(minutes=5),
+        secret=SECRET,
+    )
+    bl = FileBlocklist(tmp_path / "bl.jsonl")
+    now = int(time.time())
+    # Populate with an *unrelated* jti to force a cache load.
+    bl.add(
+        RevocationRecord(
+            jti="unrelated-jti-xyz",
+            revoked_at=now,
+            reason="smoke",
+            exp=now + 600,
+        )
+    )
+
+    principal = verify_token(token, secret=SECRET, blocklist=bl)
+    assert principal.sub == "alex"
+
+
+def test_verify_ignores_blocklist_for_tokens_without_jti() -> None:
+    """Legacy tokens without a jti claim pass unaffected.
+
+    Belt-and-suspenders — the blocklist is keyed on jti, so missing
+    jti means nothing to look up. We deliberately don't fail-closed on
+    missing jti because legacy callers (pre-Phase-4 + external issuers)
+    may emit tokens without one.
+    """
+    from soma.auth_revocation import FileBlocklist
+
+    # Craft a token with no jti claim via PyJWT directly (bypassing
+    # issue_token, which always populates jti).
+    import time as _t
+
+    now = int(_t.time())
+    raw = jwt.encode(
+        {"iss": "soma", "sub": "no-jti", "iat": now, "exp": now + 300},
+        SECRET,
+        algorithm="HS256",
+    )
+    # Blocklist exists but doesn't contain anything matching — the
+    # no-jti branch must still accept.
+    import tempfile
+    from pathlib import Path as _P
+
+    with tempfile.TemporaryDirectory() as td:
+        bl = FileBlocklist(_P(td) / "bl.jsonl")
+        principal = verify_token(raw, secret=SECRET, blocklist=bl)
+        assert principal.sub == "no-jti"
+        assert principal.jti is None

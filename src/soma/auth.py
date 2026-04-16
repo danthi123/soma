@@ -44,9 +44,12 @@ import secrets
 import uuid
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 import jwt
+
+if TYPE_CHECKING:
+    from soma.auth_revocation import BlocklistBackend
 
 __all__ = [
     "PERM_HIERARCHY",
@@ -144,6 +147,7 @@ def verify_token(
     public_key_pem: bytes | None = None,
     leeway: int = 60,
     issuer: str | None = "soma",
+    blocklist: BlocklistBackend | None = None,
 ) -> Principal:
     """Decode + validate a JWT; return a :class:`Principal`.
 
@@ -154,6 +158,14 @@ def verify_token(
 
     ``leeway`` (seconds) covers NTP drift — a token expired a moment
     ago on the verifier's clock still decodes. Default 60 s.
+
+    ``blocklist`` (optional) consults a :class:`BlocklistBackend` for
+    the token's ``jti`` claim *after* the signature + exp checks pass.
+    A revoked jti raises :class:`jwt.InvalidTokenError("token revoked")`.
+    When ``blocklist=None`` (default), the check is skipped — existing
+    callers in CLI / tests behave unchanged. Tokens without a ``jti``
+    claim (legacy / externally-issued) always pass the blocklist gate
+    since there's nothing to key on.
     """
     # Belt-and-suspenders: reject alg=none before PyJWT gets a shot.
     # PyJWT 2.x already rejects 'none' unless explicitly allowed, but
@@ -193,10 +205,20 @@ def verify_token(
         for name, perms in bundles_raw.items():
             if isinstance(name, str) and isinstance(perms, list):
                 bundles[name] = [p for p in perms if p in PERM_HIERARCHY]
+
+    jti = claims.get("jti")
+
+    # Revocation check runs last — after signature + exp + claim shape
+    # pass. Legacy tokens without a jti claim aren't keyable in the
+    # blocklist so we let them through (the broader fix there is to
+    # re-issue with jti, not to fail-closed and break existing callers).
+    if blocklist is not None and isinstance(jti, str) and blocklist.is_revoked(jti):
+        raise jwt.InvalidTokenError("token revoked")
+
     return Principal(
         sub=str(claims.get("sub") or ""),
         bundles=bundles,
-        jti=claims.get("jti"),
+        jti=jti,
     )
 
 

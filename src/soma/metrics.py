@@ -28,7 +28,8 @@ Counters
     ``soma_consolidate_total`` — consolidate() calls
     ``soma_wal_append_total{op}`` — WAL appends (Phase 1 hook)
     ``soma_auth_failures_total{reason}`` — auth rejections on the REST API
-        (invalid_token | expired_token | insufficient_perm | missing_credentials)
+        (invalid_token | expired_token | insufficient_perm | missing_credentials
+         | revoked_token)
 
 Gauges
     ``soma_entries{bundle}`` — live entries
@@ -252,7 +253,7 @@ RELOAD_TOTAL = _counter(
 AUTH_FAILURES_TOTAL = _counter(
     "soma_auth_failures_total",
     "REST auth failures, labelled by reason "
-    "(invalid_token | expired_token | insufficient_perm | missing_credentials).",
+    "(invalid_token | expired_token | insufficient_perm | missing_credentials | revoked_token).",
     ("reason",),
 )
 

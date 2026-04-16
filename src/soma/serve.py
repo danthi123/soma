@@ -30,6 +30,11 @@ Environment variables:
     SOMA_JWT_ALG        — ``HS256`` (default) or ``RS256``.
     SOMA_JWT_PUBLIC_KEY_PATH — RS256 PEM file for verification.
     SOMA_JWT_LEEWAY     — seconds of clock-skew tolerance (default 60).
+    SOMA_JWT_BLOCKLIST_PATH — path to an append-only JSONL file holding
+                          revoked ``jti`` values. When set, every verified
+                          token is additionally checked against the
+                          blocklist (poll cadence ~30s). Unset = no
+                          revocation (pre-Phase-4.1 behaviour).
     SOMA_CORS_ORIGINS   — comma-separated allow-list for the browser
                           CORS middleware (default: http://localhost:*).
 
@@ -59,6 +64,7 @@ from pydantic import BaseModel, Field
 
 from soma import metrics as _metrics
 from soma.auth import Perm, Principal, verify_token
+from soma.auth_revocation import blocklist_from_env
 from soma.log import configure_json_logging
 from soma.memory import MemoryLayer
 
@@ -93,6 +99,13 @@ if JWT_PUBLIC_KEY_PATH:
         _JWT_PUBLIC_KEY_PEM = Path(JWT_PUBLIC_KEY_PATH).read_bytes()
     except OSError:
         _JWT_PUBLIC_KEY_PEM = None
+
+# JWT revocation blocklist. Gated on ``SOMA_JWT_BLOCKLIST_PATH``; when
+# unset, ``blocklist_from_env`` returns a no-op ``null_blocklist`` so
+# verify_token's revoked-jti check is transparent. The blocklist is
+# resolved once at import time so peer processes can share the file
+# via portalocker + mtime poll (~30 s propagation).
+_blocklist = blocklist_from_env()
 
 app = FastAPI(
     title="SOMA Memory Layer",
@@ -239,16 +252,25 @@ def _try_verify_jwt(token: str) -> Principal | None:
     verifier is configured.
 
     Raises :class:`jwt.InvalidTokenError` for any token-shaped failure
-    (bad signature, expired, missing exp, alg=none).
+    (bad signature, expired, missing exp, alg=none, revoked jti).
+    The module-level ``_blocklist`` is passed through so the revocation
+    check fires on every verify path.
     """
     if JWT_ALG == "HS256" and JWT_SECRET:
-        return verify_token(token, alg="HS256", secret=JWT_SECRET, leeway=JWT_LEEWAY)
+        return verify_token(
+            token,
+            alg="HS256",
+            secret=JWT_SECRET,
+            leeway=JWT_LEEWAY,
+            blocklist=_blocklist,
+        )
     if JWT_ALG == "RS256" and _JWT_PUBLIC_KEY_PEM is not None:
         return verify_token(
             token,
             alg="RS256",
             public_key_pem=_JWT_PUBLIC_KEY_PEM,
             leeway=JWT_LEEWAY,
+            blocklist=_blocklist,
         )
     return None
 
@@ -284,7 +306,18 @@ def require_auth(
                     detail="token expired",
                     headers={"WWW-Authenticate": 'Bearer error="invalid_token"'},
                 ) from None
-            except jwt.InvalidTokenError:
+            except jwt.InvalidTokenError as exc:
+                # Revocation is a strictly different failure mode than
+                # "malformed" — the token was valid, we just pulled its
+                # plug. Detect via the message verify_token raises; no
+                # fall-through to legacy for revoked tokens.
+                if "revoked" in str(exc).lower():
+                    record_auth_failure("revoked_token")
+                    raise HTTPException(
+                        status_code=status.HTTP_401_UNAUTHORIZED,
+                        detail="token revoked",
+                        headers={"WWW-Authenticate": 'Bearer error="invalid_token"'},
+                    ) from None
                 # Fall through to legacy check — a malformed JWT might
                 # just be a legacy raw key.
                 principal = None

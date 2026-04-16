@@ -52,6 +52,7 @@ def _fresh_serve(monkeypatch: pytest.MonkeyPatch, **env: str) -> object:
         "SOMA_JWT_ALG",
         "SOMA_JWT_PUBLIC_KEY_PATH",
         "SOMA_JWT_LEEWAY",
+        "SOMA_JWT_BLOCKLIST_PATH",
     ):
         monkeypatch.delenv(key, raising=False)
     for k, v in env.items():
@@ -344,3 +345,130 @@ def test_perm_failure_distinct_reason(monkeypatch: pytest.MonkeyPatch) -> None:
 
     if m.prometheus_available:
         assert after >= before + 1
+
+
+# ------------------------------------------------------------------
+# Revocation — SOMA_JWT_BLOCKLIST_PATH wires the file blocklist
+# ------------------------------------------------------------------
+def _revoke_via_bl(bl_path: Path, jti: str, exp_ts: int) -> None:
+    """Helper — append a revocation to the file backing the server."""
+    import time
+
+    from soma.auth_revocation import FileBlocklist, RevocationRecord
+
+    FileBlocklist(bl_path).add(
+        RevocationRecord(
+            jti=jti,
+            revoked_at=int(time.time()),
+            reason="test revocation",
+            exp=exp_ts,
+        )
+    )
+
+
+def test_revoked_token_returns_401_with_reason(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """/store with a revoked JWT => 401 + detail mentions revoked."""
+    import time
+
+    bl_path = tmp_path / "bl.jsonl"
+    reloaded = _fresh_serve(
+        monkeypatch,
+        SOMA_JWT_SECRET=_SECRET,
+        SOMA_JWT_BLOCKLIST_PATH=str(bl_path),
+    )
+    client = TestClient(reloaded.app)
+    token = issue_token(
+        sub="alex",
+        bundles={"__default__": ["write"]},
+        expires_in=timedelta(minutes=5),
+        secret=_SECRET,
+    )
+    principal = __import__("soma.auth", fromlist=["verify_token"]).verify_token(
+        token, secret=_SECRET
+    )
+    assert principal.jti is not None
+    _revoke_via_bl(bl_path, principal.jti, exp_ts=int(time.time()) + 600)
+
+    # Clear the module-level blocklist cache so the reader re-reads
+    # the file. Writing via a *separate* FileBlocklist instance means
+    # the serve module's cached instance hasn't seen the new line yet
+    # — force it by bumping mtime via direct touch + calling _reload.
+    reloaded._blocklist._reload()
+
+    r = client.post(
+        "/store",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"text": "should-be-blocked"},
+    )
+    assert r.status_code == 401, r.text
+    body = r.json()
+    assert "revoked" in body.get("detail", "").lower()
+    assert r.headers.get("WWW-Authenticate", "").lower().startswith("bearer")
+
+
+def test_revocation_metric_counter_increments(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """soma_auth_failures_total{reason='revoked_token'} advances on 401."""
+    import time
+
+    bl_path = tmp_path / "bl.jsonl"
+    reloaded = _fresh_serve(
+        monkeypatch,
+        SOMA_JWT_SECRET=_SECRET,
+        SOMA_JWT_BLOCKLIST_PATH=str(bl_path),
+    )
+    before = _auth_counter_value(reloaded, "revoked_token")
+
+    client = TestClient(reloaded.app)
+    token = issue_token(
+        sub="alex",
+        bundles={"__default__": ["write"]},
+        expires_in=timedelta(minutes=5),
+        secret=_SECRET,
+    )
+    from soma.auth import verify_token as _vt
+
+    principal = _vt(token, secret=_SECRET)
+    assert principal.jti is not None
+    _revoke_via_bl(bl_path, principal.jti, exp_ts=int(time.time()) + 600)
+    reloaded._blocklist._reload()
+
+    r = client.post(
+        "/store",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"text": "nope"},
+    )
+    assert r.status_code == 401, r.text
+    after = _auth_counter_value(reloaded, "revoked_token")
+
+    from soma import metrics as m
+
+    if m.prometheus_available:
+        assert after >= before + 1
+
+
+def test_blocklist_path_unset_behaves_as_before(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """No SOMA_JWT_BLOCKLIST_PATH => pre-revocation behaviour intact.
+
+    A normal happy-path write succeeds; nothing raises. This pins that
+    the blocklist plumbing is transparent when unconfigured.
+    """
+    reloaded = _fresh_serve(monkeypatch, SOMA_JWT_SECRET=_SECRET)
+    client = TestClient(reloaded.app)
+    token = issue_token(
+        sub="alex",
+        bundles={"__default__": ["write"]},
+        expires_in=timedelta(minutes=5),
+        secret=_SECRET,
+    )
+    r = client.post(
+        "/store",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"text": "through"},
+    )
+    assert r.status_code == 200, r.text

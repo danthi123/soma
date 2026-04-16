@@ -1,0 +1,316 @@
+{
+  "config": {
+    "embedder": "sbert",
+    "embed_dim": 384,
+    "device": "cpu",
+    "corpus_size": 60,
+    "primary_n": 10,
+    "secondary_n": 0,
+    "alphas": [
+      0.1,
+      0.3,
+      0.5,
+      0.7,
+      0.9
+    ],
+    "num_transitive_queries": 20,
+    "num_unrelated_queries": 10,
+    "quick": false
+  },
+  "baseline": {
+    "method": "pure-vector-sbert",
+    "consolidation_iterations": -1,
+    "metrics": {
+      "direct": {
+        "r_at_1": 0.5208333333333334,
+        "r_at_5": 1.0,
+        "mrr": 0.9708333333333333,
+        "num_queries": 60.0
+      },
+      "transitive": {
+        "r_at_1": 0.0,
+        "r_at_5": 0.2,
+        "mrr": 0.06833333333333333,
+        "num_queries": 20.0
+      },
+      "unrelated": {
+        "r_at_1": 0.0,
+        "r_at_5": 0.0,
+        "mrr": 0.0,
+        "num_queries": 10.0
+      }
+    },
+    "integrator_count": 0,
+    "edge_count": 0,
+    "edge_weight_cooccurrence_spearman": null,
+    "elapsed_seconds": 0.8440000000009604
+  },
+  "primary": {
+    "n": 10,
+    "diagnostics": {
+      "integrator_count": 8,
+      "edge_count": 48,
+      "edge_weight_cooccurrence_spearman": 0.8540979350605947
+    },
+    "results": [
+      {
+        "mode": "pure_vector_trained",
+        "consolidation_iterations": 10,
+        "metrics": {
+          "direct": {
+            "r_at_1": 0.5208333333333334,
+            "r_at_5": 1.0,
+            "mrr": 0.9708333333333333,
+            "num_queries": 60.0
+          },
+          "transitive": {
+            "r_at_1": 0.0,
+            "r_at_5": 0.2,
+            "mrr": 0.06833333333333333,
+            "num_queries": 20.0
+          },
+          "unrelated": {
+            "r_at_1": 0.0,
+            "r_at_5": 0.0,
+            "mrr": 0.0,
+            "num_queries": 10.0
+          }
+        },
+        "elapsed_seconds": 0.5470000000022992,
+        "integrator_count": 8,
+        "edge_count": 48,
+        "edge_weight_cooccurrence_spearman": 0.8540979350605947
+      },
+      {
+        "mode": "alpha_blend_0.10",
+        "consolidation_iterations": 10,
+        "metrics": {
+          "direct": {
+            "r_at_1": 0.5291666666666667,
+            "r_at_5": 1.0,
+            "mrr": 0.9791666666666666,
+            "num_queries": 60.0
+          },
+          "transitive": {
+            "r_at_1": 0.0,
+            "r_at_5": 0.2,
+            "mrr": 0.06583333333333333,
+            "num_queries": 20.0
+          },
+          "unrelated": {
+            "r_at_1": 0.0,
+            "r_at_5": 0.0,
+            "mrr": 0.0,
+            "num_queries": 10.0
+          }
+        },
+        "elapsed_seconds": 3.2809999999990396,
+        "integrator_count": 8,
+        "edge_count": 48,
+        "edge_weight_cooccurrence_spearman": 0.8540979350605947
+      },
+      {
+        "mode": "alpha_blend_0.30",
+        "consolidation_iterations": 10,
+        "metrics": {
+          "direct": {
+            "r_at_1": 0.5041666666666667,
+            "r_at_5": 0.975,
+            "mrr": 0.9555555555555555,
+            "num_queries": 60.0
+          },
+          "transitive": {
+            "r_at_1": 0.0,
+            "r_at_5": 0.15,
+            "mrr": 0.05583333333333333,
+            "num_queries": 20.0
+          },
+          "unrelated": {
+            "r_at_1": 0.0,
+            "r_at_5": 0.0,
+            "mrr": 0.0,
+            "num_queries": 10.0
+          }
+        },
+        "elapsed_seconds": 3.311999999998079,
+        "integrator_count": 8,
+        "edge_count": 48,
+        "edge_weight_cooccurrence_spearman": 0.8540979350605947
+      },
+      {
+        "mode": "alpha_blend_0.50",
+        "consolidation_iterations": 10,
+        "metrics": {
+          "direct": {
+            "r_at_1": 0.4083333333333333,
+            "r_at_5": 0.9333333333333333,
+            "mrr": 0.8569444444444444,
+            "num_queries": 60.0
+          },
+          "transitive": {
+            "r_at_1": 0.0,
+            "r_at_5": 0.15,
+            "mrr": 0.0725,
+            "num_queries": 20.0
+          },
+          "unrelated": {
+            "r_at_1": 0.0,
+            "r_at_5": 0.0,
+            "mrr": 0.0,
+            "num_queries": 10.0
+          }
+        },
+        "elapsed_seconds": 3.2190000000009604,
+        "integrator_count": 8,
+        "edge_count": 48,
+        "edge_weight_cooccurrence_spearman": 0.8540979350605947
+      },
+      {
+        "mode": "alpha_blend_0.70",
+        "consolidation_iterations": 10,
+        "metrics": {
+          "direct": {
+            "r_at_1": 0.31666666666666665,
+            "r_at_5": 0.7666666666666667,
+            "mrr": 0.7416666666666667,
+            "num_queries": 60.0
+          },
+          "transitive": {
+            "r_at_1": 0.025,
+            "r_at_5": 0.15,
+            "mrr": 0.08499999999999999,
+            "num_queries": 20.0
+          },
+          "unrelated": {
+            "r_at_1": 0.0,
+            "r_at_5": 0.0,
+            "mrr": 0.0,
+            "num_queries": 10.0
+          }
+        },
+        "elapsed_seconds": 3.3909999999996217,
+        "integrator_count": 8,
+        "edge_count": 48,
+        "edge_weight_cooccurrence_spearman": 0.8540979350605947
+      },
+      {
+        "mode": "alpha_blend_0.90",
+        "consolidation_iterations": 10,
+        "metrics": {
+          "direct": {
+            "r_at_1": 0.12916666666666668,
+            "r_at_5": 0.4791666666666667,
+            "mrr": 0.4002777777777778,
+            "num_queries": 60.0
+          },
+          "transitive": {
+            "r_at_1": 0.05,
+            "r_at_5": 0.1,
+            "mrr": 0.075,
+            "num_queries": 20.0
+          },
+          "unrelated": {
+            "r_at_1": 0.0,
+            "r_at_5": 0.0,
+            "mrr": 0.0,
+            "num_queries": 10.0
+          }
+        },
+        "elapsed_seconds": 6.484000000000378,
+        "integrator_count": 8,
+        "edge_count": 48,
+        "edge_weight_cooccurrence_spearman": 0.8540979350605947
+      },
+      {
+        "mode": "pure_graph_rank",
+        "consolidation_iterations": 10,
+        "metrics": {
+          "direct": {
+            "r_at_1": 0.058333333333333334,
+            "r_at_5": 0.2875,
+            "mrr": 0.2236111111111111,
+            "num_queries": 60.0
+          },
+          "transitive": {
+            "r_at_1": 0.0,
+            "r_at_5": 0.125,
+            "mrr": 0.06,
+            "num_queries": 20.0
+          },
+          "unrelated": {
+            "r_at_1": 0.0,
+            "r_at_5": 0.0,
+            "mrr": 0.0,
+            "num_queries": 10.0
+          }
+        },
+        "elapsed_seconds": 3.3440000000009604,
+        "integrator_count": 8,
+        "edge_count": 48,
+        "edge_weight_cooccurrence_spearman": 0.8540979350605947
+      },
+      {
+        "mode": "graph_traversal_expand",
+        "consolidation_iterations": 10,
+        "metrics": {
+          "direct": {
+            "r_at_1": 0.5208333333333334,
+            "r_at_5": 1.0,
+            "mrr": 0.9708333333333333,
+            "num_queries": 60.0
+          },
+          "transitive": {
+            "r_at_1": 0.0,
+            "r_at_5": 0.2,
+            "mrr": 0.06833333333333333,
+            "num_queries": 20.0
+          },
+          "unrelated": {
+            "r_at_1": 0.0,
+            "r_at_5": 0.0,
+            "mrr": 0.0,
+            "num_queries": 10.0
+          }
+        },
+        "elapsed_seconds": 0.7030000000013388,
+        "integrator_count": 8,
+        "edge_count": 48,
+        "edge_weight_cooccurrence_spearman": 0.8540979350605947
+      },
+      {
+        "mode": "centrality_prior",
+        "consolidation_iterations": 10,
+        "metrics": {
+          "direct": {
+            "r_at_1": 0.5208333333333334,
+            "r_at_5": 1.0,
+            "mrr": 0.9708333333333333,
+            "num_queries": 60.0
+          },
+          "transitive": {
+            "r_at_1": 0.0,
+            "r_at_5": 0.2,
+            "mrr": 0.06583333333333333,
+            "num_queries": 20.0
+          },
+          "unrelated": {
+            "r_at_1": 0.0,
+            "r_at_5": 0.0,
+            "mrr": 0.0,
+            "num_queries": 10.0
+          }
+        },
+        "elapsed_seconds": 0.5469999999986612,
+        "integrator_count": 8,
+        "edge_count": 48,
+        "edge_weight_cooccurrence_spearman": 0.8540979350605947
+      }
+    ]
+  },
+  "secondary": null,
+  "verdict": "FAIL",
+  "rationale": "No readout clears the +0.05 gate. Best was `pure_vector_trained` at +0.000 vs pure-vector transitive R@5. Declare research direction C dead for retrieval objectives; recommend folding to Research B (CL benchmark) or D (associative memory). Actively-harming modes: alpha_blend_0.90 (-0.100), pure_graph_rank (-0.075), alpha_blend_0.30 (-0.050).",
+  "best_mode": "pure_vector_trained",
+  "best_delta_r5_vs_baseline": 0.0,
+  "elapsed_total_seconds": 292.96900000000096
+}

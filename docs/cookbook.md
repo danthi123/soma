@@ -250,31 +250,46 @@ hits = mem.retrieve("...", k=5, hybrid_alpha=0.3, rerank_top_n=20)
 The pre-rerank score is kept in `h.metadata["_pre_rerank_score"]` so
 you can compare.
 
-## 15. Multi-tenant REST server
+## 15. Multi-tenant REST server + JWT auth
 
-One server, many brains. Tenant routes under `/bundles/{name}`:
+One server, many brains. Tenant routes under `/bundles/{name}`. Each
+caller gets a JWT scoped to the bundles they can read or write. See
+`docs/auth.md` for the full reference.
 
 ```bash
-# Start server (optional API key for bearer auth):
-SOMA_API_KEY=change-me SOMA_BUNDLES_DIR=./data/bundles soma serve --port 8420
+# 1. Generate a shared HS256 secret and mint per-caller tokens:
+export SOMA_JWT_SECRET=$(soma auth rotate-secret)
+export ALEX_TOKEN=$(
+  soma auth issue --sub alex --bundle alex:read,write --expires 30d
+)
+export BOBBI_TOKEN=$(
+  soma auth issue --sub bobbi --bundle bobbi:read,write --expires 30d
+)
 
-# Per-tenant store:
+# 2. Start server — it picks up SOMA_JWT_SECRET from env:
+SOMA_BUNDLES_DIR=./data/bundles soma serve --port 8420
+
+# 3. Each caller hits their own bundle:
 curl -X POST http://localhost:8420/bundles/alex/store \
-  -H 'Authorization: Bearer change-me' \
+  -H "Authorization: Bearer $ALEX_TOKEN" \
   -H 'Content-Type: application/json' \
   -d '{"text": "alex prefers vegetarian"}'
 
 curl -X POST http://localhost:8420/bundles/bobbi/store \
-  -H 'Authorization: Bearer change-me' \
+  -H "Authorization: Bearer $BOBBI_TOKEN" \
   -H 'Content-Type: application/json' \
   -d '{"text": "bobbi prefers seafood"}'
 
-# Health check (no auth):
+# ALEX_TOKEN on bobbi's bundle → 403 (bundle mismatch).
+# Health check (always no-auth):
 curl http://localhost:8420/health
 ```
 
 Each `/bundles/{name}` path maps to `$SOMA_BUNDLES_DIR/{name}/` on
 disk; bundles are loaded lazily and cached in memory.
+
+**Legacy** `SOMA_API_KEY` is still supported as a deprecated admin
+escape hatch — responses carry `X-SOMA-Deprecated: use JWT`.
 
 ## 16. Inspect a bundle without loading the LLM
 

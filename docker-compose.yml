@@ -11,8 +11,16 @@ services:
       # Multi-tenant root: /bundles/{name}/... routes to here/{name}/
       - SOMA_BUNDLES_DIR=/app/data/bundles
       - SOMA_EMBED_MODEL=all-MiniLM-L6-v2
-      # Uncomment to require `Authorization: Bearer <key>` on all
-      # non-/health, non-/version endpoints:
+      # --- Phase 4 JWT auth (recommended) --------------------------
+      # Generate once with:  soma auth rotate-secret
+      # Issue tokens with:   soma auth issue --sub X --bundle alex:read,write --expires 30d
+      # See docs/auth.md for RS256 issuer/verifier split.
+      # - SOMA_JWT_ALG=HS256
+      # - SOMA_JWT_SECRET=replace-with-soma-auth-rotate-secret
+      # - SOMA_JWT_LEEWAY=60
+      # --- Legacy admin escape hatch (deprecated) ------------------
+      # Responses unlocked via SOMA_API_KEY carry `X-SOMA-Deprecated:
+      # use JWT`. Remove once all callers have migrated to JWTs.
       # - SOMA_API_KEY=change-me-for-production
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8420/health', timeout=2).read()"]

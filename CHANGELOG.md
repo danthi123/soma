@@ -4,6 +4,37 @@ All notable changes to SOMA are documented here.
 
 ## [Unreleased] — 2026-04-16
 
+### Added — auth
+
+- **Per-bundle JWT auth** replaces the single shared `SOMA_API_KEY`
+  bearer model. A token now carries a claim of shape
+  `soma: {v:1, bundles: {name: [read|write|admin]}}`; the REST
+  dependency `require_auth(bundle_path_param, perm)` enforces the
+  hierarchy (`write` implies `read`, `admin` implies everything) per
+  route. HS256 default via `SOMA_JWT_SECRET`, RS256 opt-in via
+  `SOMA_JWT_ALG=RS256` + `SOMA_JWT_PUBLIC_KEY_PATH` (keeps
+  issuer/verifier split possible without shipping a secret to every
+  REST worker).
+- `SOMA_API_KEY` still works as a deprecated admin escape hatch;
+  responses unlocked via that path carry `X-SOMA-Deprecated: use JWT`.
+- New `src/soma/auth.py`: `Principal` dataclass + `issue_token()` +
+  `verify_token()` + `generate_secret()`. Shared between `serve.py`
+  and `cli.py`; no FastAPI imports so CLI usage stays light.
+- New `soma auth` CLI: `issue` (mint token, repeatable
+  `--bundle NAME:PERMS`, `--expires 30d|7d|24h|60m`), `verify` (decode
+  + JSON-print claims), `rotate-secret` (fresh 32-byte urlsafe-b64).
+- OpenAPI spec now advertises `securitySchemes.bearerAuth` with
+  `bearerFormat=JWT`; every protected operation lists
+  `{bearerAuth: []}`. `/health`, `/version`, `/metrics` stay public.
+- `soma_auth_failures_total{reason}` counter (Phase 3 integration):
+  `invalid_token | expired_token | insufficient_perm |
+  missing_credentials`. Wired via a `record_auth_failure` helper in
+  `serve.py` so every 401/403 path funnels through one place.
+- Reference docs: `docs/auth.md` (quickstart, claim shape, HS256 vs
+  RS256 tradeoffs, route perm map, CLI reference, rotation workflow,
+  deprecation timeline for `SOMA_API_KEY`).
+- `pyjwt[crypto]>=2.8` added to the `serve` extra.
+
 ### Added — observability
 
 - **Prometheus `/metrics` endpoint** (optional via

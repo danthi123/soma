@@ -60,8 +60,7 @@ def _ensure_lancedb_available() -> None:
         import pyarrow  # noqa: F401
     except ImportError as exc:
         raise ImportError(
-            "LanceDBBackend requires lancedb. "
-            "Install with: pip install 'soma[lancedb]'"
+            "LanceDBBackend requires lancedb. Install with: pip install 'soma[lancedb]'"
         ) from exc
 
 
@@ -119,13 +118,9 @@ class LanceDBBackend:
     ) -> None:
         _ensure_lancedb_available()
         if distance not in ("cosine", "l2", "dot"):
-            raise ValueError(
-                f"distance must be cosine|l2|dot, got {distance!r}"
-            )
+            raise ValueError(f"distance must be cosine|l2|dot, got {distance!r}")
         if index_type not in ("flat", "ivf_pq", "hnsw"):
-            raise ValueError(
-                f"index_type must be flat|ivf_pq|hnsw, got {index_type!r}"
-            )
+            raise ValueError(f"index_type must be flat|ivf_pq|hnsw, got {index_type!r}")
         self._path = Path(path)
         self._dim = int(dim)
         self._table_name = table_name
@@ -167,9 +162,7 @@ class LanceDBBackend:
         if self._table_name in existing:
             self._table = self._db.open_table(self._table_name)
         else:
-            self._table = self._db.create_table(
-                self._table_name, schema=schema
-            )
+            self._table = self._db.create_table(self._table_name, schema=schema)
         # LanceDB persists indexes on disk; track whether one already
         # exists so we don't rebuild it on every open().
         try:
@@ -214,19 +207,11 @@ class LanceDBBackend:
             return
         assert self._table is not None
         arr = np.asarray(vectors, dtype=np.float32)
-        if (
-            arr.ndim != 2
-            or arr.shape[0] != len(ids)
-            or arr.shape[1] != self._dim
-        ):
+        if arr.ndim != 2 or arr.shape[0] != len(ids) or arr.shape[1] != self._dim:
             raise ValueError(
-                f"vectors shape {arr.shape} mismatched; "
-                f"expected ({len(ids)}, {self._dim})"
+                f"vectors shape {arr.shape} mismatched; expected ({len(ids)}, {self._dim})"
             )
-        rows = [
-            {"id": nid, "vector": vec.tolist()}
-            for nid, vec in zip(ids, arr, strict=True)
-        ]
+        rows = [{"id": nid, "vector": vec.tolist()} for nid, vec in zip(ids, arr, strict=True)]
         # merge_insert upserts: when the id already exists we replace
         # the vector, when it doesn't we insert. MemoryLayer never
         # re-adds an id (uuid4 per entry) but the WAL-replay path and
@@ -249,10 +234,7 @@ class LanceDBBackend:
         chunk_size = 1000
         for start in range(0, len(ids), chunk_size):
             chunk = ids[start : start + chunk_size]
-            literals = ", ".join(
-                f"'{nid.replace(chr(39), chr(39) + chr(39))}'"
-                for nid in chunk
-            )
+            literals = ", ".join(f"'{nid.replace(chr(39), chr(39) + chr(39))}'" for nid in chunk)
             self._table.delete(f"id IN ({literals})")
 
     def get_vectors(self, ids: list[str]) -> np.ndarray:
@@ -295,9 +277,7 @@ class LanceDBBackend:
         self._maybe_build_index()
         q = np.asarray(query, dtype=np.float32).reshape(-1)
         if q.shape[0] != self._dim:
-            raise ValueError(
-                f"query dim mismatch: backend={self._dim}, got={q.shape[0]}"
-            )
+            raise ValueError(f"query dim mismatch: backend={self._dim}, got={q.shape[0]}")
 
         predicate_parts: list[str] = []
         if where is not None:
@@ -307,9 +287,7 @@ class LanceDBBackend:
             if clause:
                 predicate_parts.append(clause)
         if exclude_ids:
-            literals = ", ".join(
-                _sql_string_literal(nid) for nid in exclude_ids
-            )
+            literals = ", ".join(_sql_string_literal(nid) for nid in exclude_ids)
             predicate_parts.append(f"id NOT IN ({literals})")
 
         builder = self._table.search(q)
@@ -351,9 +329,7 @@ class LanceDBBackend:
         out = [
             (
                 str(row["id"]),
-                _distance_to_score(
-                    float(row["_distance"]), metric=self._distance
-                ),
+                _distance_to_score(float(row["_distance"]), metric=self._distance),
             )
             for row in rows
         ]
@@ -372,26 +348,18 @@ class LanceDBBackend:
         assert self._table is not None
         self._maybe_build_index()
         q = np.asarray(query, dtype=np.float32).reshape(-1)
-        literals = ", ".join(
-            _sql_string_literal(nid) for nid in candidate_ids
-        )
+        literals = ", ".join(_sql_string_literal(nid) for nid in candidate_ids)
         where_clause = f"id IN ({literals})"
         builder = self._table.search(q)
         try:
             builder = builder.distance_type(self._distance)
         except AttributeError:
             builder = builder.metric(self._distance)  # type: ignore[attr-defined]
-        rows = (
-            builder.where(where_clause)
-            .limit(min(k, len(candidate_ids)))
-            .to_list()
-        )
+        rows = builder.where(where_clause).limit(min(k, len(candidate_ids))).to_list()
         return [
             (
                 str(row["id"]),
-                _distance_to_score(
-                    float(row["_distance"]), metric=self._distance
-                ),
+                _distance_to_score(float(row["_distance"]), metric=self._distance),
             )
             for row in rows
         ]
@@ -431,9 +399,7 @@ class LanceDBBackend:
             "index_type": self._index_type,
             "lancedb_version": _lancedb_version(),
         }
-        (bundle_dir / "backend.json").write_text(
-            json.dumps(meta, indent=2), encoding="utf-8"
-        )
+        (bundle_dir / "backend.json").write_text(json.dumps(meta, indent=2), encoding="utf-8")
         dest = bundle_dir / "lancedb"
         if dest.exists():
             shutil.rmtree(dest)
@@ -452,13 +418,9 @@ class LanceDBBackend:
         if meta_path.exists():
             meta = json.loads(meta_path.read_text(encoding="utf-8"))
             if meta.get("backend") == "lancedb":
-                self._table_name = meta.get(
-                    "table_name", self._table_name
-                )
+                self._table_name = meta.get("table_name", self._table_name)
                 self._distance = meta.get("distance", self._distance)
-                self._index_type = meta.get(
-                    "index_type", self._index_type
-                )
+                self._index_type = meta.get("index_type", self._index_type)
         src = bundle_dir / "lancedb"
         if not src.exists():
             return
@@ -524,11 +486,7 @@ def _is_schema_error(message: str) -> bool:
     Python API.
     """
     low = message.lower()
-    return (
-        "no field named" in low
-        or "schema error" in low
-        or "cannot find column" in low
-    )
+    return "no field named" in low or "schema error" in low or "cannot find column" in low
 
 
 def _extract_missing_field(message: str) -> str | None:

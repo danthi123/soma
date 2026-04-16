@@ -19,10 +19,7 @@ def test_exact_match_shorthand_becomes_eq() -> None:
 
 
 def test_eq_is_equivalent_to_shorthand() -> None:
-    assert (
-        to_lancedb_where({"tag": {"$eq": "fiction"}})
-        == "tag = 'fiction'"
-    )
+    assert to_lancedb_where({"tag": {"$eq": "fiction"}}) == "tag = 'fiction'"
 
 
 def test_ne_becomes_bang_eq() -> None:
@@ -30,17 +27,11 @@ def test_ne_becomes_bang_eq() -> None:
 
 
 def test_in_becomes_sql_in() -> None:
-    assert (
-        to_lancedb_where({"tag": {"$in": ["a", "b", "c"]}})
-        == "tag IN ('a', 'b', 'c')"
-    )
+    assert to_lancedb_where({"tag": {"$in": ["a", "b", "c"]}}) == "tag IN ('a', 'b', 'c')"
 
 
 def test_nin_becomes_sql_not_in() -> None:
-    assert (
-        to_lancedb_where({"tag": {"$nin": ["x", "y"]}})
-        == "tag NOT IN ('x', 'y')"
-    )
+    assert to_lancedb_where({"tag": {"$nin": ["x", "y"]}}) == "tag NOT IN ('x', 'y')"
 
 
 def test_range_operators_gt_gte_lt_lte() -> None:
@@ -81,30 +72,18 @@ def test_empty_where_produces_empty_string() -> None:
 
 
 def test_boolean_literal_renders_as_lowercase() -> None:
-    assert (
-        to_lancedb_where({"active": True})
-        == "active = true"
-    )
-    assert (
-        to_lancedb_where({"active": {"$eq": False}})
-        == "active = false"
-    )
+    assert to_lancedb_where({"active": True}) == "active = true"
+    assert to_lancedb_where({"active": {"$eq": False}}) == "active = false"
 
 
 def test_none_literal_renders_as_null() -> None:
-    assert (
-        to_lancedb_where({"field": {"$eq": None}})
-        == "field = NULL"
-    )
+    assert to_lancedb_where({"field": {"$eq": None}}) == "field = NULL"
 
 
 def test_string_with_apostrophe_is_escaped() -> None:
     # Single quote must be doubled per ANSI SQL so it round-trips
     # intact without injection risk.
-    assert (
-        to_lancedb_where({"name": "O'Brien"})
-        == "name = 'O''Brien'"
-    )
+    assert to_lancedb_where({"name": "O'Brien"}) == "name = 'O''Brien'"
 
 
 def test_float_literal_renders_numeric() -> None:

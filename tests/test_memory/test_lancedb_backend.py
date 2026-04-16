@@ -294,9 +294,7 @@ def test_search_where_in_pushdown(tmp_path: Path) -> None:
         ids = [f"id-{i}" for i in range(5)]
         vecs = _rand_vecs(5, 8)
         b.add(ids, vecs)
-        hits = b.search(
-            vecs[0], k=5, where={"id": {"$in": ["id-1", "id-3"]}}
-        )
+        hits = b.search(vecs[0], k=5, where={"id": {"$in": ["id-1", "id-3"]}})
         returned = {nid for nid, _ in hits}
         assert returned == {"id-1", "id-3"}
     finally:
@@ -309,9 +307,7 @@ def test_search_where_nin_pushdown(tmp_path: Path) -> None:
         ids = [f"id-{i}" for i in range(5)]
         vecs = _rand_vecs(5, 8)
         b.add(ids, vecs)
-        hits = b.search(
-            vecs[0], k=5, where={"id": {"$nin": ["id-1", "id-3"]}}
-        )
+        hits = b.search(vecs[0], k=5, where={"id": {"$nin": ["id-1", "id-3"]}})
         returned = {nid for nid, _ in hits}
         assert returned == {"id-0", "id-2", "id-4"}
     finally:
@@ -429,9 +425,7 @@ def test_recreate_drops_existing_table(tmp_path: Path) -> None:
     finally:
         b.close()
 
-    b2 = LanceDBBackend(
-        path=path, table_name="t", dim=8, recreate=True
-    )
+    b2 = LanceDBBackend(path=path, table_name="t", dim=8, recreate=True)
     try:
         assert b2.ntotal == 0
     finally:
@@ -443,22 +437,17 @@ def test_recreate_drops_existing_table(tmp_path: Path) -> None:
 # ----------------------------------------------------------------------
 
 
-def test_lancedb_backend_raises_clear_error_when_dep_missing(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_lancedb_backend_raises_clear_error_when_dep_missing(tmp_path: Path, monkeypatch) -> None:
     """Simulate lancedb being absent: instantiation must fail with a
     pip install hint so users know which extra to add."""
     import soma.memory.backends.lancedb as lancedb_module
 
     def _fake_ensure():
         raise ImportError(
-            "LanceDBBackend requires lancedb. "
-            "Install with: pip install 'soma[lancedb]'"
+            "LanceDBBackend requires lancedb. Install with: pip install 'soma[lancedb]'"
         )
 
-    monkeypatch.setattr(
-        lancedb_module, "_ensure_lancedb_available", _fake_ensure
-    )
+    monkeypatch.setattr(lancedb_module, "_ensure_lancedb_available", _fake_ensure)
     with pytest.raises(ImportError, match=r"soma\[lancedb\]"):
         LanceDBBackend(path=tmp_path / "x", dim=8)
 
@@ -483,9 +472,7 @@ def test_memory_layer_end_to_end_store_retrieve(tmp_path: Path) -> None:
         vec /= np.linalg.norm(vec) + 1e-9
         return torch.from_numpy(vec)
 
-    backend = LanceDBBackend(
-        path=tmp_path / "mem_lance", table_name="mem", dim=dim
-    )
+    backend = LanceDBBackend(path=tmp_path / "mem_lance", table_name="mem", dim=dim)
     mem = MemoryLayer(
         embed_fn=_embed,
         embed_dim=dim,
@@ -515,9 +502,7 @@ def test_memory_layer_end_to_end_store_retrieve(tmp_path: Path) -> None:
         mem.close()
 
     # Load into a fresh MemoryLayer with a new LanceDB path.
-    backend2 = LanceDBBackend(
-        path=tmp_path / "mem_lance2", table_name="mem", dim=dim
-    )
+    backend2 = LanceDBBackend(path=tmp_path / "mem_lance2", table_name="mem", dim=dim)
     mem2 = MemoryLayer(
         embed_fn=_embed,
         embed_dim=dim,
@@ -566,9 +551,7 @@ def test_memory_layer_where_pushdown_on_lancedb(tmp_path: Path) -> None:
         vec /= np.linalg.norm(vec) + 1e-9
         return torch.from_numpy(vec)
 
-    backend = LanceDBBackend(
-        path=tmp_path / "ml_filter", table_name="t", dim=dim
-    )
+    backend = LanceDBBackend(path=tmp_path / "ml_filter", table_name="t", dim=dim)
     mem = MemoryLayer(
         embed_fn=_embed,
         embed_dim=dim,

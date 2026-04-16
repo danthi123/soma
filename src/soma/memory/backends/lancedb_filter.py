@@ -60,9 +60,7 @@ def _literal(value: Any, *, field: str, op: str) -> str:
     )
 
 
-def _compare_clause(
-    field: str, op: str, sql_op: str, value: Any
-) -> str:
+def _compare_clause(field: str, op: str, sql_op: str, value: Any) -> str:
     """Render ``field <sql_op> literal`` (e.g. ``year >= 2022``)."""
     return f"{field} {sql_op} {_literal(value, field=field, op=op)}"
 
@@ -108,50 +106,26 @@ def to_lancedb_where(where: dict[str, Any]) -> str:
         if isinstance(spec, dict):
             for op, expected in spec.items():
                 if op == "$eq":
-                    clauses.append(
-                        _compare_clause(field_name, op, "=", expected)
-                    )
+                    clauses.append(_compare_clause(field_name, op, "=", expected))
                 elif op == "$ne":
-                    clauses.append(
-                        _compare_clause(field_name, op, "!=", expected)
-                    )
+                    clauses.append(_compare_clause(field_name, op, "!=", expected))
                 elif op == "$gt":
-                    clauses.append(
-                        _compare_clause(field_name, op, ">", expected)
-                    )
+                    clauses.append(_compare_clause(field_name, op, ">", expected))
                 elif op == "$gte":
-                    clauses.append(
-                        _compare_clause(field_name, op, ">=", expected)
-                    )
+                    clauses.append(_compare_clause(field_name, op, ">=", expected))
                 elif op == "$lt":
-                    clauses.append(
-                        _compare_clause(field_name, op, "<", expected)
-                    )
+                    clauses.append(_compare_clause(field_name, op, "<", expected))
                 elif op == "$lte":
-                    clauses.append(
-                        _compare_clause(field_name, op, "<=", expected)
-                    )
+                    clauses.append(_compare_clause(field_name, op, "<=", expected))
                 elif op == "$in":
-                    clauses.append(
-                        _list_clause(
-                            field_name, op, expected, negate=False
-                        )
-                    )
+                    clauses.append(_list_clause(field_name, op, expected, negate=False))
                 elif op == "$nin":
-                    clauses.append(
-                        _list_clause(
-                            field_name, op, expected, negate=True
-                        )
-                    )
+                    clauses.append(_list_clause(field_name, op, expected, negate=True))
                 else:
-                    raise FilterPushdownUnsupported(
-                        op=op, field=field_name
-                    )
+                    raise FilterPushdownUnsupported(op=op, field=field_name)
         else:
             # Bare value = exact match (Chroma shorthand for $eq).
-            clauses.append(
-                _compare_clause(field_name, "$eq", "=", spec)
-            )
+            clauses.append(_compare_clause(field_name, "$eq", "=", spec))
     return " AND ".join(clauses)
 
 

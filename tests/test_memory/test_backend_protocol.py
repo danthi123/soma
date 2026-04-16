@@ -154,9 +154,7 @@ def _lancedb_factory(dim: int, tmp_path: Path) -> Any:
         pytest.param("lancedb", id="lancedb"),
     ]
 )
-def shipped_backend(
-    request: pytest.FixtureRequest, tmp_path: Path
-) -> BackendFactory:
+def shipped_backend(request: pytest.FixtureRequest, tmp_path: Path) -> BackendFactory:
     """Factory returning a freshly-constructed backend for each shipped
     adapter. Dependencies missing = skip, not fail.
     """
@@ -218,9 +216,7 @@ def test_contract_get_vectors_roundtrip(
         for i, nid in enumerate(["id-2", "id-0"]):
             original = vecs[int(nid.split("-")[1])]
             dot = float(np.dot(got[i], original))
-            norms = float(
-                np.linalg.norm(got[i]) * np.linalg.norm(original)
-            )
+            norms = float(np.linalg.norm(got[i]) * np.linalg.norm(original))
             sim = dot / (norms + 1e-12)
             assert sim > 0.99, f"{nid}: cosine sim {sim}"
     finally:

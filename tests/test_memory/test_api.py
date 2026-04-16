@@ -256,7 +256,8 @@ def test_custom_embed_fn_save_load(tmp_path: Path) -> None:
     mem.save(tmp_path / "custom-bundle")
     assert not (tmp_path / "custom-bundle" / "tokenizer.json").exists()
     restored = MemoryLayer.load(
-        tmp_path / "custom-bundle", embed_fn=_hash_embed,
+        tmp_path / "custom-bundle",
+        embed_fn=_hash_embed,
     )
     assert len(restored) == 2
     assert restored.get(nid) is not None
@@ -269,3 +270,39 @@ def test_custom_embed_fn_load_without_fn_raises(tmp_path: Path) -> None:
     mem.save(tmp_path / "b")
     with pytest.raises(ValueError, match="embed_fn"):
         MemoryLayer.load(tmp_path / "b")
+
+
+# ------------------------------------------------------------------
+# FAISS backend
+# ------------------------------------------------------------------
+faiss = pytest.importorskip("faiss")
+
+
+def test_faiss_activates_at_threshold() -> None:
+    mem = MemoryLayer(embed_fn=_hash_embed, embed_dim=16, faiss_threshold=5)
+    for i in range(4):
+        mem.store(f"fact {i}")
+    assert mem._faiss_index is None
+    mem.store("fact 4")
+    assert mem._faiss_index is not None
+
+
+def test_faiss_retrieve_matches_linear() -> None:
+    texts = [f"fact number {i}" for i in range(20)]
+    mem_linear = MemoryLayer(embed_fn=_hash_embed, embed_dim=16, faiss_threshold=0)
+    mem_faiss = MemoryLayer(embed_fn=_hash_embed, embed_dim=16, faiss_threshold=5)
+    for t in texts:
+        mem_linear.store(t)
+        mem_faiss.store(t)
+    query = "fact number 7"
+    linear_hits = mem_linear.retrieve(query, k=3)
+    faiss_hits = mem_faiss.retrieve(query, k=3)
+    assert [h.text for h in linear_hits] == [h.text for h in faiss_hits]
+
+
+def test_faiss_invalidated_on_forget() -> None:
+    mem = MemoryLayer(embed_fn=_hash_embed, embed_dim=16, faiss_threshold=3)
+    ids = [mem.store(f"fact {i}") for i in range(5)]
+    assert mem._faiss_index is not None
+    mem.forget(ids[0])
+    assert mem._faiss_index is None

@@ -73,6 +73,7 @@ class MemoryLayer:
         embed_fn: EmbedFn | None = None,
         embed_dim: int | None = None,
         device: torch.device | str | None = None,
+        faiss_threshold: int = 10_000,
     ) -> None:
         if embed_fn is None and encoder is None:
             raise ValueError("MemoryLayer needs either (tokenizer + encoder) or embed_fn")
@@ -97,6 +98,12 @@ class MemoryLayer:
         self._soma: Any = None
         self._soma_tokenizer: Any = None
         self._soma_encoder: Any = None
+
+        # FAISS ANN index, built on-demand when store size >= threshold.
+        # Set threshold=0 to disable. The linear backend stays as fallback
+        # for related() (which needs exclude-self) and small stores.
+        self._faiss_threshold: int = faiss_threshold
+        self._faiss_index: Any = None
 
         # Parallel storage. Order is preserved across save/load so
         # ``get_recent`` stays stable.
@@ -175,6 +182,8 @@ class MemoryLayer:
         self._timestamps.append(self._step)
         self._embeddings_list.append(embedding)
         self._step += 1
+        self._faiss_index = None  # invalidate; rebuilt lazily
+        self._maybe_build_faiss()
         return node_id
 
     def retrieve(self, query: str, k: int = 5) -> list[MemoryHit]:
@@ -225,6 +234,7 @@ class MemoryLayer:
         self._metadatas.pop(idx)
         self._timestamps.pop(idx)
         self._embeddings_list.pop(idx)
+        self._faiss_index = None  # invalidate
         return True
 
     def consolidate(self) -> int:
@@ -401,6 +411,17 @@ class MemoryLayer:
         k: int,
         exclude_idx: int | None,
     ) -> list[MemoryHit]:
+        if self._faiss_index is not None and exclude_idx is None:
+            return self._rank_faiss(query_vec, k=k)
+        return self._rank_linear(query_vec, k=k, exclude_idx=exclude_idx)
+
+    def _rank_linear(
+        self,
+        query_vec: torch.Tensor,
+        *,
+        k: int,
+        exclude_idx: int | None,
+    ) -> list[MemoryHit]:
         matrix = torch.stack(self._embeddings_list, dim=0)
         sims = F.cosine_similarity(query_vec.unsqueeze(0), matrix, dim=-1)
         if exclude_idx is not None:
@@ -416,6 +437,54 @@ class MemoryLayer:
             for i, s in zip(top.indices, top.values, strict=True)
         ]
 
+    def _rank_faiss(
+        self,
+        query_vec: torch.Tensor,
+        *,
+        k: int,
+    ) -> list[MemoryHit]:
+        import numpy as np
+
+        assert self._faiss_index is not None
+        q = query_vec.detach().cpu().numpy().reshape(1, -1).astype(np.float32)
+        _faiss_module = _import_faiss()
+        _faiss_module.normalize_L2(q)
+        actual_k = min(k, self._faiss_index.ntotal)
+        if actual_k <= 0:
+            return []
+        scores, indices = self._faiss_index.search(q, actual_k)
+        return [
+            self._hit_for_index(int(idx), score=float(score))
+            for idx, score in zip(indices[0], scores[0], strict=True)
+            if idx >= 0
+        ]
+
+    def _maybe_build_faiss(self) -> None:
+        if self._faiss_threshold <= 0:
+            return
+        if len(self._ids) < self._faiss_threshold:
+            self._faiss_index = None
+            return
+        if self._faiss_index is not None:
+            return
+        self._rebuild_faiss()
+
+    def _rebuild_faiss(self) -> None:
+        import numpy as np
+
+        faiss = _import_faiss()
+        matrix = (
+            torch.stack(self._embeddings_list, dim=0)
+            .detach()
+            .cpu()
+            .numpy()
+            .astype(np.float32)
+        )
+        faiss.normalize_L2(matrix)
+        index = faiss.IndexFlatIP(self._embed_dim)
+        index.add(matrix)
+        self._faiss_index = index
+
     def _hit_for_index(self, idx: int, *, score: float) -> MemoryHit:
         return MemoryHit(
             node_id=self._ids[idx],
@@ -424,3 +493,15 @@ class MemoryLayer:
             metadata=dict(self._metadatas[idx]),
             timestamp_step=self._timestamps[idx],
         )
+
+
+def _import_faiss() -> Any:
+    try:
+        import faiss
+
+        return faiss
+    except ImportError as exc:
+        raise ImportError(
+            "FAISS backend requires faiss-cpu or faiss-gpu. "
+            "Install with: pip install faiss-cpu"
+        ) from exc

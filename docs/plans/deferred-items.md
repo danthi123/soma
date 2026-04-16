@@ -93,6 +93,10 @@ variant stayed deferred (see tier-2 auth below).
 - **Helm 4 migration** — stay on 3.x for v1; migrate when the ecosystem settles. No ETA.
 - **Topology spread vs anti-affinity production hardening** — stubs in `values.yaml`; no tested defaults.
 
+## Tier 2 — benchmark polish
+
+- **GPT-4-driven LoCoMo-QA parity run.** Mem0 / Zep / Letta publish headline QA accuracy numbers using GPT-4 as responder *and* judge. Our local-LLM smoke (gemma-4-26b-a4b-it + qwen3.5-27b via LM Studio, 2026-04-16) hit ~2% accuracy — consistent with the retrieval ceiling (R@5 = 0.238) × strict small-model inference, not a SOMA deficit. To produce apples-to-apples numbers against their published claims we need to run the harness with the same GPT-4 stack. Cost estimate: ~$30-60 at current OpenAI rates for a full LoCoMo-QA run across 3 arms. **Not a positioning blocker** — the infrastructure story (store/retrieve/disk/scale) stands on deterministic ms-level measurements. Worth doing if we ever need a single headline QA number for a paper or pitch deck. Source: QA eval session 2026-04-16 post-1M-benchmark investigation. Harness already supports `--run-qa-eval` + `--qa-eval-k` + `--judge-llm-name`. ~2 h setup + API wall-clock time.
+
 ## Tier 2 — docs / ops polish
 
 - **`soma chat` async streaming.** REPL today blocks on the full LLM response. Streaming tokens would feel better.

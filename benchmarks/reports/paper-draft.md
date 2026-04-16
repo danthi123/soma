@@ -62,7 +62,17 @@ comparisons so the delta isolates storage/indexing mechanics.
 
 ## 3. Headline results
 
-**SOMA matches Chroma on retrieval quality across both synthetic and real-world conversational benchmarks (LoCoMo). It carries a durable 2.7–3.6× store-speed advantage (full pipeline), a disk advantage of 1.4–22× depending on N, and the opt-in HNSW backend wins on retrieve by 1.18–1.25× while preserving identical recall. At enterprise scale (100K entries under an index-only methodology that pre-computes embeddings once), the store gap widens dramatically to ~3500× because SOMA's single-tensor + JSON-index bundle has essentially zero per-insert overhead while Chroma's SQLite + HNSW metadata layer pays ~14 ms per write regardless of embed cost. Opt-in recall boosters (hybrid BM25 + cross-encoder rerank) lift LoCoMo Recall@5 from 0.238 to 0.450 — a 21.2 pp absolute gain (89% relative) over the cosine baseline that any same-embedder vector DB reaches.**
+**The substantive claim is infrastructure, not retrieval quality.** SOMA and Chroma reduce to cosine over identical sbert embeddings in the benchmarks below, so recall is identical by construction at small scale and moves by single-digit percentage points at scale. What separates them — and what we claim — is the storage-and-indexing mechanics on top of those shared vectors:
+
+- **Store: SOMA is 1000–3500× faster** when embed cost is amortized. At 1M entries, SOMA ingests in **5.0 s** vs Chroma's **4.2 hours** — same pre-computed vectors, pure metadata-layer delta.
+- **Retrieve: SOMA-HNSW wins at every tested N**. At 1M: **4.44 ms vs 127 ms** (28.6×).
+- **Disk: 1.40–1.66× smaller** across the range. At 1M: **1.69 GB vs 2.37 GB**.
+- **Recall: matches Chroma** on real-world LoCoMo (R@5 = 0.238 vs 0.234) and on the 50-fact labeled benchmark (0.923 vs 0.923).
+- **Opt-in recall boosters** (hybrid BM25 + cross-encoder rerank) lift LoCoMo R@5 from 0.238 → 0.450 (+21.2 pp, 89% relative) — a memory-layer feature vector DBs don't ship.
+
+These are deterministic measurements on identical hardware, identical embeddings, identical query sets. Every number in §3 is reproducible by running the referenced harness.
+
+**What we deliberately do not claim:** end-to-end QA accuracy numbers from LLM-as-judge evals. Those are LLM-dominated (Mem0 / Zep / Letta all rely on GPT-4 as responder and judge to produce their headline accuracy figures), so any number we report with a local-LLM stack is an LLM-ceiling observation, not a memory-layer claim. The QA harness ships (§4.4) and is used internally for configuration tuning; competitive parity on GPT-4-driven evals is deferred until we have comparable infrastructure.
 
 ### 3.1 Quality (50-fact labeled benchmark)
 

@@ -29,7 +29,6 @@ from soma import serve as _initial_serve
 from soma.auth import issue_token
 from soma.memory import MemoryLayer
 
-
 _SECRET = "jwt-auth-test-secret"
 
 

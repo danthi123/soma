@@ -29,7 +29,7 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from soma.llm.backends import LLMBackend
@@ -42,6 +42,12 @@ from soma.memory.conversational_prompts import (
 )
 
 logger = logging.getLogger("soma.memory")
+
+# Sentinel for the per-call ``user_id`` override on ``add_message`` /
+# ``retrieve``. Distinguishes "caller did not pass user_id" (fall back to
+# the constructor value) from "caller passed user_id=None" (explicit
+# unscope / admin drill-down). Private by convention — never leak.
+_UNSET: Any = object()
 
 # Closed vocabulary matching EXTRACT_PROMPT. LLM outputs anything else
 # get normalized to "other" so unknown-category doesn't drop the fact.
@@ -84,6 +90,7 @@ class ConversationalMemory:
         llm: LLMBackend,
         extractor_llm: LLMBackend | None = None,
         session_id: str | None = None,
+        user_id: str | None = None,
         near_dup_threshold: float = 0.92,
         ambiguous_threshold: float = 0.75,
         summary_every: int = 20,
@@ -102,6 +109,13 @@ class ConversationalMemory:
             strict JSON. When ``None`` (default), ``llm`` is used for
             all three prompt types.
         :param session_id: scope id; defaults to ``"default"``.
+        :param user_id: optional per-user scope id. When set, every
+            stored turn / fact / summary gets ``metadata.user_id``, and
+            :meth:`retrieve` / :meth:`clear_session` / :meth:`supersede`
+            are automatically scoped to this user. Enables multi-tenant
+            deploys where several end-users share one bundle but each
+            user's memory must be isolated. Pre-Phase-12 callers that
+            leave this unset see byte-identical metadata to before.
         :param near_dup_threshold: cosine cutoff above which a new fact
             is treated as a near-duplicate (no LLM call).
         :param ambiguous_threshold: cosine cutoff below which a new
@@ -120,6 +134,10 @@ class ConversationalMemory:
         # session_id default="default" so simple callers don't fight the
         # API. Multi-session callers pass an explicit id.
         self._session_id: str = session_id or "default"
+        # Kept as Optional so "unset" is preserved across metadata
+        # writes — see _user_meta() / _user_where() for the conversion
+        # into metadata/where dicts.
+        self._user_id: str | None = user_id
         if not 0.0 <= ambiguous_threshold <= near_dup_threshold <= 1.0:
             raise ValueError(
                 "thresholds must satisfy 0 <= ambiguous <= near_dup <= 1, "
@@ -130,6 +148,31 @@ class ConversationalMemory:
         self._summary_every: int = int(summary_every)
         self._extract_assistant: bool = bool(extract_assistant)
         self._turn_counter: int = 0
+
+    # ------------------------------------------------------------------
+    # Multi-user scoping helpers (Phase 12)
+    # ------------------------------------------------------------------
+    def _resolve_user_id(self, override: Any) -> str | None:
+        """Pick the active user_id for a call.
+
+        ``override`` is either :data:`_UNSET` (caller didn't pass one →
+        fall back to the constructor value) or any other value (which
+        includes ``None`` for the explicit unscope).
+        """
+        if override is _UNSET:
+            return self._user_id
+        return override
+
+    @staticmethod
+    def _stamp_user_id(meta: dict[str, object], user_id: str | None) -> None:
+        """Stamp ``metadata.user_id`` in place when ``user_id`` is set.
+
+        When ``user_id is None`` we deliberately leave the key absent —
+        pre-Phase-12 bundles must stay byte-identical on write when no
+        user_id is in play.
+        """
+        if user_id is not None:
+            meta["user_id"] = user_id
 
     # ------------------------------------------------------------------
     # Internals — extraction
@@ -214,18 +257,28 @@ class ConversationalMemory:
         *,
         category: str = "other",
         extra_meta: dict[str, object] | None = None,
+        user_id: str | None = None,
     ) -> str:
-        """Store a new fact entry tagged with this session. Returns node_id."""
+        """Store a new fact entry tagged with this session. Returns node_id.
+
+        ``user_id`` is stamped into metadata when set. Callers in the
+        reconcile path already resolved the effective user_id for the
+        current add_message call and thread it through here so the fact
+        gets the same owner as the turn that produced it.
+        """
         meta: dict[str, object] = {
             "session_id": self._session_id,
             "type": "fact",
             "category": category,
         }
+        self._stamp_user_id(meta, user_id)
         if extra_meta:
             meta.update(extra_meta)
         return self._memory.store(text, metadata=meta)
 
-    def _reconcile(self, fact: ExtractedFact) -> str | None:
+    def _reconcile(
+        self, fact: ExtractedFact, *, user_id: str | None = None
+    ) -> str | None:
         """Decide what to do with ``fact`` given the top-k nearest stored entries.
 
         Threshold short-circuits before any LLM round-trip:
@@ -250,38 +303,52 @@ class ConversationalMemory:
         Any parse failure or unknown op in the ambiguous branch falls
         back to ADD — safer to keep a fact than lose it on a broken
         LLM reply. Logged at WARNING for operator visibility.
+
+        ``user_id`` scopes the candidate search so reconcile never
+        merges across users; it's also stamped into the new fact so
+        the store stays owned by the turn's author.
         """
-        # Scope retrieve to this session so reconcile doesn't try to
-        # merge across users. Also exclude already-superseded entries
-        # from the similarity check — they're history, not live state.
+        # Scope retrieve to this session AND this user so reconcile
+        # doesn't try to merge across users. Also exclude already-
+        # superseded entries from the similarity check — they're
+        # history, not live state.
+        where: dict[str, object] = {
+            "session_id": self._session_id,
+            "type": "fact",
+        }
+        if user_id is not None:
+            where["user_id"] = user_id
         candidates = self._memory.retrieve(
             fact.text,
             k=5,
-            where={
-                "session_id": self._session_id,
-                "type": "fact",
-            },
+            where=where,
         )
         live_candidates = [
             c for c in candidates
             if c.metadata.get("superseded_by") is None
         ]
         if not live_candidates:
-            return self._add_fact(fact.text, category=fact.category)
+            return self._add_fact(
+                fact.text, category=fact.category, user_id=user_id
+            )
 
         max_score = max(c.score for c in live_candidates)
         if max_score >= self._near_dup_threshold:
             return None
         if max_score < self._ambiguous_threshold:
-            return self._add_fact(fact.text, category=fact.category)
+            return self._add_fact(
+                fact.text, category=fact.category, user_id=user_id
+            )
 
         # Ambiguous range: consult the LLM.
-        return self._reconcile_with_llm(fact, live_candidates)
+        return self._reconcile_with_llm(fact, live_candidates, user_id=user_id)
 
     def _reconcile_with_llm(
         self,
         fact: ExtractedFact,
         candidates: list[object],  # list[MemoryHit]
+        *,
+        user_id: str | None = None,
     ) -> str | None:
         candidate_block = "\n".join(
             f"[id={c.node_id}] (score={c.score:.3f}) {c.text}"  # type: ignore[attr-defined]
@@ -307,12 +374,16 @@ class ConversationalMemory:
                     "reply_prefix": raw[:80],
                 },
             )
-            return self._add_fact(fact.text, category=fact.category)
+            return self._add_fact(
+                fact.text, category=fact.category, user_id=user_id
+            )
 
         if op == "NOOP":
             return None
         if op == "ADD":
-            return self._add_fact(fact.text, category=fact.category)
+            return self._add_fact(
+                fact.text, category=fact.category, user_id=user_id
+            )
         if op == "UPDATE":
             if not isinstance(target_id, str) or target_id not in self._memory:
                 logger.warning(
@@ -322,12 +393,15 @@ class ConversationalMemory:
                         "session_id": self._session_id,
                     },
                 )
-                return self._add_fact(fact.text, category=fact.category)
+                return self._add_fact(
+                    fact.text, category=fact.category, user_id=user_id
+                )
             self._memory.forget(target_id)
             return self._add_fact(
                 fact.text,
                 category=fact.category,
                 extra_meta={"supersedes": target_id},
+                user_id=user_id,
             )
         if op == "SUPERSEDE":
             if not isinstance(target_id, str) or target_id not in self._memory:
@@ -339,11 +413,14 @@ class ConversationalMemory:
                         "session_id": self._session_id,
                     },
                 )
-                return self._add_fact(fact.text, category=fact.category)
+                return self._add_fact(
+                    fact.text, category=fact.category, user_id=user_id
+                )
             new_id = self._add_fact(
                 fact.text,
                 category=fact.category,
                 extra_meta={"supersedes": target_id},
+                user_id=user_id,
             )
             self._memory.update_metadata(
                 target_id,
@@ -362,7 +439,9 @@ class ConversationalMemory:
                 "session_id": self._session_id,
             },
         )
-        return self._add_fact(fact.text, category=fact.category)
+        return self._add_fact(
+            fact.text, category=fact.category, user_id=user_id
+        )
 
     # ------------------------------------------------------------------
     # Public API
@@ -373,6 +452,7 @@ class ConversationalMemory:
         text: str,
         *,
         metadata: dict[str, object] | None = None,
+        user_id: Any = _UNSET,
     ) -> None:
         """Ingest one conversational turn.
 
@@ -386,11 +466,16 @@ class ConversationalMemory:
              roll a summary entry with ``metadata.type="summary"``.
 
         ``metadata`` is merged into the raw turn's metadata. The
-        ``session_id``, ``type``, ``role`` keys are always set by this
-        method and will override anything the caller passes.
+        ``session_id``, ``type``, ``role``, ``user_id`` keys are always
+        set by this method and will override anything the caller passes.
+
+        ``user_id`` overrides the constructor-set user_id for this one
+        call. The sentinel default preserves the constructor value;
+        pass ``user_id=None`` to explicitly drop the scope on this turn.
         """
         if not text or not text.strip():
             return
+        effective_user = self._resolve_user_id(user_id)
         turn_meta: dict[str, object] = {}
         if metadata:
             turn_meta.update(metadata)
@@ -402,30 +487,37 @@ class ConversationalMemory:
                 "turn_index": self._turn_counter,
             }
         )
+        self._stamp_user_id(turn_meta, effective_user)
         self._memory.store(text, metadata=turn_meta)
 
         should_extract = role == "user" or self._extract_assistant
         if should_extract:
             facts = self._extract_facts(text)
             for f in facts:
-                self._reconcile(f)
+                self._reconcile(f, user_id=effective_user)
 
         self._turn_counter += 1
         if (
             self._summary_every > 0
             and self._turn_counter % self._summary_every == 0
         ):
-            self._roll_summary()
+            self._roll_summary(user_id=effective_user)
 
-    def _roll_summary(self) -> None:
+    def _roll_summary(self, *, user_id: str | None = None) -> None:
         """Summarize the last ``summary_every`` raw turns, store as a
         ``type=summary`` entry.
 
         The turns block is formatted as ``role: text`` lines in order.
         The resulting summary is stored with ``metadata.type=summary``
         so :meth:`get_summary` and :meth:`retrieve` can find it.
+
+        ``user_id`` scopes both the turns considered for the summary
+        (so multi-tenant bundles don't leak across users) and the
+        stored summary's own metadata.
         """
-        recent_turns = self._session_entries(type_filter="turn")
+        recent_turns = self._session_entries(
+            type_filter="turn", user_id=user_id
+        )
         # Last N turns, by insertion order.
         tail = recent_turns[-self._summary_every :]
         if not tail:
@@ -437,15 +529,14 @@ class ConversationalMemory:
         summary_text = self._llm.generate(prompt, max_tokens=512).strip()
         if not summary_text:
             return
-        self._memory.store(
-            summary_text,
-            metadata={
-                "session_id": self._session_id,
-                "type": "summary",
-                "summarized_turn_start": tail[0].metadata.get("turn_index"),
-                "summarized_turn_end": tail[-1].metadata.get("turn_index"),
-            },
-        )
+        summary_meta: dict[str, object] = {
+            "session_id": self._session_id,
+            "type": "summary",
+            "summarized_turn_start": tail[0].metadata.get("turn_index"),
+            "summarized_turn_end": tail[-1].metadata.get("turn_index"),
+        }
+        self._stamp_user_id(summary_meta, user_id)
+        self._memory.store(summary_text, metadata=summary_meta)
 
     def retrieve(
         self,
@@ -453,17 +544,37 @@ class ConversationalMemory:
         k: int = 5,
         *,
         include_superseded: bool = False,
+        user_id: Any = _UNSET,
+        where: dict[str, object] | None = None,
     ) -> list[MemoryHit]:
         """Retrieve the top-k relevant entries for ``query``.
 
         Scoped to this session by default. Already-superseded facts are
         filtered out unless ``include_superseded=True``. Facts,
         summaries, and raw turns compete on cosine score.
+
+        ``user_id`` overrides the constructor-set user_id for this one
+        call (sentinel default preserves the constructor value; pass
+        ``user_id=None`` for the admin drill-down that sees every
+        user's entries).
+
+        ``where`` is an optional extra metadata filter, composed with
+        the internal session/user/superseded filters via AND. Caller
+        keys override the internal keys (advanced use — most callers
+        should leave this None).
         """
-        where: dict[str, object] = {"session_id": self._session_id}
+        effective_user = self._resolve_user_id(user_id)
+        final_where: dict[str, object] = {"session_id": self._session_id}
         if not include_superseded:
-            where["superseded_by"] = {"$eq": None}
-        return self._memory.retrieve(query, k=k, where=where)
+            final_where["superseded_by"] = {"$eq": None}
+        if effective_user is not None:
+            final_where["user_id"] = effective_user
+        if where:
+            # Caller-supplied keys win — lets advanced callers narrow
+            # or relax a filter we set by default. Most callers pass
+            # no where= and get the default session/user scoping.
+            final_where.update(where)
+        return self._memory.retrieve(query, k=k, where=final_where)
 
     def list_facts(self) -> list[MemoryHit]:
         """All fact entries for this session (excludes superseded)."""
@@ -483,13 +594,30 @@ class ConversationalMemory:
         Writes the same ``supersedes`` / ``superseded_by`` pointer pair
         as the internal SUPERSEDE reconcile op, and returns the new
         entry's id.
+
+        When this :class:`ConversationalMemory` was constructed with a
+        ``user_id``, the target fact's ``metadata.user_id`` must match —
+        otherwise this call raises :class:`PermissionError` so one
+        tenant can't invalidate another tenant's entries on a shared
+        bundle. Callers with no ``user_id`` set (pre-Phase-12 and
+        single-tenant deploys) skip this check.
         """
         if old_node_id not in self._memory:
             raise KeyError(f"node_id {old_node_id!r} not found in memory")
+        if self._user_id is not None:
+            existing = self._memory.get(old_node_id)
+            assert existing is not None  # contains-check above proved it
+            owner = existing.metadata.get("user_id")
+            if owner != self._user_id:
+                raise PermissionError(
+                    f"user {self._user_id!r} cannot supersede entry "
+                    f"{old_node_id!r} owned by {owner!r}"
+                )
         new_id = self._add_fact(
             new_text,
             category="other",
             extra_meta={"supersedes": old_node_id},
+            user_id=self._user_id,
         )
         self._memory.update_metadata(
             old_node_id,
@@ -508,6 +636,12 @@ class ConversationalMemory:
         ``keep_summaries=False`` for a full wipe. Returns the number of
         entries removed.
 
+        When this :class:`ConversationalMemory` was constructed with a
+        ``user_id``, only entries owned by that user are cleared —
+        other tenants sharing the bundle are untouched. Callers with
+        no ``user_id`` set match pre-Phase-12 behaviour and clear
+        every entry for the session.
+
         Superseded entries ARE removed here — they're scoped to the
         session being cleared, and retention is a separate concern
         (see docs/plans/... follow-up on GDPR-grade forgetting).
@@ -518,6 +652,11 @@ class ConversationalMemory:
             if hit is None:
                 continue
             if hit.metadata.get("session_id") != self._session_id:
+                continue
+            if (
+                self._user_id is not None
+                and hit.metadata.get("user_id") != self._user_id
+            ):
                 continue
             ent_type = hit.metadata.get("type")
             if ent_type == "summary" and keep_summaries:
@@ -542,15 +681,38 @@ class ConversationalMemory:
     # Helpers
     # ------------------------------------------------------------------
     def _session_entries(
-        self, *, type_filter: str | None = None
+        self,
+        *,
+        type_filter: str | None = None,
+        user_id: Any = _UNSET,
     ) -> list[MemoryHit]:
-        """Return this session's entries in insertion order, filtered by type."""
+        """Return this session's entries in insertion order, filtered by type.
+
+        ``user_id`` controls the per-user scoping:
+
+        - ``_UNSET`` (default): fall back to the constructor's user_id
+          — i.e. scope to the wrapper's own user when one was set, or
+          return all users when the wrapper has no user_id.
+        - ``None``: explicitly unscoped (admin drill-down).
+        - a string: scope to that user_id.
+
+        Callers that pre-Phase-12 called ``_session_entries(type_filter=...)``
+        on a wrapper without user_id see byte-identical behaviour; the
+        sentinel default falls through to the constructor value, which
+        is ``None`` for them.
+        """
+        effective_user = self._resolve_user_id(user_id)
         out: list[MemoryHit] = []
         for nid in self._memory._ids:
             hit = self._memory.get(nid)
             if hit is None:
                 continue
             if hit.metadata.get("session_id") != self._session_id:
+                continue
+            if (
+                effective_user is not None
+                and hit.metadata.get("user_id") != effective_user
+            ):
                 continue
             if type_filter is not None and hit.metadata.get("type") != type_filter:
                 continue

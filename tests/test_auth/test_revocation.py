@@ -180,12 +180,49 @@ def test_blocklist_from_env_returns_file_when_set(
     """Env var set => factory returns a FileBlocklist pointing at it."""
     path = tmp_path / "bl.jsonl"
     monkeypatch.setenv("SOMA_JWT_BLOCKLIST_PATH", str(path))
+    monkeypatch.delenv("SOMA_JWT_BLOCKLIST_HASHED", raising=False)
     bl = blocklist_from_env()
     rec = _fresh_record("jti-via-env")
     bl.add(rec)
     # A fresh reader sees the record.
     bl2 = blocklist_from_env()
     assert bl2.is_revoked("jti-via-env") is True
+
+
+def test_blocklist_from_env_hashed_flag(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """SOMA_JWT_BLOCKLIST_HASHED=1 flips the backend to hashed mode."""
+    path = tmp_path / "bl.jsonl"
+    monkeypatch.setenv("SOMA_JWT_BLOCKLIST_PATH", str(path))
+    monkeypatch.setenv("SOMA_JWT_BLOCKLIST_HASHED", "1")
+    bl = blocklist_from_env()
+    # FileBlocklist exposes .hashed for introspection.
+    assert isinstance(bl, FileBlocklist)
+    assert bl.hashed is True
+
+    bl.add(_fresh_record("secret-jti"))
+    raw = path.read_text(encoding="utf-8")
+    assert "secret-jti" not in raw
+    assert hashlib.sha256(b"secret-jti").hexdigest() in raw
+
+
+def test_blocklist_from_env_hashed_default_off(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Missing / 0 / empty SOMA_JWT_BLOCKLIST_HASHED => plaintext mode."""
+    path = tmp_path / "bl.jsonl"
+    monkeypatch.setenv("SOMA_JWT_BLOCKLIST_PATH", str(path))
+    monkeypatch.delenv("SOMA_JWT_BLOCKLIST_HASHED", raising=False)
+    bl = blocklist_from_env()
+    assert isinstance(bl, FileBlocklist)
+    assert bl.hashed is False
+
+    # Explicit "0" also disables.
+    monkeypatch.setenv("SOMA_JWT_BLOCKLIST_HASHED", "0")
+    bl2 = blocklist_from_env()
+    assert isinstance(bl2, FileBlocklist)
+    assert bl2.hashed is False
 
 
 def test_file_blocklist_reason_capped_at_256_chars(tmp_path: Path) -> None:

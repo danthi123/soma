@@ -358,15 +358,21 @@ class FileBlocklist:
 def blocklist_from_env() -> BlocklistBackend:
     """Factory — ``FileBlocklist`` if ``SOMA_JWT_BLOCKLIST_PATH`` set, else null.
 
-    Kept free of other env-var lookups so unit tests can pin it with
-    a single ``monkeypatch.setenv`` call. Future Redis support slots
-    in as a second branch here gated on
+    Unit tests can pin the factory with one ``monkeypatch.setenv`` call.
+    Future Redis support slots in as a second branch here gated on
     ``SOMA_JWT_BLOCKLIST_BACKEND=redis``.
+
+    Env contract:
+    - ``SOMA_JWT_BLOCKLIST_PATH`` — unset => null backend. Set => file
+      backend at that path.
+    - ``SOMA_JWT_BLOCKLIST_HASHED`` — ``1`` => enable sha256(jti) at rest.
+      Anything else (unset, empty, ``0``) keeps plaintext default.
     """
     path = os.environ.get("SOMA_JWT_BLOCKLIST_PATH", "").strip()
     if not path:
         return null_blocklist()
-    return FileBlocklist(Path(path))
+    hashed = os.environ.get("SOMA_JWT_BLOCKLIST_HASHED", "").strip() == "1"
+    return FileBlocklist(Path(path), hashed=hashed)
 
 
 def to_record_dict(rec: RevocationRecord) -> dict[str, object]:

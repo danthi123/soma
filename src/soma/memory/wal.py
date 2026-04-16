@@ -9,6 +9,7 @@ Paired files in a bundle dir:
       {"op":"store","node_id":"x","text":"...","metadata":{},
        "emb_offset":N,"timestamp_step":N}
       {"op":"forget","node_id":"x","timestamp_step":N}
+      {"op":"update_metadata","node_id":"x","patch":{...},"timestamp_step":N}
 
 - ``memory_embeddings.wal.bin`` — contiguous binary frames, one per
   ``store``. Each frame is::
@@ -74,13 +75,18 @@ WAL_BUNDLE_VERSION = 2
 class WalRecord:
     """One append-only WAL record.
 
-    ``text``/``embedding`` are ``None`` for ``forget``.
+    ``text``/``embedding`` are ``None`` for ``forget`` and
+    ``update_metadata``.
     ``emb_offset`` is the byte offset of the record's frame in the
     embeddings .bin file. It is None on freshly-constructed records
     (replay fills it in; append writes it).
+
+    For ``update_metadata``, the ``metadata`` field carries the patch
+    dict under a ``"patch"`` key (e.g. ``{"patch": {"superseded_by": "x"}}``).
+    Replay merges the patch into the target entry's metadata.
     """
 
-    op: Literal["store", "forget"]
+    op: Literal["store", "forget", "update_metadata"]
     node_id: str
     text: str | None
     metadata: dict[str, Any]
@@ -220,8 +226,8 @@ class WAL:
             self._emb_fh.write(payload)
             self._emb_fh.flush()
             self._emb_size = emb_offset + len(header) + len(payload)
-        elif record.op == "forget":
-            # forget records don't consume the binary file.
+        elif record.op in ("forget", "update_metadata"):
+            # Neither consumes the binary file — metadata-only mutations.
             pass
         else:
             raise ValueError(f"unknown WAL op {record.op!r}")
@@ -383,6 +389,19 @@ class WAL:
                     embedding=None,
                     emb_offset=None,
                 )
+            elif op == "update_metadata":
+                patch = obj.get("patch", {})
+                if not isinstance(patch, dict):
+                    return
+                yield WalRecord(
+                    op="update_metadata",
+                    node_id=str(obj["node_id"]),
+                    text=None,
+                    metadata={"patch": dict(patch)},
+                    timestamp_step=int(obj.get("timestamp_step", 0)),
+                    embedding=None,
+                    emb_offset=None,
+                )
             else:
                 return
 
@@ -432,6 +451,16 @@ class WAL:
                 "text": record.text,
                 "metadata": record.metadata,
                 "emb_offset": emb_offset,
+                "timestamp_step": record.timestamp_step,
+            }
+        elif record.op == "update_metadata":
+            # Patch lives under metadata["patch"] so we don't collide
+            # with the "metadata" key used by store records.
+            patch = record.metadata.get("patch", {})
+            obj = {
+                "op": "update_metadata",
+                "node_id": record.node_id,
+                "patch": dict(patch),
                 "timestamp_step": record.timestamp_step,
             }
         else:
@@ -555,7 +584,7 @@ class WAL:
                 good_emb_end = frame_end
                 good_record_count += 1
                 line_start = line_end + 1
-            elif op == "forget":
+            elif op in ("forget", "update_metadata"):
                 good_record_count += 1
                 line_start = line_end + 1
             else:

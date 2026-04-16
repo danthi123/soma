@@ -282,3 +282,68 @@ def test_binary_frame_format_matches_spec(tmp_path: Path) -> None:
     # Payload is dtype_tag + 4*4 bytes = 17.
     assert length == 1 + 4 * 4
     assert len(emb) == 8 + length, "binary frame must be 8-byte header + payload"
+
+
+# ------------------------------------------------------------------
+# update_metadata op type — Phase 2 (ConversationalMemory supersede)
+# ------------------------------------------------------------------
+def test_update_metadata_op_round_trips(tmp_path: Path) -> None:
+    """An update_metadata record appends + replays with its patch intact."""
+    wal = WAL(tmp_path, embed_dim=8)
+    wal.open()
+    try:
+        wal.append(_rec("store", "n1", text="t1", dim=8, seed=1))
+        wal.append(
+            WalRecord(
+                op="update_metadata",  # type: ignore[arg-type]
+                node_id="n1",
+                text=None,
+                metadata={"patch": {"superseded_by": "n2", "reason": "moved"}},
+                timestamp_step=5,
+                embedding=None,
+                emb_offset=None,
+            )
+        )
+    finally:
+        wal.close()
+
+    wal2 = WAL(tmp_path, embed_dim=8)
+    wal2.open()
+    try:
+        records = list(wal2.replay())
+        assert len(records) == 2
+        assert records[0].op == "store"
+        assert records[1].op == "update_metadata"
+        assert records[1].node_id == "n1"
+        assert records[1].metadata == {
+            "patch": {"superseded_by": "n2", "reason": "moved"}
+        }
+        assert records[1].embedding is None
+    finally:
+        wal2.close()
+
+
+def test_update_metadata_op_consumes_no_binary_frame(tmp_path: Path) -> None:
+    """Like forget, update_metadata doesn't append to the .bin file."""
+    wal = WAL(tmp_path, embed_dim=4)
+    wal.open()
+    try:
+        wal.append(_rec("store", "n1", text="t1", dim=4, seed=1))
+        emb_size_after_store = (tmp_path / "memory_embeddings.wal.bin").stat().st_size
+        wal.append(
+            WalRecord(
+                op="update_metadata",  # type: ignore[arg-type]
+                node_id="n1",
+                text=None,
+                metadata={"patch": {"k": "v"}},
+                timestamp_step=2,
+                embedding=None,
+                emb_offset=None,
+            )
+        )
+        emb_size_after_update = (tmp_path / "memory_embeddings.wal.bin").stat().st_size
+        assert emb_size_after_update == emb_size_after_store, (
+            "update_metadata must not write to the binary embeddings file"
+        )
+    finally:
+        wal.close()

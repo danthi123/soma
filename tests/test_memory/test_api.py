@@ -743,3 +743,96 @@ def test_forget_keeps_id_lookup_consistent(embedder) -> None:
     # related() must still work (uses _id_to_idx internally).
     related = mem.related(a, k=5)
     assert {h.node_id for h in related} == {c}
+
+
+# ------------------------------------------------------------------
+# update_metadata — metadata-only mutation, WAL-replay compatible.
+# ------------------------------------------------------------------
+def test_update_metadata_merges_into_existing(embedder) -> None:
+    """Existing keys are preserved; patch keys overwrite."""
+    tokenizer, encoder = embedder
+    mem = MemoryLayer(tokenizer=tokenizer, encoder=encoder)
+    nid = mem.store("body", metadata={"a": 1, "b": 2})
+    mem.update_metadata(nid, {"b": 99, "c": 3})
+    hit = mem.get(nid)
+    assert hit is not None
+    assert hit.metadata == {"a": 1, "b": 99, "c": 3}
+
+
+def test_update_metadata_raises_on_unknown_id(embedder) -> None:
+    tokenizer, encoder = embedder
+    mem = MemoryLayer(tokenizer=tokenizer, encoder=encoder)
+    with pytest.raises(KeyError, match="nonexistent"):
+        mem.update_metadata("nonexistent-uuid", {"x": 1})
+
+
+def test_update_metadata_writes_wal_record(tmp_path: Path) -> None:
+    """update_metadata on a WAL-backed bundle appends an update_metadata
+    record that survives close + reload."""
+    bundle = tmp_path / "bundle"
+    mem = MemoryLayer(embed_fn=_hash_embed, embed_dim=16, bundle_path=bundle)
+    try:
+        nid = mem.store("the fact", metadata={"version": 1})
+        mem.update_metadata(nid, {"version": 2, "new_key": "hi"})
+    finally:
+        mem.close()
+
+    restored = MemoryLayer.load(bundle, embed_fn=_hash_embed)
+    try:
+        hit = restored.get(nid)
+        assert hit is not None
+        assert hit.metadata == {"version": 2, "new_key": "hi"}
+    finally:
+        restored.close()
+
+
+def test_update_metadata_replay_applies_merge_order(tmp_path: Path) -> None:
+    """Two update_metadata records replay in order — second wins on overlap."""
+    bundle = tmp_path / "bundle2"
+    mem = MemoryLayer(embed_fn=_hash_embed, embed_dim=16, bundle_path=bundle)
+    try:
+        nid = mem.store("fact", metadata={"k": "v0"})
+        mem.update_metadata(nid, {"k": "v1", "a": 1})
+        mem.update_metadata(nid, {"k": "v2"})  # overwrite again
+    finally:
+        mem.close()
+
+    restored = MemoryLayer.load(bundle, embed_fn=_hash_embed)
+    try:
+        hit = restored.get(nid)
+        assert hit is not None
+        assert hit.metadata == {"k": "v2", "a": 1}
+    finally:
+        restored.close()
+
+
+def test_update_metadata_reload_if_stale_picks_up_peer_writes(
+    tmp_path: Path,
+) -> None:
+    """When a peer writer appends an update_metadata record, a reader's
+    reload_if_stale() must apply it."""
+    bundle = tmp_path / "shared"
+
+    writer = MemoryLayer(embed_fn=_hash_embed, embed_dim=16, bundle_path=bundle)
+    try:
+        nid = writer.store("fact", metadata={"version": 1})
+    finally:
+        writer.close()
+
+    reader = MemoryLayer.load(bundle, embed_fn=_hash_embed)
+
+    # Second MemoryLayer acts as a peer writer sharing the bundle.
+    writer2 = MemoryLayer.load(bundle, embed_fn=_hash_embed)
+    try:
+        writer2.update_metadata(nid, {"version": 2})
+    finally:
+        writer2.close()
+
+    try:
+        applied = reader.reload_if_stale()
+        assert applied >= 1
+        hit = reader.get(nid)
+        assert hit is not None
+        assert hit.metadata == {"version": 2}
+    finally:
+        reader.close()

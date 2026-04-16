@@ -507,6 +507,14 @@ class MemoryLayer:
             for later_id in self._ids[idx:]:
                 self._id_to_idx[later_id] -= 1
             self._step = max(self._step, int(rec.timestamp_step) + 1)
+        elif rec.op == "update_metadata":
+            idx = self._id_to_idx.get(rec.node_id)
+            if idx is None:
+                return
+            patch = rec.metadata.get("patch", {})
+            if isinstance(patch, dict):
+                self._metadatas[idx].update(patch)
+            self._step = max(self._step, int(rec.timestamp_step) + 1)
 
     def close(self) -> None:
         """Close the WAL, flushing any buffered state. Safe to call
@@ -672,11 +680,22 @@ class MemoryLayer:
                 # of post-snapshot ids are preserved too — their
                 # matching store record is already in the tail list, so
                 # replay order will store-then-forget correctly.
+                # update_metadata records whose target is in the snapshot
+                # were already materialized into meta_snap above, so they
+                # are redundant and we drop them. Post-snapshot ones
+                # (target id not in snapshot) must be kept; they'll
+                # replay after the corresponding store in the tail.
                 existing_ids = set(ids_snap)
                 tail_records: list[WalRecord] = []
                 for rec in self._wal.replay():
                     if rec.op == "store" and rec.node_id in existing_ids:
                         # Already in snapshot; skip.
+                        continue
+                    if (
+                        rec.op == "update_metadata"
+                        and rec.node_id in existing_ids
+                    ):
+                        # Patch is already applied to snapshot metadata; skip.
                         continue
                     tail_records.append(rec)
                 self._wal.truncate()
@@ -1114,6 +1133,47 @@ class MemoryLayer:
         recent_indices = list(range(start, len(self._ids)))[::-1]
         return [self._hit_for_index(i, score=1.0) for i in recent_indices]
 
+    def update_metadata(
+        self, node_id: str, patch: dict[str, Any]
+    ) -> None:
+        """Merge ``patch`` into the metadata of an existing entry.
+
+        Keys in ``patch`` overwrite existing keys; keys not in ``patch``
+        are preserved. WAL-replay compatible: appends an
+        ``update_metadata`` record before mutating in-memory state, so a
+        crash after append + before the in-memory mutation replays the
+        patch on next load.
+
+        Raises :class:`KeyError` if ``node_id`` is unknown.
+
+        This is the load-bearing primitive behind
+        :class:`soma.memory.conversational.ConversationalMemory`'s
+        SUPERSEDE op (which sets ``superseded_by`` on the old entry
+        instead of deleting it, preserving history for audit).
+        """
+        patch_dict = dict(patch)
+        with self._bundle_lock():
+            idx = self._id_to_idx.get(node_id)
+            if idx is None:
+                raise KeyError(f"node_id {node_id!r} not found in MemoryLayer")
+            if self._wal is not None:
+                self._wal.append(
+                    WalRecord(
+                        op="update_metadata",
+                        node_id=node_id,
+                        text=None,
+                        metadata={"patch": patch_dict},
+                        timestamp_step=self._step,
+                        embedding=None,
+                        emb_offset=None,
+                    )
+                )
+                _m.WAL_APPEND_TOTAL.labels(op="update_metadata").inc()
+            self._metadatas[idx].update(patch_dict)
+            if self._wal is not None:
+                self._last_wal_offset = self._wal.ops_size_on_disk()
+            self._maybe_compact()
+
     def forget(self, node_id: str) -> bool:
         """Remove an entry. Returns True if removed, False if unknown.
 
@@ -1460,6 +1520,16 @@ class MemoryLayer:
                     instance._soma_activations.pop(idx)
                     for later_id in instance._ids[idx:]:
                         instance._id_to_idx[later_id] -= 1
+                    instance._step = max(
+                        instance._step, int(rec.timestamp_step) + 1
+                    )
+                elif rec.op == "update_metadata":
+                    idx = instance._id_to_idx.get(rec.node_id)
+                    if idx is None:
+                        continue
+                    patch = rec.metadata.get("patch", {})
+                    if isinstance(patch, dict):
+                        instance._metadatas[idx].update(patch)
                     instance._step = max(
                         instance._step, int(rec.timestamp_step) + 1
                     )

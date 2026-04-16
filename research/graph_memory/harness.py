@@ -411,6 +411,185 @@ def run_soma(
     )
 
 
+# ---------------------------------------------------------------------------
+# C1b: alternative readout modes (blend-formula ablation)
+# ---------------------------------------------------------------------------
+# Context: C1 demonstrated the substrate IS capturing co-occurrence
+# (Spearman rho=0.854) but the α-cosine-blend readout doesn't translate
+# that into retrieval lift. C1b tests whether a DIFFERENT readout can
+# harvest the signal the blend is leaving on the table.
+#
+# Every C1b readout takes a trained MemoryLayer (post-consolidate,
+# post-stable-capture) plus a query string, and returns a ranked list
+# of memory-layer node_ids. They all share the same ground-truth
+# scoring path (:func:`evaluate_memory_with_retriever`) so the metric
+# side is invariant across modes.
+#
+# We deliberately DON'T modify ``src/soma/memory/api.py`` — the
+# readouts are layered on top of the existing public API
+# (``mem.retrieve``, ``mem.related``, ``mem._soma_activations``,
+# ``mem._soma.graph.all_edges()``). If a mode wins, that's the
+# signature of the feature we then plumb into MemoryLayer as a
+# ``retrieval_mode=`` argument in C2 / C5.
+
+
+def _retrieve_node_ids(mem: Any, query: str, *, k: int) -> list[str]:
+    """Tiny helper: plain ``mem.retrieve(query, k).node_ids``."""
+    return [h.node_id for h in mem.retrieve(query, k=k)]
+
+
+def retrieve_graph_traversal_expand(
+    mem: Any,
+    query: str,
+    *,
+    k: int,
+    seed_k: int = 5,
+    expand_k: int = 3,
+) -> list[str]:
+    """Top-K cosine candidates, then 1-hop expand via ``mem.related``.
+
+    Algorithm:
+
+    1. Get top-``seed_k`` candidates from the standard (pure-cosine,
+       alpha=0) retrieve path. These are the seeds.
+    2. For each seed, call ``mem.related(seed.node_id, k=expand_k)``
+       to get its 1-hop neighbours in the embedding space.
+    3. Merge seeds + all expanded neighbours, dedupe by ``node_id``.
+    4. Rank the merged set by a composite score:
+
+           composite = seed_score  (for seeds)
+                     = neighbour_score * 0.5  (for expanded 1-hop)
+
+       The 0.5 discount ensures a seed-ranked item outranks a neighbour
+       tied on raw score — seeds are directly matched to the query,
+       neighbours are only *adjacent* to a match.
+    5. Return the top-``k`` ``node_id``s of the merged ranking.
+
+    Rationale: if the graph substrate learned "entity A bridges B and
+    C" via Hebbian co-occurrence, then for a transitive query on B,
+    snippets mentioning A should rank high on pure cosine, and their
+    1-hop neighbours should include snippets mentioning C. Expansion
+    via ``mem.related`` does this over the ingested embeddings —
+    modulo the SOMA signal baked into those embeddings via
+    ``stable_capture``.
+
+    This is a READOUT-layer test, not a graph-training test: we're
+    asking whether "expand, then rank" pulls more transitive signal
+    out of the same trained substrate than the blend does.
+    """
+    if k <= 0:
+        raise ValueError(f"k must be positive, got {k}")
+    # Temporarily force the seed retrieve to ignore graph-blend so we
+    # get a clean cosine seed pool; the blend noise is what we're
+    # trying to sidestep.
+    saved_alpha = getattr(mem, "_graph_rerank_alpha", 0.0)
+    try:
+        mem._graph_rerank_alpha = 0.0
+        seeds = mem.retrieve(query, k=seed_k)
+    finally:
+        mem._graph_rerank_alpha = saved_alpha
+    # Composite score map: seeds keep their raw cosine score; neighbours
+    # get a discounted version so ties break toward direct matches.
+    scored: dict[str, float] = {h.node_id: float(h.score) for h in seeds}
+    for seed in seeds:
+        try:
+            neighbours = mem.related(seed.node_id, k=expand_k)
+        except KeyError:
+            continue
+        for nb in neighbours:
+            nb_score = 0.5 * float(nb.score)
+            # If we've already seen this id, keep the higher-scoring version
+            # (so a seed hit never loses to a weaker 1-hop version of itself).
+            scored[nb.node_id] = max(scored.get(nb.node_id, float("-inf")), nb_score)
+    ranked = sorted(scored.items(), key=lambda kv: -kv[1])
+    return [node_id for node_id, _ in ranked[:k]]
+
+
+def _degree_per_node(mem: Any) -> dict[str, float]:
+    """Cheap degree-as-centrality prior over memory-layer entries.
+
+    Memory-layer entries don't live on the SOMA *graph* directly
+    (the graph is a SOMA-internal processing topology), but each
+    entry has a stored SOMA output activation. We proxy "graph
+    centrality" of an entry by the norm of its captured activation
+    vector: higher norm = substrate reacted more strongly to that
+    entry = substrate treats it as more central. This keeps the mode
+    self-contained (no networkx dep) and is the cheapest honest
+    reading of the plan's ``centrality_prior`` instruction.
+
+    Returns ``{node_id: centrality_weight}`` with a default of 0.0
+    for entries with no stored activation. Weights are NOT normalized
+    here; the caller multiplies by ``1 + log1p(weight)`` to tame the
+    tail.
+    """
+    centrality: dict[str, float] = {}
+    activations = getattr(mem, "_soma_activations", {})
+    for node_id, act in activations.items():
+        if act is None:
+            centrality[node_id] = 0.0
+        else:
+            centrality[node_id] = float(torch.as_tensor(act).norm().item())
+    return centrality
+
+
+def retrieve_centrality_prior(
+    mem: Any,
+    query: str,
+    *,
+    k: int,
+    seed_k: int | None = None,
+    centrality_cache: dict[str, float] | None = None,
+) -> list[str]:
+    """Re-rank cosine top-K by ``cos_score * (1 + log1p(centrality))``.
+
+    Cheap per-query cost: one retrieve for the seed pool, then a
+    multiplication per candidate. ``seed_k`` defaults to ``k * 3`` so
+    the prior has room to reshuffle; the final cut is top-``k``.
+
+    ``centrality_cache`` lets the caller pre-compute the per-node
+    centrality map once and pass it in — that's what the run_c1b
+    orchestrator does to keep the per-query cost flat. A fresh compute
+    runs when cache is None.
+    """
+    if k <= 0:
+        raise ValueError(f"k must be positive, got {k}")
+    seed_k = seed_k if seed_k is not None else k * 3
+    saved_alpha = getattr(mem, "_graph_rerank_alpha", 0.0)
+    try:
+        mem._graph_rerank_alpha = 0.0
+        seeds = mem.retrieve(query, k=seed_k)
+    finally:
+        mem._graph_rerank_alpha = saved_alpha
+    centrality = centrality_cache if centrality_cache is not None else _degree_per_node(mem)
+    import math
+
+    scored: list[tuple[str, float]] = []
+    for hit in seeds:
+        c = centrality.get(hit.node_id, 0.0)
+        prior = 1.0 + math.log1p(max(c, 0.0))
+        scored.append((hit.node_id, float(hit.score) * prior))
+    scored.sort(key=lambda kv: -kv[1])
+    return [nid for nid, _ in scored[:k]]
+
+
+def evaluate_memory_with_retriever(
+    retriever_fn: Callable[[str, int], list[str]],
+    gt: GroundTruth,
+    snippet_ids: list[str],
+    *,
+    k: int,
+) -> dict[str, dict[str, float]]:
+    """Score an arbitrary retrieval function against the three query classes.
+
+    Parallel to :func:`evaluate_memory` but takes a pre-bound retriever
+    closure instead of a MemoryLayer — lets C1b wire in the new readout
+    modes (``retrieve_graph_traversal_expand``, etc.) without baking
+    them into MemoryLayer itself.
+    """
+    queries = _build_query_set(gt, snippet_ids=snippet_ids)
+    return {cls: _eval_queries(qs, retrieve_fn=retriever_fn, k=k) for cls, qs in queries.items()}
+
+
 # Re-export for convenience so ``from research.graph_memory.harness import
 # run_baseline`` works (the orchestrator script imports both from here).
 from research.graph_memory.baselines import run_baseline  # noqa: E402, F401

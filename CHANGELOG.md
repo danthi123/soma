@@ -234,6 +234,66 @@ All notable changes to SOMA are documented here.
   Unraid runner has Docker-in-Docker (or we stand up a dedicated
   runner with Docker available).
 
+### Added — batch extraction mode (Phase 25)
+
+- **`ConversationalMemory(extraction_mode="batch", batch_size=K)`**:
+  accumulates K consecutive turns in a pending buffer, then extracts
+  facts from all of them in a single LLM call. Cuts extract-path LLM
+  cost ~K× for workloads that tolerate fact-availability lagging by
+  up to K turns. Default `batch_size=8`. Synchronous but aggregated;
+  not combined with `"async"` in this phase.
+- **`_flush_batch()` fires inline** when the buffer reaches
+  `batch_size`; partial buffers drain via `flush()`, `close()`, and
+  `__exit__`. `clear_session()` *drops* the pending buffer without
+  extracting — wiping means wiping, don't write facts the user is
+  trying to forget.
+- **`BATCH_EXTRACT_PROMPT`** in `conversational_prompts.py`: numbered
+  turn list in, JSON array of `{turn_index, category, text}` out.
+  Per-fact `source_turn_id` metadata stamped from the original
+  batch tuple so downstream consumers can trace a fact back to its
+  source turn. Missing / out-of-range `turn_index` falls back to
+  the last turn + WARNING log (conservative, never lossy).
+- **Sync mode gets `source_turn_id` for free**: the same plumbing
+  change that routes turn ids through the batch path also stamps
+  them on sync-mode facts. Backward-compatible — `supersede()` and
+  older callers don't pass it and their metadata is byte-identical
+  to before.
+- **+10 tests** in `tests/test_memory/test_conversational_batch_extraction.py`
+  covering accumulate-until-K, flush drains partial, context-manager
+  flush-on-exit, clear-drops-pending, turn-order preserved in facts,
+  exceptions-surface-on-trigger-call, sync-and-async-unchanged,
+  batch_size validation, routing with explicit turn_index, fallback
+  on missing turn_index.
+
+### Added — per-token rate limiting (Phase 26)
+
+- **`src/soma/rate_limit.py`**: in-process token-bucket rate limiter
+  for authenticated requests. `TokenBucket` + `RateLimiter` primitives
+  with per-key isolation and monotonic-clock math (NTP slew / DST /
+  manual wall-clock rewinds can't corrupt accounting).
+- **`SOMA_RATE_LIMIT_RPS`** (float) enables the limiter.
+  `SOMA_RATE_LIMIT_BURST` (int, defaults to `ceil(rps)`) caps burst.
+  `SOMA_RATE_LIMIT_SCOPE=per-token` (default) or `per-subject`
+  decides whether refreshes of the same token share a bucket. All
+  unset → limiter disabled, behaviour unchanged.
+- **Middleware wired inside `require_auth`** — not a per-route
+  decorator. Every authenticated path (including the legacy
+  `SOMA_API_KEY` escape hatch, which gets its own jti=`legacy`
+  bucket) is covered automatically. `/metrics` and `/health` are
+  exempt so ops tooling can't lock itself out.
+- **`soma_rate_limited_total`** counter (label: `scope`). No
+  per-jti / per-subject label — cardinality would explode. The
+  actionable dashboard query is "total 429s per minute".
+- **Idle eviction** after `idle_evict_seconds` (default 300s) of
+  silence on a key, so dead tokens don't leak memory.
+- **+23 tests** (15 in `tests/test_rate_limit.py` for primitives,
+  8 in `tests/test_serve/test_rate_limit_serve.py` for HTTP
+  integration). Zero real sleep — all time-sensitive tests inject
+  `now=` explicitly.
+- **Docs**: new "Rate limiting" section in `docs/auth.md` — env
+  vars, when to prefer the in-proc limiter vs a reverse proxy,
+  per-token vs per-subject tradeoff.
+
 ### Changed — Gitea Actions migration
 
 - **Moved `.github/workflows/*` → `.gitea/workflows/*`**

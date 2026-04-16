@@ -18,7 +18,7 @@ Things that came up during the 2026-04-16 gap-closing push (Phases 1-7b) but wer
 ## Tier 2 — conversational memory
 
 - ✅ ~~**Async extraction mode**~~ Shipped in Phase 22 (`2271102`, `77beda7`). `extraction_mode="async"` with a `ThreadPoolExecutor(max_workers=1)`; `flush(timeout)` drains; `close()` + context-manager protocol; `clear_session()` flushes first. Cookbook §18.1 covers the low-latency-chat recipe and the GIL caveat.
-- **Batch extraction mode** (accumulate K turns, one LLM call). Phase 2 Stage 3. ~1 day.
+- ✅ ~~**Batch extraction mode**~~ Shipped in Phase 25 (`4a2899b`, `360a743`). `extraction_mode="batch"` + `batch_size` kwarg; accumulates K turns and extracts via one LLM call (`BATCH_EXTRACT_PROMPT`); `flush()`/`close()` drain partials; `clear_session()` drops pending without extracting. Per-fact `source_turn_id` metadata landed as a side-benefit for sync mode too.
 - ✅ ~~**`extractor_llm=` kwarg**~~ Shipped in Phase 11 (`34320b4`, `9ca76e1`).
 - ✅ ~~**Summary re-summarization from raw turns**~~ Shipped in Phase 17 (`5124d4c`, `325029f`). New `resummarize_every` kwarg (default 5); every Mth summary re-derives from raw turns to prevent compounding drift. Cookbook §18 covers tuning.
 - **GDPR-grade forgetting** — scrub derived facts + summaries that reference a piece of info. Goes well beyond `clear_session`. ~1 week.
@@ -34,7 +34,7 @@ Things that came up during the 2026-04-16 gap-closing push (Phases 1-7b) but wer
 ## Tier 2 — auth
 
 - ✅ ~~**Refresh-token endpoint.**~~ Shipped in Phase 23 (`26cfa5f`, `2aaf86b`, `dc347a5`). `soma.auth.refresh_token(...)` helper + `POST /auth/refresh` + `soma auth refresh --token <jwt>` CLI. Mints a fresh `jti`/`exp` with the same `sub`/`bundles`/`aud`; `SOMA_JWT_REFRESH_TTL` overrides the default window; old token NOT auto-revoked (pinned in tests).
-- **Per-token rate limiting.** Punted to reverse proxy. A lightweight in-proc limiter would be ~1 d.
+- ✅ ~~**Per-token rate limiting.**~~ Shipped in Phase 26 (`7bb92c0`, `548811b`, `fd3361a`). In-proc `TokenBucket` + `RateLimiter`; `SOMA_RATE_LIMIT_RPS` + `SOMA_RATE_LIMIT_BURST` + `SOMA_RATE_LIMIT_SCOPE` env; middleware wired inside `require_auth` so legacy `SOMA_API_KEY` path is also covered; `/metrics` + `/health` exempt; `soma_rate_limited_total{scope=...}` counter. Not a WAF — complementary to a reverse proxy, documented in `docs/auth.md`.
 - ✅ ~~**Hashed-token store.**~~ Shipped in Phase 18 (`69d8e1a`, `632ea15`). Opt-in via `FileBlocklist(path, hashed=True)` or `SOMA_JWT_BLOCKLIST_HASHED=1` env. Dual-schema reader accepts legacy + new records so operators can flip without migration.
 - ✅ ~~**Redis-backed revocation blocklist.**~~ Shipped in Phase 20 (`14e912d`, `bb88d62`, `d7d8773`). `RedisBlocklist` alongside `FileBlocklist`; `SOMA_JWT_BLOCKLIST_REDIS_URL` env dispatch; `soma[redis-revocation]` extra; hashed-mode interop verified cross-backend.
 - ✅ ~~**Audience claim (`aud`)**~~ Shipped in Phase 18 (`708800b`, `40f9907`). `issue_token(..., audience=...)` + `verify_token(..., expected_audience=...)` + `soma auth issue --audience` + `SOMA_JWT_AUDIENCE` env.

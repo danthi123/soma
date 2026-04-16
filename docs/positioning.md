@@ -55,12 +55,16 @@ freshly-reinforced ones strengthen. You get a store that gets sharper
 in the directions the user actually cares about, without retraining
 anything.
 
-## Quick start (API sketch, Stage 2)
+## Quick start
 
 ```python
 from soma.memory import MemoryLayer
 
-mem = MemoryLayer.load("my-brain/")   # or MemoryLayer.fresh()
+# Create with sentence-transformers (pip install soma[sbert]):
+mem = MemoryLayer.with_sbert()
+
+# Or load an existing brain:
+# mem = MemoryLayer.load("my-brain/")
 
 # Store
 mem.store("user lives in Portland, OR", metadata={"source": "chat-2026-04-15"})
@@ -72,27 +76,35 @@ for hit in hits:
     print(hit.text, hit.score, hit.metadata)
 
 # Graph queries (beyond what a vector DB can do)
-neighbours = mem.related(hits[0].node_id, depth=2)
+neighbours = mem.related(hits[0].node_id, k=5)
 
 # Let the graph adapt
-mem.consolidate()   # run the offline cycle; prune dead edges, strengthen reinforced ones
+mem.consolidate()   # triggers Hebbian learning + structural plasticity
 mem.save("my-brain/")
 ```
 
-## Quick start (LLM integration, Stage 2)
+## LangChain / LlamaIndex
 
 ```python
-from soma.memory import MemoryLayer
-from soma.session import ChatSession
-from soma.deploy import build_chat_head
+# LangChain:
+from soma.integrations.langchain import SomaRetriever
+retriever = SomaRetriever(memory=mem, k=5)
+docs = retriever.invoke("what does the user do for work?")
 
-mem = MemoryLayer.load("my-brain/")
-chat = build_chat_head(tier="auto")     # any HF causal LM
+# LlamaIndex:
+from soma.integrations.llamaindex import SomaRetriever
+nodes = SomaRetriever(memory=mem, k=5).retrieve("dietary restrictions")
+```
 
-session = ChatSession.from_memory(memory=mem, chat_head=chat)
+## REST API
 
-reply = session.respond("what do I usually cook on fridays?")
-# under the hood: retrieve → inject context → chat_head.generate → store the turn
+```bash
+uvicorn soma.serve:app --port 8420
+# or: docker compose up
+
+curl -X POST http://localhost:8420/store \
+  -H 'Content-Type: application/json' \
+  -d '{"text": "user lives in Portland"}'
 ```
 
 ## Licensing & commercial story

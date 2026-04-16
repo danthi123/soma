@@ -28,7 +28,7 @@ from __future__ import annotations
 
 import argparse
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from benchmarks.datasets.locomo import (
@@ -40,6 +40,9 @@ from benchmarks.datasets.locomo import (
 )
 from benchmarks.harness.adapters.chroma import ChromaAdapter
 from benchmarks.harness.adapters.soma import ConversationalSomaAdapter, SomaAdapter
+from benchmarks.harness.qa_eval import QAEvalResult, evaluate_qa
+from soma.llm import backend_from_env
+from soma.llm.backends import DryRunBackend
 
 K_VALUES: tuple[int, ...] = (1, 5, 10)
 
@@ -56,6 +59,10 @@ class LoCoMoResult:
     disk_kb: float
     facts_stored: int = 0
     turns_processed: int = 0
+    qa: QAEvalResult | None = None
+    # Captured (query, hits, gold) triples per arm so a single --run-qa-eval
+    # pass can hit every system fairly — filled only when qa_eval is on.
+    _qa_triples: list[tuple[str, list, str]] = field(default_factory=list)
 
 
 def _score_recall(retrieved_dia_ids: list[str], evidence: list[str], k: int) -> float:
@@ -68,6 +75,9 @@ def _run_one_system(
     adapter,
     turns: list[LoCoMoTurn],
     queries: list[LoCoMoQuery],
+    *,
+    capture_qa_triples: bool = False,
+    qa_max_questions: int | None = None,
 ) -> LoCoMoResult:
     print(f"  [{name}] preparing...")
     adapter.prepare()
@@ -99,6 +109,11 @@ def _run_one_system(
     # Warmup
     adapter.retrieve(queries[0].question, k=max_k)
 
+    qa_triples: list[tuple[str, list, str]] = []
+    # Collect an at-most-qa_max_questions slice for the QA eval so we
+    # don't burn thousands of LLM calls when real keys are set.
+    qa_slice_cap = qa_max_questions if qa_max_questions is not None else len(queries)
+
     for q in queries:
         t1 = time.perf_counter()
         hits = adapter.retrieve(q.question, k=max_k)
@@ -114,6 +129,13 @@ def _run_one_system(
             score = _score_recall(retrieved_dia_ids, q.evidence, k)
             recall_sums[k] += score
             cat_sums[cat_name][k].append(score)
+        if (
+            capture_qa_triples
+            and len(qa_triples) < qa_slice_cap
+            and q.answer  # skip adversarial "no-answer" QAs
+        ):
+            # Use top-5 hits from same-sample (a reasonable read-window).
+            qa_triples.append((q.question, same_sample[:5], q.answer))
 
     n = len(queries)
     recall_avg = {k: recall_sums[k] / max(1, n) for k in K_VALUES}
@@ -141,17 +163,23 @@ def _run_one_system(
         disk_kb=disk,
         facts_stored=facts_stored,
         turns_processed=turns_processed,
+        _qa_triples=qa_triples,
     )
 
 
 def _format_main_table(
-    results: list[LoCoMoResult], *, show_facts: bool = False
+    results: list[LoCoMoResult],
+    *,
+    show_facts: bool = False,
+    show_qa: bool = False,
 ) -> str:
     header_cols = ["System"] + [f"R@{k}" for k in K_VALUES] + [
         "Retrieve (ms)", "Store total (s)", "Disk (MB)",
     ]
     if show_facts:
         header_cols.append("Facts / turns")
+    if show_qa:
+        header_cols.append("QA acc")
     sep = ["---"] + [":---:"] * (len(header_cols) - 1)
     lines = [
         "| " + " | ".join(header_cols) + " |",
@@ -170,6 +198,14 @@ def _format_main_table(
             if r.turns_processed > 0:
                 cells.append(
                     f"{r.facts_stored} / {r.turns_processed}"
+                )
+            else:
+                cells.append("-")
+        if show_qa:
+            if r.qa is not None and r.qa.n_questions > 0:
+                cells.append(
+                    f"{r.qa.accuracy:.3f} "
+                    f"({r.qa.n_correct}/{r.qa.n_questions})"
                 )
             else:
                 cells.append("-")
@@ -194,6 +230,36 @@ def _format_category_table(results: list[LoCoMoResult], k: int) -> str:
     return "\n".join(lines)
 
 
+def _maybe_qa_backend(prefer_judge: str | None = None):
+    """Pick the best available LLM backend for QA eval, gracefully
+    falling back to :class:`DryRunBackend` when nothing is reachable.
+
+    :func:`soma.llm.backend_from_env` falls back to
+    :class:`HuggingFaceBackend` by default, which tries to load a
+    local HF model on first ``generate`` — that's too heavy for the
+    smoke path. For QA eval we want: Ollama > OpenAI > Anthropic >
+    DryRun.
+    """
+    import os
+
+    # Explicit override.
+    if prefer_judge:
+        return backend_from_env(prefer=prefer_judge)
+    # Happy path: one of the three online backends is configured.
+    for env_key in ("OPENAI_API_KEY", "ANTHROPIC_API_KEY"):
+        if os.environ.get(env_key):
+            return backend_from_env()
+    # Ollama if reachable.
+    from soma.llm.backends import _ollama_alive  # noqa: PLC2701
+
+    if _ollama_alive(
+        os.environ.get("SOMA_LLM_BASE_URL") or "http://localhost:11434"
+    ):
+        return backend_from_env()
+    # Nothing reachable — the caller will warn + substitute a DryRun.
+    return DryRunBackend()
+
+
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument(
@@ -211,6 +277,36 @@ def main() -> None:
             "reachable via the SOMA_LLM_BACKEND env (see soma.llm)."
         ),
     )
+    p.add_argument(
+        "--run-qa-eval",
+        action="store_true",
+        help=(
+            "Enable the LoCoMo-QA LLM-as-judge eval. For each retrieved "
+            "context a responder LLM generates an answer; a judge LLM "
+            "then compares the answer to the gold annotation. Reports "
+            "qa_accuracy per arm. Gated by cost — default off."
+        ),
+    )
+    p.add_argument(
+        "--qa-eval-max-questions",
+        type=int,
+        default=200,
+        help=(
+            "Cap the number of questions scored per arm. Default 200 so "
+            "a typical run stays under $1 on paid APIs. Pass 0 for "
+            "unlimited."
+        ),
+    )
+    p.add_argument(
+        "--judge-llm-name",
+        type=str,
+        default=None,
+        help=(
+            "Override the judge LLM backend (e.g. 'openai' / 'anthropic' "
+            "/ 'ollama'). Same values as SOMA_LLM_BACKEND. Default: "
+            "same backend as the responder."
+        ),
+    )
     args = p.parse_args()
 
     print("Loading LoCoMo dataset...")
@@ -222,8 +318,6 @@ def main() -> None:
     )
 
     if args.conversational:
-        from soma.llm import backend_from_env
-
         llm = backend_from_env()
         systems = [
             ("soma-flat", SomaAdapter(use_sbert=True)),
@@ -248,10 +342,18 @@ def main() -> None:
             ("chroma", ChromaAdapter()),
         ]
 
+    qa_max = args.qa_eval_max_questions if args.qa_eval_max_questions > 0 else None
     results: list[LoCoMoResult] = []
     for name, adapter in systems:
         print(f"\n=== {name} ===")
-        r = _run_one_system(name, adapter, turns, queries)
+        r = _run_one_system(
+            name,
+            adapter,
+            turns,
+            queries,
+            capture_qa_triples=args.run_qa_eval,
+            qa_max_questions=qa_max,
+        )
         results.append(r)
         print(
             f"  Recall@1={r.recall_at_k[1]:.3f} "
@@ -260,7 +362,49 @@ def main() -> None:
             f"retrieve={r.retrieve_avg_ms:.1f}ms"
         )
 
+    # ---- QA eval (post-hoc so every arm scores on the SAME judge) ----
+    if args.run_qa_eval:
+        responder = _maybe_qa_backend()
+        judge = (
+            _maybe_qa_backend(prefer_judge=args.judge_llm_name)
+            if args.judge_llm_name
+            else responder
+        )
+        print(
+            f"\n=== QA eval === responder={responder.name} judge={judge.name}"
+        )
+        if isinstance(responder, DryRunBackend):
+            print(
+                "  WARNING: no live LLM backend reachable "
+                "(OPENAI_API_KEY / ANTHROPIC_API_KEY / Ollama). Running "
+                "with DryRunBackend -- QA accuracy will be all zeros; "
+                "re-run with a real backend to get real numbers."
+            )
+        total_calls = 0
+        total_tokens = 0
+        for r in results:
+            if not r._qa_triples:
+                continue
+            print(f"  [{r.system}] scoring {len(r._qa_triples)} questions...")
+            r.qa = evaluate_qa(
+                r._qa_triples,
+                responder_llm=responder,
+                judge_llm=judge,
+            )
+            total_calls += r.qa.llm_calls
+            total_tokens += r.qa.est_total_tokens
+            print(
+                f"    accuracy={r.qa.accuracy:.3f} "
+                f"({r.qa.n_correct}/{r.qa.n_questions}) "
+                f"llm_calls={r.qa.llm_calls}"
+            )
+        print(
+            f"  TOTAL LLM calls across all arms: {total_calls} "
+            f"(~{total_tokens} tokens estimated)"
+        )
+
     show_facts = args.conversational
+    show_qa = args.run_qa_eval
     title_suffix = " — conversational mode" if args.conversational else ""
     lines = [
         f"# LoCoMo Retrieval Benchmark — SOMA vs Chroma{title_suffix}",
@@ -273,13 +417,19 @@ def main() -> None:
         "the question's gold-evidence turns make it into the top-k? "
         "Cross-sample retrievals are excluded — LoCoMo's evidence is "
         "intra-conversation so cross-sample hits would be cheating). "
-        "We deliberately do *not* run the LoCoMo paper's GPT-4 judge "
-        "for QA accuracy; that part is the LLM's job, not the memory "
-        "layer's. Recall@k cleanly isolates the memory contribution.",
+        + (
+            "QA accuracy is scored by a judge LLM comparing the "
+            "responder's answer against the gold annotation."
+            if show_qa
+            else "We deliberately do *not* run the LoCoMo paper's GPT-4 "
+            "judge for QA accuracy; that part is the LLM's job, not "
+            "the memory layer's. Recall@k cleanly isolates the memory "
+            "contribution."
+        ),
         "",
         "## Headline",
         "",
-        _format_main_table(results, show_facts=show_facts),
+        _format_main_table(results, show_facts=show_facts, show_qa=show_qa),
         "",
         "## Recall@5 by Question Category",
         "",

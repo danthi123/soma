@@ -1,4 +1,4 @@
-"""File-backed JWT revocation blocklist.
+"""JWT revocation blocklist — file-backed default, optional Redis.
 
 Phase 4 shipped JWTs with auto-populated ``jti`` claims but no way to
 revoke a leaked token short of rotating ``SOMA_JWT_SECRET`` (kills every
@@ -6,8 +6,9 @@ active token) or waiting for ``exp`` (default 30 days). This module
 plugs that gap with a persistent ``jti`` blocklist.
 
 Design decision lives in ``docs/plans/2026-04-16-jwt-revocation.md``.
-Summary: file-backed JSONL is the default; Redis is deferred as an
-optional extra.
+Summary: file-backed JSONL is the default; Redis is opt-in via the
+``soma[redis-revocation]`` extra for multi-host / k8s deploys where
+the 30 s file-poll lag is unacceptable (Phase 20).
 
 Layout::
 
@@ -38,13 +39,14 @@ import os
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 
 import portalocker
 
 __all__ = [
     "BlocklistBackend",
     "FileBlocklist",
+    "RedisBlocklist",
     "RevocationRecord",
     "blocklist_from_env",
     "null_blocklist",
@@ -353,6 +355,143 @@ class FileBlocklist:
 
         self._cache = new_cache
         self._mtime = stat.st_mtime
+
+
+class RedisBlocklist:
+    """Redis-backed blocklist for multi-host / k8s deploys.
+
+    Each revocation becomes one key at ``{key_prefix}{jti_key}`` with a
+    TTL equal to the remaining seconds until the original token's
+    ``exp``. Redis handles natural expiry, so :meth:`gc_expired` is a
+    no-op. Propagation across peers is instant — no 30 s file-poll lag.
+
+    ``hashed`` mirrors :class:`FileBlocklist`'s knob: when ``True`` the
+    stored key is ``sha256(jti).hexdigest()`` rather than the raw
+    ``jti``. Both backends use the same hashing scheme, so a cross-
+    backend migration (file -> Redis or vice versa) keeps lookup keys
+    byte-identical.
+
+    The ``redis-py`` import is lazy so ``soma`` keeps installing
+    cleanly without the ``redis-revocation`` extra. Constructing a
+    :class:`RedisBlocklist` without the dep raises :class:`ImportError`
+    pointing at the install hint.
+
+    Parameters
+    ----------
+    url:
+        Redis connection URL, e.g. ``redis://localhost:6379/0``.
+    key_prefix:
+        Prefix applied to every stored key. Keeps the blocklist
+        namespace well-separated from other data in a shared Redis.
+    hashed:
+        When ``True`` the key suffix is ``sha256(jti).hexdigest()``
+        instead of the raw ``jti``.
+    client:
+        Optional pre-built client (for tests — pass a
+        ``fakeredis.FakeRedis`` here). When ``None`` (production path)
+        the class builds one from ``url`` via ``redis.Redis.from_url``.
+    """
+
+    def __init__(
+        self,
+        url: str,
+        *,
+        key_prefix: str = "soma:jwt:revoked:",
+        hashed: bool = False,
+        client: Any | None = None,
+    ) -> None:
+        self._url = str(url)
+        self._key_prefix = str(key_prefix)
+        self._hashed = bool(hashed)
+        if client is not None:
+            self._client = client
+        else:
+            self._client = self._build_client(self._url)
+
+    # ------------------------------------------------------------------
+    # Construction helpers
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _build_client(url: str) -> Any:
+        """Build a ``redis.Redis`` from ``url`` — lazy import the dep.
+
+        Separated so tests can monkeypatch or bypass via the ``client``
+        kwarg. Raises :class:`ImportError` with an install hint when
+        the ``redis`` package isn't available — the only path that
+        actually needs the dep.
+        """
+        try:
+            import redis as _redis
+        except ImportError as exc:  # pragma: no cover — tested via monkeypatch
+            raise ImportError(
+                "RedisBlocklist requires the 'redis' package. "
+                "Install with: pip install 'soma[redis-revocation]'"
+            ) from exc
+        # ``decode_responses=True`` keeps the reason string a plain str
+        # round-trip; our reads don't need raw bytes.
+        return _redis.Redis.from_url(url, decode_responses=True)
+
+    # ------------------------------------------------------------------
+    # Introspection
+    # ------------------------------------------------------------------
+    @property
+    def hashed(self) -> bool:
+        """Whether this instance hashes the ``jti`` before storage."""
+        return self._hashed
+
+    @property
+    def key_prefix(self) -> str:
+        """Key namespace prefix (immutable after construction)."""
+        return self._key_prefix
+
+    def _key(self, jti: str) -> str:
+        """Lookup/store key for ``jti`` under the configured mode.
+
+        Mirrors :meth:`FileBlocklist._key` so a jti hashed by either
+        backend maps to the same 64-char hex suffix — the prefix
+        differs but the identity check in tests stays trivial.
+        """
+        if self._hashed:
+            jti = hashlib.sha256(jti.encode("utf-8")).hexdigest()
+        return f"{self._key_prefix}{jti}"
+
+    # ------------------------------------------------------------------
+    # BlocklistBackend surface
+    # ------------------------------------------------------------------
+    def is_revoked(self, jti: str) -> bool:
+        """True iff the key exists in Redis. TTL handles natural expiry."""
+        # Hashed mode also honours legacy plaintext entries (same logic
+        # as FileBlocklist) — covers a cross-backend migration where
+        # the old file had plaintext records.
+        if bool(self._client.exists(self._key(jti))):
+            return True
+        if self._hashed:
+            legacy_key = f"{self._key_prefix}{jti}"
+            return bool(self._client.exists(legacy_key))
+        return False
+
+    def add(self, record: RevocationRecord) -> None:
+        """Write a revocation with a Redis TTL matching the token's exp.
+
+        ``setex(key, ttl, value)`` is atomic, so no extra locking is
+        needed. TTL is clamped at >= 1 s because Redis rejects 0-TTL
+        writes — a record whose token has already expired is still
+        worth keeping for a heartbeat so late requests race-lose
+        cleanly rather than sneaking through.
+        """
+        reason = record.reason
+        if len(reason) > _REASON_MAX_LEN:
+            reason = reason[:_REASON_MAX_LEN]
+        ttl = max(1, int(record.exp) - int(time.time()))
+        self._client.setex(self._key(record.jti), ttl, reason or "revoked")
+
+    def gc_expired(self) -> int:
+        """No-op — Redis' native TTL auto-expires entries.
+
+        Returned for :class:`BlocklistBackend` protocol symmetry.
+        Always returns ``0``.
+        """
+        return 0
 
 
 def blocklist_from_env() -> BlocklistBackend:

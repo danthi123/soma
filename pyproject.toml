@@ -105,6 +105,14 @@ metrics = [
     "prometheus-fastapi-instrumentator>=7.1",
     "prometheus-client>=0.20",
 ]
+redis-revocation = [
+    # Optional RedisBlocklist backend for multi-host / k8s deploys
+    # where the default file-backed JSONL store's 30 s poll lag is
+    # unacceptable. Instant cross-worker propagation via Redis, with
+    # automatic TTL equal to the token's `exp` claim. Install with
+    # `pip install soma[redis-revocation]`. See docs/auth.md.
+    "redis>=5.0",
+]
 otel = [
     # OpenTelemetry tracing — opt-in via SOMA_OTEL_ENABLED=1. The FastAPI
     # instrumentor + OTel SDK pull ~5 transitive packages, so we keep
@@ -168,5 +176,7 @@ module = [
     "qdrant_client", "qdrant_client.*",
     "lancedb", "lancedb.*",
     "pyarrow", "pyarrow.*",
+    "redis", "redis.*",
+    "fakeredis", "fakeredis.*",
 ]
 ignore_missing_imports = true

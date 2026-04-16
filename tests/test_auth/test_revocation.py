@@ -21,6 +21,7 @@ import pytest
 
 from soma.auth_revocation import (
     FileBlocklist,
+    RedisBlocklist,
     RevocationRecord,
     blocklist_from_env,
     null_blocklist,
@@ -323,6 +324,59 @@ def test_gc_expired_preserves_hashed_mode(tmp_path: Path) -> None:
     assert "jti_key" in lines[0]
     assert "jti" not in lines[0]
     assert lines[0]["jti_key"] == hashlib.sha256(b"live-jti").hexdigest()
+
+
+# ------------------------------------------------------------------
+# Phase 20 — blocklist_from_env dispatches to Redis when URL is set
+# ------------------------------------------------------------------
+def test_env_dispatch_redis_url_wins_over_path(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """``SOMA_JWT_BLOCKLIST_REDIS_URL`` => RedisBlocklist, path ignored with a warning.
+
+    Requires ``redis-py`` for the ``Redis.from_url`` call but no live
+    server — ``from_url`` builds a lazy client that doesn't connect
+    until a command is issued.
+    """
+    pytest.importorskip("redis")
+
+    monkeypatch.setenv("SOMA_JWT_BLOCKLIST_REDIS_URL", "redis://localhost:6379/0")
+    monkeypatch.setenv("SOMA_JWT_BLOCKLIST_PATH", str(tmp_path / "bl.jsonl"))
+    monkeypatch.delenv("SOMA_JWT_BLOCKLIST_HASHED", raising=False)
+
+    with caplog.at_level("WARNING", logger="soma.auth_revocation"):
+        bl = blocklist_from_env()
+
+    assert isinstance(bl, RedisBlocklist)
+    assert bl.hashed is False
+    # The warning body calls out the file path as ignored.
+    assert any("ignoring" in r.message.lower() for r in caplog.records)
+
+
+def test_env_dispatch_redis_honours_hashed_flag(monkeypatch: pytest.MonkeyPatch) -> None:
+    """``SOMA_JWT_BLOCKLIST_HASHED=1`` flips the Redis backend to hashed mode."""
+    pytest.importorskip("redis")
+
+    monkeypatch.setenv("SOMA_JWT_BLOCKLIST_REDIS_URL", "redis://localhost:6379/0")
+    monkeypatch.delenv("SOMA_JWT_BLOCKLIST_PATH", raising=False)
+    monkeypatch.setenv("SOMA_JWT_BLOCKLIST_HASHED", "1")
+
+    bl = blocklist_from_env()
+    assert isinstance(bl, RedisBlocklist)
+    assert bl.hashed is True
+
+
+def test_env_dispatch_no_redis_url_keeps_file_backend(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """When only ``SOMA_JWT_BLOCKLIST_PATH`` is set, behaviour is unchanged."""
+    monkeypatch.delenv("SOMA_JWT_BLOCKLIST_REDIS_URL", raising=False)
+    monkeypatch.setenv("SOMA_JWT_BLOCKLIST_PATH", str(tmp_path / "bl.jsonl"))
+    monkeypatch.delenv("SOMA_JWT_BLOCKLIST_HASHED", raising=False)
+
+    bl = blocklist_from_env()
+    assert isinstance(bl, FileBlocklist)
+    assert bl.hashed is False
 
 
 def test_file_blocklist_mtime_poll_picks_up_external_writes(tmp_path: Path) -> None:

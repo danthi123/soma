@@ -35,6 +35,7 @@ from __future__ import annotations
 import contextlib
 import hashlib
 import json
+import logging
 import os
 import time
 from dataclasses import asdict, dataclass
@@ -51,6 +52,8 @@ __all__ = [
     "blocklist_from_env",
     "null_blocklist",
 ]
+
+_log = logging.getLogger(__name__)
 
 # Reason strings are free-form but capped to keep pathological inputs
 # from bloating the on-disk file. 256 chars is ample for a human
@@ -495,22 +498,38 @@ class RedisBlocklist:
 
 
 def blocklist_from_env() -> BlocklistBackend:
-    """Factory — ``FileBlocklist`` if ``SOMA_JWT_BLOCKLIST_PATH`` set, else null.
+    """Factory — pick a backend from env vars.
 
-    Unit tests can pin the factory with one ``monkeypatch.setenv`` call.
-    Future Redis support slots in as a second branch here gated on
-    ``SOMA_JWT_BLOCKLIST_BACKEND=redis``.
+    Resolution order:
 
-    Env contract:
-    - ``SOMA_JWT_BLOCKLIST_PATH`` — unset => null backend. Set => file
-      backend at that path.
-    - ``SOMA_JWT_BLOCKLIST_HASHED`` — ``1`` => enable sha256(jti) at rest.
-      Anything else (unset, empty, ``0``) keeps plaintext default.
+    1. ``SOMA_JWT_BLOCKLIST_REDIS_URL`` set (any non-empty value) =>
+       :class:`RedisBlocklist` against that URL. ``SOMA_JWT_BLOCKLIST_PATH``
+       is ignored in this mode; a warning is logged if both are set so
+       operators don't silently think the file store is being used.
+    2. ``SOMA_JWT_BLOCKLIST_PATH`` set => :class:`FileBlocklist` at
+       that path.
+    3. Neither set => :func:`null_blocklist` (no-op, every check False).
+
+    ``SOMA_JWT_BLOCKLIST_HASHED=1`` is honoured by both the file and
+    Redis backends (sha256-at-rest).
     """
+    redis_url = os.environ.get("SOMA_JWT_BLOCKLIST_REDIS_URL", "").strip()
     path = os.environ.get("SOMA_JWT_BLOCKLIST_PATH", "").strip()
+    hashed = os.environ.get("SOMA_JWT_BLOCKLIST_HASHED", "").strip() == "1"
+
+    if redis_url:
+        if path:
+            # Operator footgun — both env vars set. Redis wins; warn
+            # loudly so the file store isn't silently orphaned.
+            _log.warning(
+                "SOMA_JWT_BLOCKLIST_REDIS_URL and SOMA_JWT_BLOCKLIST_PATH are both set; "
+                "using Redis and ignoring the file path %r.",
+                path,
+            )
+        return RedisBlocklist(redis_url, hashed=hashed)
+
     if not path:
         return null_blocklist()
-    hashed = os.environ.get("SOMA_JWT_BLOCKLIST_HASHED", "").strip() == "1"
     return FileBlocklist(Path(path), hashed=hashed)
 
 

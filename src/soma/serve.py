@@ -148,19 +148,14 @@ app.add_middleware(
 # The instrumentator also adds per-route HTTP counters and latency
 # histograms (standard FastAPI practice); our memory-layer-specific
 # soma_* metrics layer on top via soma.metrics.
+#
+# ``SOMA_METRICS_PUBLIC`` (default "1") keeps /metrics unauthenticated
+# so existing Prometheus scrape configs keep working. Sensitive deploys
+# opt in to auth with ``SOMA_METRICS_PUBLIC=0`` — that wraps the endpoint
+# with the standard ``require_auth(None, "read")`` dependency so a bearer
+# with any read perm (or the legacy SOMA_API_KEY) can still scrape.
 # --------------------------------------------------------------------
-try:
-    from prometheus_fastapi_instrumentator import Instrumentator
-
-    Instrumentator().instrument(app).expose(
-        app,
-        endpoint="/metrics",
-        include_in_schema=True,
-        tags=["system"],
-    )
-except ImportError:  # pragma: no cover
-    # soma[metrics] not installed — /metrics will 404.
-    pass
+METRICS_PUBLIC = os.environ.get("SOMA_METRICS_PUBLIC", "1") != "0"
 
 # --------------------------------------------------------------------
 # Optional OpenTelemetry tracing. Opt-in via SOMA_OTEL_ENABLED=1 AND
@@ -364,6 +359,31 @@ def require_auth(
 # The new code path does NOT use this — every @app route below binds
 # ``require_auth(...)`` directly.
 require_api_key = require_auth(None, "admin")
+
+
+# --------------------------------------------------------------------
+# Instrumentator wiring (deferred until after require_auth is defined
+# so the SOMA_METRICS_PUBLIC=0 gate can pass ``dependencies=[...]``).
+# prometheus-fastapi-instrumentator forwards **kwargs from .expose() to
+# FastAPI's route registration, so the ``dependencies`` list attaches
+# our bearer-check exactly like any other route.
+# --------------------------------------------------------------------
+try:
+    from prometheus_fastapi_instrumentator import Instrumentator
+
+    _metrics_deps: list[Any] = (
+        [] if METRICS_PUBLIC else [Depends(require_auth(None, "read"))]
+    )
+    Instrumentator().instrument(app).expose(
+        app,
+        endpoint="/metrics",
+        include_in_schema=True,
+        tags=["system"],
+        dependencies=_metrics_deps,
+    )
+except ImportError:  # pragma: no cover
+    # soma[metrics] not installed — /metrics will 404.
+    pass
 
 
 # ------------------------------------------------------------------

@@ -67,6 +67,10 @@ serve = [
     "fastapi>=0.100",
     "uvicorn>=0.20",
     "sentence-transformers>=2.2.0",
+    # Phase 4 JWT auth — PyJWT with the `crypto` extra pulls in
+    # `cryptography` for RS256 (HS256 works without it). Pin to >=2.8
+    # for the 2024 algorithm-confusion hardening.
+    "pyjwt[crypto]>=2.8",
 ]
 ann = [
     "faiss-cpu>=1.7.0",

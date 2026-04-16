@@ -74,6 +74,10 @@ class MemoryLayer:
         embed_dim: int | None = None,
         device: torch.device | str | None = None,
         faiss_threshold: int = 10_000,
+        faiss_index_type: str = "flat",
+        faiss_hnsw_m: int = 32,
+        faiss_hnsw_ef_search: int = 64,
+        faiss_hnsw_ef_construction: int = 80,
         auto_consolidate_every: int = 0,
         graph_rerank_alpha: float = 0.0,
         graph_rerank_stable_capture: bool = True,
@@ -105,7 +109,18 @@ class MemoryLayer:
         # FAISS ANN index, built on-demand when store size >= threshold.
         # Set threshold=0 to disable. The linear backend stays as fallback
         # for related() (which needs exclude-self) and small stores.
+        # Index type: "flat" (exact, IndexFlatIP — SIMD linear scan) or
+        # "hnsw" (approximate, IndexHNSWFlat — much faster at large N at
+        # the cost of imperfect recall).
+        if faiss_index_type not in ("flat", "hnsw"):
+            raise ValueError(
+                f"faiss_index_type must be 'flat' or 'hnsw', got {faiss_index_type!r}"
+            )
         self._faiss_threshold: int = faiss_threshold
+        self._faiss_index_type: str = faiss_index_type
+        self._faiss_hnsw_m: int = int(faiss_hnsw_m)
+        self._faiss_hnsw_ef_search: int = int(faiss_hnsw_ef_search)
+        self._faiss_hnsw_ef_construction: int = int(faiss_hnsw_ef_construction)
         self._faiss_index: Any = None
         self._auto_consolidate_every: int = auto_consolidate_every
         self._stores_since_consolidation: int = 0
@@ -611,7 +626,16 @@ class MemoryLayer:
             .astype(np.float32)
         )
         faiss.normalize_L2(matrix)
-        index = faiss.IndexFlatIP(self._embed_dim)
+        if self._faiss_index_type == "hnsw":
+            index = faiss.IndexHNSWFlat(
+                self._embed_dim,
+                self._faiss_hnsw_m,
+                faiss.METRIC_INNER_PRODUCT,
+            )
+            index.hnsw.efConstruction = self._faiss_hnsw_ef_construction
+            index.hnsw.efSearch = self._faiss_hnsw_ef_search
+        else:
+            index = faiss.IndexFlatIP(self._embed_dim)
         index.add(matrix)
         self._faiss_index = index
 

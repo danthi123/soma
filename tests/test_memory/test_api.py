@@ -346,6 +346,39 @@ def test_graph_rerank_threads_query_text_into_activation(embedder) -> None:
     ], seen_texts
 
 
+def test_faiss_index_type_invalid_raises(embedder) -> None:
+    tokenizer, encoder = embedder
+    with pytest.raises(ValueError, match="faiss_index_type"):
+        MemoryLayer(
+            tokenizer=tokenizer, encoder=encoder, faiss_index_type="banana",
+        )
+
+
+def test_faiss_hnsw_backend_returns_top_k(embedder) -> None:
+    """HNSW backend returns the same top-k structure as flat (lower-N regression)."""
+    tokenizer, encoder = embedder
+    # Force the FAISS path by lowering threshold; HNSW with N=20 is silly
+    # in production but exercises the code path here.
+    mem = MemoryLayer(
+        tokenizer=tokenizer,
+        encoder=encoder,
+        faiss_threshold=10,
+        faiss_index_type="hnsw",
+        faiss_hnsw_m=8,
+        faiss_hnsw_ef_search=16,
+    )
+    for i in range(20):
+        mem.store(f"fact number {i}: about topic {i % 4}")
+
+    hits = mem.retrieve("topic 2", k=3)
+    assert len(hits) == 3
+    assert all(isinstance(h.score, float) for h in hits)
+    scores = [h.score for h in hits]
+    assert scores == sorted(scores, reverse=True), (
+        "HNSW retrieval results must be sorted by score descending"
+    )
+
+
 def test_store_empty_text_raises(embedder) -> None:
     tokenizer, encoder = embedder
     mem = MemoryLayer(tokenizer=tokenizer, encoder=encoder)

@@ -115,12 +115,31 @@ def main() -> None:
     for n in sorted(args.points):
         facts = all_facts[:n]
         print(f"\n=== N = {n} ===")
-        rows.append(_run_system("soma", SomaAdapter(use_sbert=True), facts, probes))
+        rows.append(_run_system(
+            "soma-flat", SomaAdapter(use_sbert=True), facts, probes,
+        ))
+        # Force HNSW activation at every scale point (default threshold
+        # is 10K) so the benchmark can compare backends across the
+        # whole range, not only above 10K.
+        rows.append(_run_system(
+            "soma-hnsw",
+            SomaAdapter(
+                use_sbert=True,
+                faiss_index_type="hnsw",
+                faiss_threshold=500,
+            ),
+            facts, probes,
+        ))
         rows.append(_run_system("chroma", ChromaAdapter(), facts, probes))
-        r_soma, r_chroma = rows[-2], rows[-1]
+        r_flat = rows[-3]
+        r_hnsw = rows[-2]
+        r_chroma = rows[-1]
+        cf = r_chroma.retrieve_avg_ms / max(r_flat.retrieve_avg_ms, 1e-3)
+        ch = r_chroma.retrieve_avg_ms / max(r_hnsw.retrieve_avg_ms, 1e-3)
+        fh = r_flat.retrieve_avg_ms / max(r_hnsw.retrieve_avg_ms, 1e-3)
         print(
-            f"  SOMA vs Chroma: disk {r_chroma.disk_kb / max(r_soma.disk_kb, 1):.1f}x, "
-            f"retrieve {r_chroma.retrieve_avg_ms / max(r_soma.retrieve_avg_ms, 1e-3):.1f}x"
+            f"  retrieve ratios — chroma/flat={cf:.2f}x "
+            f"chroma/hnsw={ch:.2f}x flat/hnsw={fh:.2f}x"
         )
 
     lines = [
@@ -142,15 +161,16 @@ def main() -> None:
 
     sizes = sorted({r.n for r in rows})
     for n in sizes:
-        soma = next(r for r in rows if r.n == n and r.system == "soma")
+        flat = next(r for r in rows if r.n == n and r.system == "soma-flat")
+        hnsw = next(r for r in rows if r.n == n and r.system == "soma-hnsw")
         chroma = next(r for r in rows if r.n == n and r.system == "chroma")
         lines.append(
-            f"- **N = {n}:** disk "
-            f"{chroma.disk_kb / max(soma.disk_kb, 1):.1f}× smaller, "
-            f"retrieve {chroma.retrieve_avg_ms / max(soma.retrieve_avg_ms, 1e-3):.1f}× "
-            f"faster, store "
-            f"{chroma.store_avg_ms / max(soma.store_avg_ms, 1e-3):.1f}× faster "
-            "for SOMA."
+            f"- **N = {n}:** SOMA-flat: disk "
+            f"{chroma.disk_kb / max(flat.disk_kb, 1):.1f}× smaller, "
+            f"store {chroma.store_avg_ms / max(flat.store_avg_ms, 1e-3):.1f}× faster, "
+            f"retrieve {chroma.retrieve_avg_ms / max(flat.retrieve_avg_ms, 1e-3):.2f}× "
+            f"vs Chroma. SOMA-hnsw: retrieve "
+            f"{chroma.retrieve_avg_ms / max(hnsw.retrieve_avg_ms, 1e-3):.2f}× vs Chroma."
         )
 
     lines += [

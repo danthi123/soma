@@ -31,6 +31,8 @@ class SomaAdapter(BaseMemorySystem):
         auto_consolidate_every: int = 0,
         graph_rerank_alpha: float = 0.0,
         graph_rerank_stable_capture: bool = True,
+        faiss_index_type: str = "flat",
+        faiss_threshold: int = 10_000,
     ) -> None:
         self._use_sbert = use_sbert
         self._attach_soma = attach_soma
@@ -38,6 +40,8 @@ class SomaAdapter(BaseMemorySystem):
         self._auto_consolidate_every = auto_consolidate_every
         self._graph_rerank_alpha = graph_rerank_alpha
         self._graph_rerank_stable_capture = graph_rerank_stable_capture
+        self._faiss_index_type = faiss_index_type
+        self._faiss_threshold = faiss_threshold
         self._mem: MemoryLayer | None = None
         self._bundle_path: Path | None = None
 
@@ -47,6 +51,8 @@ class SomaAdapter(BaseMemorySystem):
             self._mem._auto_consolidate_every = self._auto_consolidate_every
             self._mem._graph_rerank_alpha = self._graph_rerank_alpha
             self._mem._graph_rerank_stable_capture = self._graph_rerank_stable_capture
+            self._mem._faiss_index_type = self._faiss_index_type
+            self._mem._faiss_threshold = self._faiss_threshold
         else:
             from soma.io.text_encoder import TextEncoder, train_bpe_tokenizer
 
@@ -58,6 +64,8 @@ class SomaAdapter(BaseMemorySystem):
                 auto_consolidate_every=self._auto_consolidate_every,
                 graph_rerank_alpha=self._graph_rerank_alpha,
                 graph_rerank_stable_capture=self._graph_rerank_stable_capture,
+                faiss_index_type=self._faiss_index_type,
+                faiss_threshold=self._faiss_threshold,
             )
         if self._attach_soma:
             from soma.core.config import SOMAConfig

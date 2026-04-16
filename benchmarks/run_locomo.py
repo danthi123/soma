@@ -39,7 +39,7 @@ from benchmarks.datasets.locomo import (
     turns_for_sample,
 )
 from benchmarks.harness.adapters.chroma import ChromaAdapter
-from benchmarks.harness.adapters.soma import SomaAdapter
+from benchmarks.harness.adapters.soma import ConversationalSomaAdapter, SomaAdapter
 
 K_VALUES: tuple[int, ...] = (1, 5, 10)
 
@@ -54,6 +54,8 @@ class LoCoMoResult:
     store_total_s: float
     retrieve_avg_ms: float
     disk_kb: float
+    facts_stored: int = 0
+    turns_processed: int = 0
 
 
 def _score_recall(retrieved_dia_ids: list[str], evidence: list[str], k: int) -> float:
@@ -123,6 +125,9 @@ def _run_one_system(
         for cat, by_k in cat_sums.items()
     }
     disk = adapter.disk_footprint_bytes() / 1024.0
+    # Conversational adapter exposes extraction counters; defaults to 0.
+    facts_stored = int(getattr(adapter, "facts_stored", 0))
+    turns_processed = int(getattr(adapter, "turns_processed", 0))
     adapter.teardown()
 
     return LoCoMoResult(
@@ -134,14 +139,20 @@ def _run_one_system(
         store_total_s=store_total,
         retrieve_avg_ms=sum(retrieve_times) * 1000 / max(1, len(retrieve_times)),
         disk_kb=disk,
+        facts_stored=facts_stored,
+        turns_processed=turns_processed,
     )
 
 
-def _format_main_table(results: list[LoCoMoResult]) -> str:
+def _format_main_table(
+    results: list[LoCoMoResult], *, show_facts: bool = False
+) -> str:
     header_cols = ["System"] + [f"R@{k}" for k in K_VALUES] + [
         "Retrieve (ms)", "Store total (s)", "Disk (MB)",
     ]
-    sep = ["---"] + [":---:"] * (len(K_VALUES) + 3)
+    if show_facts:
+        header_cols.append("Facts / turns")
+    sep = ["---"] + [":---:"] * (len(header_cols) - 1)
     lines = [
         "| " + " | ".join(header_cols) + " |",
         "| " + " | ".join(sep) + " |",
@@ -155,6 +166,13 @@ def _format_main_table(results: list[LoCoMoResult]) -> str:
             f"{r.store_total_s:.1f}",
             f"{r.disk_kb / 1024:.1f}",
         ])
+        if show_facts:
+            if r.turns_processed > 0:
+                cells.append(
+                    f"{r.facts_stored} / {r.turns_processed}"
+                )
+            else:
+                cells.append("-")
         lines.append("| " + " | ".join(cells) + " |")
     return "\n".join(lines)
 
@@ -183,6 +201,16 @@ def main() -> None:
         type=Path,
         default=Path("benchmarks/reports/locomo.md"),
     )
+    p.add_argument(
+        "--conversational",
+        action="store_true",
+        help=(
+            "Run the --conversational variant: wraps the SOMA adapter in "
+            "ConversationalMemory so every turn goes through LLM-driven "
+            "fact extraction + reconciliation. Requires an LLM backend "
+            "reachable via the SOMA_LLM_BACKEND env (see soma.llm)."
+        ),
+    )
     args = p.parse_args()
 
     print("Loading LoCoMo dataset...")
@@ -193,16 +221,32 @@ def main() -> None:
         f"{len(queries)} queries with evidence."
     )
 
-    systems = [
-        ("soma-flat", SomaAdapter(use_sbert=True)),
-        (
-            "soma-hnsw",
-            SomaAdapter(
-                use_sbert=True, faiss_index_type="hnsw", faiss_threshold=500,
+    if args.conversational:
+        from soma.llm import backend_from_env
+
+        llm = backend_from_env()
+        systems = [
+            ("soma-flat", SomaAdapter(use_sbert=True)),
+            (
+                "soma-conversational",
+                ConversationalSomaAdapter(
+                    llm=llm, session_id="locomo", summary_every=20,
+                ),
             ),
-        ),
-        ("chroma", ChromaAdapter()),
-    ]
+            ("chroma", ChromaAdapter()),
+        ]
+        args.out = args.out.with_name("locomo_conversational.md")
+    else:
+        systems = [
+            ("soma-flat", SomaAdapter(use_sbert=True)),
+            (
+                "soma-hnsw",
+                SomaAdapter(
+                    use_sbert=True, faiss_index_type="hnsw", faiss_threshold=500,
+                ),
+            ),
+            ("chroma", ChromaAdapter()),
+        ]
 
     results: list[LoCoMoResult] = []
     for name, adapter in systems:
@@ -216,8 +260,10 @@ def main() -> None:
             f"retrieve={r.retrieve_avg_ms:.1f}ms"
         )
 
+    show_facts = args.conversational
+    title_suffix = " — conversational mode" if args.conversational else ""
     lines = [
-        "# LoCoMo Retrieval Benchmark — SOMA vs Chroma",
+        f"# LoCoMo Retrieval Benchmark — SOMA vs Chroma{title_suffix}",
         "",
         f"**Dataset:** LoCoMo (Maharana et al. 2024) — {len(samples)} "
         f"conversations, {len(turns)} dialogue turns, "
@@ -233,7 +279,7 @@ def main() -> None:
         "",
         "## Headline",
         "",
-        _format_main_table(results),
+        _format_main_table(results, show_facts=show_facts),
         "",
         "## Recall@5 by Question Category",
         "",

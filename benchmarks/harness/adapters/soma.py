@@ -7,7 +7,7 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-from soma.memory import MemoryLayer
+from soma.memory import ConversationalMemory, MemoryLayer
 
 from .base import BaseMemorySystem, BenchmarkHit
 
@@ -150,6 +150,123 @@ class SomaAdapter(BaseMemorySystem):
         return sum(
             f.stat().st_size for f in self._bundle_path.rglob("*") if f.is_file()
         )
+
+    def teardown(self) -> None:
+        self.clear()
+
+
+class ConversationalSomaAdapter(SomaAdapter):
+    """SomaAdapter + ConversationalMemory wrapper for the LoCoMo benchmark.
+
+    Same interface as :class:`SomaAdapter` so the harness runner can
+    swap one for the other via ``run_locomo.py --conversational``.
+    ``store(text)`` routes through ``ConversationalMemory.add_message``
+    (with a ``role="user"`` default) so every turn triggers fact
+    extraction and reconciliation. ``retrieve(query)`` goes through
+    ``ConversationalMemory.retrieve`` so superseded entries are
+    filtered out by default.
+
+    Reports the per-run "facts stored / turns processed" ratio so the
+    report can surface how much structure the LLM pulled out of raw
+    turns.
+    """
+
+    name = "soma-conversational"
+
+    def __init__(
+        self,
+        *,
+        llm: Any,
+        session_id: str | None = None,
+        summary_every: int = 20,
+        near_dup_threshold: float = 0.92,
+        ambiguous_threshold: float = 0.75,
+        embed_fn: Any = None,
+        embed_dim: int | None = None,
+        **soma_kwargs: Any,
+    ) -> None:
+        # embed_fn path is used in tests; production runs go through
+        # sbert via the parent's prepare().
+        use_sbert = embed_fn is None
+        super().__init__(use_sbert=use_sbert, **soma_kwargs)
+        self._llm = llm
+        self._cm_session_id = session_id or "locomo"
+        self._summary_every = summary_every
+        self._near_dup_threshold = near_dup_threshold
+        self._ambiguous_threshold = ambiguous_threshold
+        self._embed_fn = embed_fn
+        self._embed_dim = embed_dim
+        self._cm: ConversationalMemory | None = None
+        self.facts_stored: int = 0
+        self.turns_processed: int = 0
+
+    def prepare(self) -> None:
+        if self._embed_fn is not None:
+            assert self._embed_dim is not None
+            self._mem = MemoryLayer(
+                embed_fn=self._embed_fn, embed_dim=self._embed_dim,
+            )
+        else:
+            super().prepare()
+        assert self._mem is not None
+        self._cm = ConversationalMemory(
+            memory=self._mem,
+            llm=self._llm,
+            session_id=self._cm_session_id,
+            summary_every=self._summary_every,
+            near_dup_threshold=self._near_dup_threshold,
+            ambiguous_threshold=self._ambiguous_threshold,
+        )
+        self.facts_stored = 0
+        self.turns_processed = 0
+
+    def store(
+        self, text: str, metadata: dict[str, Any] | None = None
+    ) -> str:
+        """Route turns through ConversationalMemory so extract + reconcile fire.
+
+        Returns a stable id — we reuse the raw turn's node_id for the
+        harness's evidence-matching (the turn is still stored verbatim;
+        the fact/summary extras are additive).
+        """
+        assert self._cm is not None
+        assert self._mem is not None
+        # Pre-count facts so we can attribute new ones to this turn.
+        before_facts = sum(
+            1 for m in self._mem._metadatas if m.get("type") == "fact"
+        )
+        # Speaker defaults to "user" so fact extraction always fires on
+        # LoCoMo turns; the benchmark's speaker field is in metadata.
+        role = "user"
+        self._cm.add_message(role, text, metadata=metadata or {})
+        after_facts = sum(
+            1 for m in self._mem._metadatas if m.get("type") == "fact"
+        )
+        self.facts_stored += max(0, after_facts - before_facts)
+        self.turns_processed += 1
+        # Return the raw turn's id (last entry with type=turn for this session).
+        for nid in reversed(self._mem._ids):
+            meta = self._mem.get(nid).metadata if self._mem.get(nid) else {}
+            if meta.get("type") == "turn":
+                return nid
+        return ""
+
+    def retrieve(self, query: str, k: int = 5) -> list[BenchmarkHit]:
+        assert self._cm is not None
+        hits = self._cm.retrieve(query, k=k)
+        return [
+            BenchmarkHit(
+                text=h.text,
+                score=h.score,
+                metadata=h.metadata,
+                node_id=h.node_id,
+            )
+            for h in hits
+        ]
+
+    def clear(self) -> None:
+        self._cm = None
+        super().clear()
 
     def teardown(self) -> None:
         self.clear()

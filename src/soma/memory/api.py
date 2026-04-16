@@ -455,6 +455,89 @@ class MemoryLayer:
 
         return cls(embed_fn=_embed, embed_dim=dim, device=device)
 
+    @classmethod
+    def ephemeral(
+        cls,
+        *,
+        embed_fn: EmbedFn | None = None,
+        embed_dim: int | None = None,
+        sbert_model: str | None = None,
+        **kwargs: Any,
+    ) -> MemoryLayer:
+        """Create a MemoryLayer with no WAL / no on-disk state.
+
+        Reads never touch disk; writes stay in RAM until the caller opts
+        into persistence via :meth:`save`. Right for notebooks, REPLs,
+        short agent runs, and tests. For long-lived services use the
+        default :class:`MemoryLayer` constructor with ``bundle_path=``.
+
+        Call modes:
+
+        - ``MemoryLayer.ephemeral(embed_fn=fn, embed_dim=32)`` — supply a
+          custom embed closure (same contract as the main constructor).
+        - ``MemoryLayer.ephemeral(sbert_model="all-MiniLM-L6-v2")`` —
+          convenience parallel to :meth:`with_sbert`; resolves to an
+          sbert-backed embed closure behind the scenes.
+        - Extra ``**kwargs`` pass through to the constructor (e.g.
+          ``device=``, ``faiss_index_type=``). ``bundle_path`` and
+          ``durability`` are reserved — passing them raises.
+
+        Persistence is one-shot via :meth:`save`; the result is a normal
+        on-disk bundle that :meth:`load` can rehydrate the next session.
+        """
+        if "bundle_path" in kwargs:
+            raise TypeError(
+                "MemoryLayer.ephemeral() does not accept bundle_path; "
+                "use the MemoryLayer() constructor directly for on-disk mode."
+            )
+        if "durability" in kwargs:
+            raise TypeError(
+                "MemoryLayer.ephemeral() does not accept durability; "
+                "durability only applies when a bundle_path is attached."
+            )
+        if sbert_model is not None:
+            if embed_fn is not None or embed_dim is not None:
+                raise ValueError(
+                    "Pass either sbert_model= OR (embed_fn=, embed_dim=), not both."
+                )
+            try:
+                from sentence_transformers import SentenceTransformer
+            except ImportError as exc:
+                raise ImportError(
+                    "MemoryLayer.ephemeral(sbert_model=...) requires "
+                    "sentence-transformers. Install with: pip install "
+                    "sentence-transformers"
+                ) from exc
+            model = SentenceTransformer(sbert_model)
+            raw_dim = model.get_sentence_embedding_dimension()
+            if raw_dim is None:
+                raise ValueError(
+                    f"SentenceTransformer({sbert_model!r}) has no reported "
+                    "embedding dimension; cannot build MemoryLayer."
+                )
+            resolved_dim = int(raw_dim)
+
+            def _embed(text: str) -> torch.Tensor:
+                return torch.tensor(model.encode(text, convert_to_numpy=True))
+
+            return cls(
+                embed_fn=_embed,
+                embed_dim=resolved_dim,
+                bundle_path=None,
+                **kwargs,
+            )
+        if embed_fn is None:
+            raise ValueError(
+                "MemoryLayer.ephemeral() needs either embed_fn= (+ embed_dim=) "
+                "or sbert_model=."
+            )
+        return cls(
+            embed_fn=embed_fn,
+            embed_dim=embed_dim,
+            bundle_path=None,
+            **kwargs,
+        )
+
     # ------------------------------------------------------------------
     # SOMA graph attachment (optional)
     # ------------------------------------------------------------------

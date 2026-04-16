@@ -75,9 +75,7 @@ class MemoryLayer:
         device: torch.device | str | None = None,
     ) -> None:
         if embed_fn is None and encoder is None:
-            raise ValueError(
-                "MemoryLayer needs either (tokenizer + encoder) or embed_fn"
-            )
+            raise ValueError("MemoryLayer needs either (tokenizer + encoder) or embed_fn")
         self._tokenizer = tokenizer
         self._encoder = encoder
         self._custom_embed_fn = embed_fn
@@ -244,18 +242,16 @@ class MemoryLayer:
         """
         if self._soma is None:
             return 0
-        from soma.training.verbalizer_bootstrap import text_to_state
-
-        soma_output_dim = int(self._soma.config.sensor_output_dim)
         processed = 0
         for text in self._texts:
-            text_to_state(
-                text=text,
-                soma=self._soma,
-                tokenizer=self._soma_tokenizer,
-                encoder=self._soma_encoder,
-                soma_output_dim=soma_output_dim,
-            )
+            token_embeddings = self._soma_encoder.encode(text)
+            if len(token_embeddings) < 2:
+                continue
+            detached = [e.detach() for e in token_embeddings]
+            for i in range(len(detached) - 1):
+                inputs = {"text": detached[i]}
+                targets = {"text": detached[i + 1]}
+                self._soma.step(inputs, targets=targets, eval_mode=False)
             processed += 1
         return processed
 
@@ -294,7 +290,10 @@ class MemoryLayer:
                     "timestamp_step": ts,
                 }
                 for nid, txt, md, ts in zip(
-                    self._ids, self._texts, self._metadatas, self._timestamps,
+                    self._ids,
+                    self._texts,
+                    self._metadatas,
+                    self._timestamps,
                     strict=True,
                 )
             ],
@@ -302,7 +301,8 @@ class MemoryLayer:
         if has_encoder:
             index["max_seq_len"] = int(self._encoder.max_seq_len)
         (out / "memory_index.json").write_text(
-            json.dumps(index, indent=2), encoding="utf-8",
+            json.dumps(index, indent=2),
+            encoding="utf-8",
         )
 
     @classmethod
@@ -350,7 +350,9 @@ class MemoryLayer:
                 device=device,
             )
             encoder_state = torch.load(
-                encoder_path, map_location=device or "cpu", weights_only=True,
+                encoder_path,
+                map_location=device or "cpu",
+                weights_only=True,
             )
             encoder.load_state_dict(encoder_state)
             instance = cls(tokenizer=tokenizer, encoder=encoder, device=device)
@@ -361,7 +363,9 @@ class MemoryLayer:
                     "same embed_fn to load()."
                 )
             instance = cls(
-                embed_fn=embed_fn, embed_dim=embed_dim, device=device,
+                embed_fn=embed_fn,
+                embed_dim=embed_dim,
+                device=device,
             )
         instance._step = int(index.get("step", 0))
         embeddings = torch.load(embeddings_path, map_location=device or "cpu", weights_only=True)

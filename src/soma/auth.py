@@ -40,6 +40,7 @@ Operational notes:
 
 from __future__ import annotations
 
+import re
 import secrets
 import uuid
 from dataclasses import dataclass, field
@@ -57,6 +58,8 @@ __all__ = [
     "Principal",
     "generate_secret",
     "issue_token",
+    "parse_ttl_spec",
+    "refresh_token",
     "verify_token",
 ]
 
@@ -254,3 +257,126 @@ def verify_token(
 def generate_secret() -> str:
     """Return a fresh 32-byte urlsafe-b64 shared secret for HS256."""
     return secrets.token_urlsafe(32)
+
+
+# ---------------------------------------------------------------------
+# Phase 23 — refresh-token helper + shared TTL-spec parser.
+# ---------------------------------------------------------------------
+_TTL_SPEC_RE = re.compile(r"^(\d+)([dhm])$")
+
+
+def parse_ttl_spec(spec: str) -> timedelta:
+    """Parse ``30d | 24h | 60m`` shorthand into :class:`timedelta`.
+
+    Lives on ``soma.auth`` so both the CLI (``soma auth issue --expires``)
+    and the server (``SOMA_JWT_REFRESH_TTL`` / ``SOMA_JWT_MAX_TTL`` env
+    vars) share one grammar. Raises :class:`ValueError` on any malformed
+    spec — CLI callers surface it as exit=2, server callers trap it and
+    fall back to the original token's window.
+    """
+    m = _TTL_SPEC_RE.match(spec.strip())
+    if not m:
+        raise ValueError(
+            f"invalid TTL spec {spec!r}; expected NUMBER + unit (d|h|m), e.g. 30d"
+        )
+    n, unit = int(m.group(1)), m.group(2)
+    if n <= 0:
+        raise ValueError(f"TTL must be positive; got {spec!r}")
+    if unit == "d":
+        return timedelta(days=n)
+    if unit == "h":
+        return timedelta(hours=n)
+    return timedelta(minutes=n)
+
+
+def refresh_token(
+    current_token: str,
+    *,
+    alg: str = "HS256",
+    secret: str | None = None,
+    private_key_pem: bytes | None = None,
+    public_key_pem: bytes | None = None,
+    leeway: int = 60,
+    issuer: str | None = "soma",
+    blocklist: BlocklistBackend | None = None,
+    expected_audience: str | None = None,
+    new_expires_in: timedelta | None = None,
+    max_expires_in: timedelta | None = None,
+) -> str:
+    """Verify ``current_token`` and mint a fresh one with the same claims.
+
+    Preserves ``sub``, per-bundle ``bundles``, and ``aud`` (when present
+    on the original). Always allocates a **fresh** ``jti`` so a future
+    revoke of the old id doesn't invalidate the new one — pinned in
+    tests, deliberate security property.
+
+    Raises the same exceptions as :func:`verify_token` on an expired,
+    revoked, or otherwise invalid current token (subclasses of
+    :class:`jwt.InvalidTokenError`). Callers catch the base class.
+
+    Signing material lookup mirrors :func:`issue_token`:
+
+    - HS256: ``secret`` is used for both verification and signing.
+    - RS256: ``public_key_pem`` verifies the current token, and
+      ``private_key_pem`` signs the new one. Servers that only hold the
+      public key (read-only verification fleet) cannot call this — they
+      must route refresh requests to the signing node instead.
+
+    ``new_expires_in`` (optional) sets the new token's TTL. When unset
+    (default), the new token reuses the original's ``exp - iat`` window
+    so callers get the conservative "same lifetime, fresh exp" behaviour.
+
+    ``max_expires_in`` (optional) caps the TTL — protects against runaway
+    token lifetimes when an operator accidentally sets a huge
+    ``SOMA_JWT_REFRESH_TTL``. Applied AFTER ``new_expires_in`` resolution.
+    """
+    # Step 1: verify the current token. Any InvalidTokenError subclass
+    # (expired, revoked, bad signature, missing exp, wrong aud) bubbles
+    # straight out — caller decides whether to translate to a 401.
+    principal = verify_token(
+        current_token,
+        alg=alg,
+        secret=secret,
+        public_key_pem=public_key_pem if alg == "RS256" else None,
+        leeway=leeway,
+        issuer=issuer,
+        blocklist=blocklist,
+        expected_audience=expected_audience,
+    )
+
+    # Step 2: decode the signed claims again — this time to recover the
+    # exp/iat window and any optional ``aud`` claim, neither of which is
+    # surfaced on the Principal. Signature has already been checked by
+    # verify_token above; a fresh decode with verify_signature=False is
+    # the standard pyjwt idiom for "read extra claims from a trusted
+    # token".
+    raw_claims = jwt.decode(current_token, options={"verify_signature": False})
+    original_exp = int(raw_claims.get("exp", 0))
+    original_iat = int(raw_claims.get("iat", 0))
+    original_window = original_exp - original_iat
+    audience = raw_claims.get("aud")
+
+    # Step 3: resolve new TTL. Default to the original window; override
+    # if the caller passed new_expires_in; cap at max_expires_in.
+    if new_expires_in is not None:
+        new_ttl = new_expires_in
+    elif original_window > 0:
+        new_ttl = timedelta(seconds=original_window)
+    else:
+        # Degenerate token with exp <= iat (shouldn't happen — verify
+        # already rejected exp-less tokens — but belt-and-suspenders).
+        new_ttl = timedelta(minutes=5)
+    if max_expires_in is not None and new_ttl > max_expires_in:
+        new_ttl = max_expires_in
+
+    # Step 4: mint. issue_token allocates a fresh jti automatically.
+    return issue_token(
+        sub=principal.sub,
+        bundles=principal.bundles,
+        expires_in=new_ttl,
+        alg=alg,
+        secret=secret,
+        private_key_pem=private_key_pem,
+        issuer=issuer if issuer is not None else "soma",
+        audience=audience if isinstance(audience, str) else None,
+    )

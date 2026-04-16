@@ -21,6 +21,8 @@ from soma.auth import (
     Principal,
     generate_secret,
     issue_token,
+    parse_ttl_spec,
+    refresh_token,
     verify_token,
 )
 
@@ -341,6 +343,164 @@ def test_aud_set_on_token_but_verifier_unset_still_passes() -> None:
     )
     principal = verify_token(token, secret=SECRET)
     assert principal.sub == "a"
+
+
+# ------------------------------------------------------------------
+# Phase 23 — refresh_token helper + parse_ttl_spec grammar
+# ------------------------------------------------------------------
+def test_parse_ttl_spec_shapes() -> None:
+    assert parse_ttl_spec("30d") == timedelta(days=30)
+    assert parse_ttl_spec("24h") == timedelta(hours=24)
+    assert parse_ttl_spec("60m") == timedelta(minutes=60)
+    # Whitespace trimmed.
+    assert parse_ttl_spec("  5m ") == timedelta(minutes=5)
+
+
+def test_parse_ttl_spec_rejects_garbage() -> None:
+    for bad in ("", "0d", "-1h", "7", "7x", "abc", "1.5h"):
+        with pytest.raises(ValueError):
+            parse_ttl_spec(bad)
+
+
+def test_refresh_round_trip_preserves_claims() -> None:
+    """sub, bundles, and (if present) aud carry over; jti must be fresh."""
+    t1 = issue_token(
+        sub="alex",
+        bundles={"alex": ["read", "write"], "bobbi": ["read"]},
+        expires_in=timedelta(hours=1),
+        secret=SECRET,
+    )
+    t2 = refresh_token(t1, secret=SECRET)
+    p1 = verify_token(t1, secret=SECRET)
+    p2 = verify_token(t2, secret=SECRET)
+    assert p1.sub == p2.sub == "alex"
+    assert p1.bundles == p2.bundles == {"alex": ["read", "write"], "bobbi": ["read"]}
+    # Fresh jti — pinned security property.
+    assert p1.jti is not None
+    assert p2.jti is not None
+    assert p1.jti != p2.jti
+
+
+def test_refresh_extends_exp() -> None:
+    """The refreshed token's exp sits in the future relative to the old one.
+
+    With ``new_expires_in=None`` the new window matches the original
+    exp-iat delta, but since iat advances when we mint, new exp > old exp.
+    """
+    t1 = issue_token(
+        sub="a",
+        bundles={},
+        expires_in=timedelta(minutes=30),
+        secret=SECRET,
+    )
+    old_claims = jwt.decode(t1, SECRET, algorithms=["HS256"])
+    t2 = refresh_token(t1, secret=SECRET)
+    new_claims = jwt.decode(t2, SECRET, algorithms=["HS256"])
+    assert new_claims["exp"] >= old_claims["exp"]
+    # The new iat is at or after the old iat — monotonic clock.
+    assert new_claims["iat"] >= old_claims["iat"]
+
+
+def test_refresh_rejects_expired_token() -> None:
+    t = issue_token(
+        sub="a",
+        bundles={},
+        expires_in=timedelta(minutes=-10),
+        secret=SECRET,
+    )
+    with pytest.raises(jwt.InvalidTokenError):
+        refresh_token(t, secret=SECRET)
+
+
+def test_refresh_rejects_revoked_token(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    import time
+
+    from soma.auth_revocation import FileBlocklist, RevocationRecord
+
+    t = issue_token(
+        sub="a",
+        bundles={"a": ["read"]},
+        expires_in=timedelta(minutes=5),
+        secret=SECRET,
+    )
+    principal = verify_token(t, secret=SECRET)
+    assert principal.jti is not None
+    bl = FileBlocklist(tmp_path / "bl.jsonl")
+    now = int(time.time())
+    bl.add(
+        RevocationRecord(
+            jti=principal.jti,
+            revoked_at=now,
+            reason="leaked",
+            exp=now + 600,
+        )
+    )
+    with pytest.raises(jwt.InvalidTokenError) as exc:
+        refresh_token(t, secret=SECRET, blocklist=bl)
+    assert "revoked" in str(exc.value).lower()
+
+
+def test_refresh_preserves_audience_when_present() -> None:
+    t1 = issue_token(
+        sub="a",
+        bundles={"a": ["read"]},
+        expires_in=timedelta(minutes=5),
+        secret=SECRET,
+        audience="svc-A",
+    )
+    t2 = refresh_token(t1, secret=SECRET, expected_audience="svc-A")
+    # The new token must verify against the same audience.
+    principal = verify_token(t2, secret=SECRET, expected_audience="svc-A")
+    assert principal.sub == "a"
+
+
+def test_refresh_default_ttl_matches_original_window() -> None:
+    """Without new_expires_in, refreshed exp-iat ~= original exp-iat."""
+    orig_window = 3600  # 1 hour in seconds
+    t1 = issue_token(
+        sub="a",
+        bundles={},
+        expires_in=timedelta(seconds=orig_window),
+        secret=SECRET,
+    )
+    t2 = refresh_token(t1, secret=SECRET)
+    c2 = jwt.decode(t2, SECRET, algorithms=["HS256"])
+    new_window = int(c2["exp"]) - int(c2["iat"])
+    # Allow 2s slack for clock granularity between mint steps.
+    assert abs(new_window - orig_window) <= 2
+
+
+def test_refresh_honors_new_expires_in_override() -> None:
+    t1 = issue_token(
+        sub="a",
+        bundles={},
+        expires_in=timedelta(days=30),
+        secret=SECRET,
+    )
+    t2 = refresh_token(t1, secret=SECRET, new_expires_in=timedelta(minutes=15))
+    c2 = jwt.decode(t2, SECRET, algorithms=["HS256"])
+    new_window = int(c2["exp"]) - int(c2["iat"])
+    # 15 minutes ± 2s.
+    assert abs(new_window - 900) <= 2
+
+
+def test_refresh_honors_max_expires_in_cap() -> None:
+    """max_expires_in truncates even when new_expires_in is larger."""
+    t1 = issue_token(
+        sub="a",
+        bundles={},
+        expires_in=timedelta(days=30),
+        secret=SECRET,
+    )
+    t2 = refresh_token(
+        t1,
+        secret=SECRET,
+        new_expires_in=timedelta(days=365),
+        max_expires_in=timedelta(hours=1),
+    )
+    c2 = jwt.decode(t2, SECRET, algorithms=["HS256"])
+    new_window = int(c2["exp"]) - int(c2["iat"])
+    assert abs(new_window - 3600) <= 2
 
 
 def test_verify_ignores_blocklist_for_tokens_without_jti() -> None:

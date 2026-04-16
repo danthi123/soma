@@ -27,7 +27,6 @@ import argparse
 import atexit
 import json
 import os
-import re
 import sys
 from datetime import timedelta
 from pathlib import Path
@@ -240,28 +239,22 @@ def _cmd_version(_: argparse.Namespace) -> int:
 # ------------------------------------------------------------------
 # `soma auth` — JWT issue / verify / rotate-secret (Phase 4)
 # ------------------------------------------------------------------
-_EXPIRES_RE = re.compile(r"^(\d+)([dhm])$")
-
-
 def _parse_expires(spec: str) -> timedelta:
     """Parse ``30d|7d|24h|60m`` shorthand into :class:`timedelta`.
 
-    Raises ``ValueError`` on any malformed spec so the CLI can surface
-    a clean error rather than ``argparse``'s generic message.
+    Thin wrapper around :func:`soma.auth.parse_ttl_spec` so CLI error
+    messages keep the historical ``--expires`` phrasing. The grammar
+    lives in :mod:`soma.auth` now (Phase 23) because the server's
+    ``SOMA_JWT_REFRESH_TTL`` env parser wants the same rules.
     """
-    m = _EXPIRES_RE.match(spec.strip())
-    if not m:
-        raise ValueError(
-            f"invalid --expires {spec!r}; expected NUMBER + unit (d|h|m), e.g. 30d"
-        )
-    n, unit = int(m.group(1)), m.group(2)
-    if n <= 0:
-        raise ValueError(f"--expires must be positive; got {spec!r}")
-    if unit == "d":
-        return timedelta(days=n)
-    if unit == "h":
-        return timedelta(hours=n)
-    return timedelta(minutes=n)
+    from soma.auth import parse_ttl_spec
+
+    try:
+        return parse_ttl_spec(spec)
+    except ValueError as exc:
+        # Re-raise with the CLI-flavoured preamble.
+        msg = str(exc).replace("TTL spec", "--expires").replace("TTL", "--expires")
+        raise ValueError(msg) from exc
 
 
 def _parse_bundle_spec(spec: str) -> tuple[str, list[str]]:

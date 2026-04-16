@@ -7,9 +7,10 @@ else (ids, texts, metadata, timestamps, WAL, BM25, cross-encoder
 rerank, graph-aware retrieval) stays inside MemoryLayer regardless of
 which backend is attached.
 
-Two adapters ship in-tree:
+Three adapters ship in-tree:
 
 - **`InProcBackend`** (default, zero new deps)
+- **`LanceDBBackend`** (optional extra: `pip install soma[lancedb]`)
 - **`QdrantBackend`** (optional extra: `pip install soma[qdrant]`)
 
 Swapping adapters does not change MemoryLayer's Python-facing API:
@@ -23,13 +24,15 @@ live and how the query runs.
 | --- | --- | --- |
 | Local agent, <=100K entries | `InProcBackend` (flat) | Exact recall, no setup, no network |
 | Local agent, 100K-1M entries | `InProcBackend` (hnsw) | Fast ANN, still no deps beyond FAISS |
+| Local agent, 1M+ entries, durable on-disk, no server | **`LanceDBBackend`** | Embedded, arrow-native, 10M+ scale |
 | Local agent, <=20K entries, want durable on-disk | `QdrantBackend(mode="local")` | Single-file persistence, survives process restarts |
-| Production agent, >20K or multi-host | **`QdrantBackend(mode="http")`** | Horizontal scale, real durability, multi-tenant |
+| Production agent, multi-host | **`QdrantBackend(mode="http")`** | Horizontal scale, multi-tenant, over-the-wire |
 | Quick tests / CI | `QdrantBackend(mode="memory")` | Embedded in-process, volatile |
 
 **Rule of thumb:** start with `InProcBackend`. Switch to
-`QdrantBackend(mode="http")` when you cross 100K entries per bundle
-or need multiple processes sharing the same memory.
+`LanceDBBackend` when you want persistence past 20K without running
+a server; switch to `QdrantBackend(mode="http")` when you need
+multi-host or multi-tenant scale.
 
 ## Protocol
 
@@ -100,6 +103,107 @@ keep loading without migration.
   worker rebuilds its own FAISS index.
 - Con: memory-resident — `ntotal * dim * 4 bytes` in RAM at all
   times. 1M entries at 384-dim = ~1.5 GB.
+
+## LanceDBBackend
+
+Install: `pip install soma[lancedb]`.
+
+```python
+from soma.memory.api import MemoryLayer
+from soma.memory.backends.lancedb import LanceDBBackend
+
+backend = LanceDBBackend(
+    path="./lancedb_data",
+    dim=384,
+    table_name="prod_agent",
+    index_type="ivf_pq",  # flat | ivf_pq | hnsw
+)
+mem = MemoryLayer.with_sbert(backend=backend)
+```
+
+**The pitch: local-first scale past Qdrant-local's 20K cap, no
+server.** LanceDB is arrow-native, columnar, and fully embedded — a
+table IS a directory on disk, which composes cleanly with SOMA's
+bundle layout. Scales to 10M+ vectors in-process with IVF-PQ or
+HNSW indexes. No daemon, no network, no Docker image to ship — same
+"one directory = one brain" story as InProc, with persistence that
+survives process restarts and doesn't balloon RAM linearly with N.
+
+### Index-type choice
+
+| Index | Recall | Query | Build | Disk | Sweet spot |
+| --- | :---: | :---: | :---: | :---: | --- |
+| `flat` | 1.0 (exact) | O(N) linear scan | instant | smallest | <=100K |
+| `ivf_pq` | 0.95-0.98 | sub-linear ANN | seconds | smallest | 100K-10M |
+| `hnsw` (`IVF_HNSW_SQ`) | 0.98-0.99 | sub-linear ANN | minutes | larger | 1M-10M |
+
+**Recommended starting defaults:** `index_type="flat"` up to 100K,
+`index_type="ivf_pq"` with `num_partitions=256`,
+`num_sub_vectors=96` past that. Index build is lazy — it fires the
+first time `ntotal` crosses `auto_index_threshold` (default 50K).
+Below the threshold, LanceDB just scans the table in sorted row
+order, which is fine at small N.
+
+### Bundle layout
+
+```
+bundle_dir/
+├── memory_index.json        # MemoryLayer entry metadata
+├── memory_embeddings.pt     # (still present for cross-backend parity;
+│                            #  LanceDB has its own copy in lancedb/)
+├── tokenizer.json           # if TextEncoder path
+├── encoder.pt               # if TextEncoder path
+├── backend.json             # {"backend": "lancedb", "dim": ..., ...}
+└── lancedb/                 # the actual LanceDB table directory —
+    ├── vectors.lance/       #   versioned append-only fragments
+    └── ...                  #   manifest + data files
+```
+
+`snapshot(bundle_dir)` compacts the LanceDB table (to shrink the
+fragment count) then copies the directory. `restore(bundle_dir)` is
+the inverse — wipe the live path, copy the bundle's `lancedb/` back,
+reopen the table. This makes the bundle fully self-contained: an
+operator can ship the directory to another machine and reopen it
+there without any re-ingest work.
+
+### Filter pushdown
+
+`LanceDBBackend.supports_filter_pushdown = True`. MemoryLayer's
+`retrieve(where=...)` delegates to the backend, which translates the
+Chroma-style dict into LanceDB's SQL-like predicate string via
+`lancedb_filter.to_lancedb_where`. Supported operators mirror
+`_COMPARE_OPS`:
+
+```python
+mem.retrieve("quantum", k=5, where={"tag": "physics"})
+mem.retrieve("2023", k=5, where={"year": {"$gte": 2020}})
+mem.retrieve("any", k=5, where={"tag": {"$in": ["a", "b", "c"]}})
+```
+
+The v1 LanceDB schema is `{id: utf8, vector: list<float32>[dim]}`.
+Metadata columns are not first-class yet (they live on MemoryLayer's
+Python side); when MemoryLayer's `_retrieve_with_filter` tries to
+push down a filter on a non-existent column the backend converts
+LanceDB's rust-side schema error into `FilterPushdownUnsupported`,
+and MemoryLayer transparently falls back to its Python pre-filter +
+`search_subset` path (which LanceDB serves via `WHERE id IN (...)`).
+The observable contract is identical across backends: only entries
+matching the filter come back.
+
+**Tradeoffs:**
+- Pro: embedded, no server — unlike Qdrant HTTP there's no daemon
+  to run or monitor.
+- Pro: on-disk from day one. RAM footprint independent of N.
+- Pro: scales well past Qdrant-local's 20K cap; tested to 10M+ in
+  LanceDB's own benchmarks.
+- Pro: arrow-native columnar storage means snapshots are small and
+  compose with pandas / polars for offline analytics.
+- Con: ANN indexes (`ivf_pq`, `hnsw`) take seconds-to-minutes to
+  build at scale. Build is lazy to avoid paying that cost until the
+  store is big enough to need it.
+- Con: metadata filters are not server-side yet — they fall back to
+  Python pre-filter + subset rank. Future work can widen the
+  table schema to mirror metadata fields for true pushdown.
 
 ## QdrantBackend
 

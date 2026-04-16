@@ -82,6 +82,15 @@ qdrant = [
     # scale path and local-file mode. See docs/backends.md.
     "qdrant-client>=1.10",
 ]
+lancedb = [
+    # LanceDBBackend adapter — optional extra. Fills the "local-first
+    # scale past Qdrant-local's 20K cap, no server" niche between
+    # InProc (RAM-bound) and Qdrant HTTP (requires infra). Arrow-native,
+    # columnar, fully embedded; a LanceDB table IS a directory on disk,
+    # which composes with SOMA's bundle layout. Install with
+    # `pip install soma[lancedb]`. See docs/backends.md.
+    "lancedb>=0.11",
+]
 langchain = [
     "langchain-core>=0.1.0",
 ]
@@ -157,5 +166,7 @@ module = [
     "uvicorn", "uvicorn.*",
     "faiss", "faiss.*",
     "qdrant_client", "qdrant_client.*",
+    "lancedb", "lancedb.*",
+    "pyarrow", "pyarrow.*",
 ]
 ignore_missing_imports = true

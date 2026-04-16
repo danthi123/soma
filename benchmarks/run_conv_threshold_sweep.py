@@ -41,9 +41,9 @@ from __future__ import annotations
 import argparse
 import statistics
 import time
-from dataclasses import dataclass, field
+from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable
 
 import torch
 
@@ -51,13 +51,11 @@ from benchmarks.datasets.locomo import (
     LoCoMoQuery,
     LoCoMoTurn,
     load_locomo,
-    turns_for_sample,
 )
 from benchmarks.harness.adapters.base import BenchmarkHit
 from benchmarks.harness.qa_eval import evaluate_qa
 from soma.llm.backends import DryRunBackend, LLMBackend
 from soma.memory import ConversationalMemory, MemoryLayer
-
 
 # Thresholds to sweep. The grid is symmetric around the shipped
 # defaults (0.92, 0.75) so we see data at the corners and can
@@ -310,7 +308,7 @@ def _recommend(rows: list[SweepRow]) -> SweepRow | None:
             continue
         if r.qa_accuracy is not None:
             quality = r.qa_accuracy
-        elif not (r.recall_at_5 != r.recall_at_5):  # not NaN
+        elif r.recall_at_5 == r.recall_at_5:  # not NaN
             quality = r.recall_at_5
         else:
             continue
@@ -502,10 +500,9 @@ def main() -> None:
     )
 
     # Build factory so each combo gets a fresh counting backend.
-    from soma.llm import backend_from_env
-
     import os
 
+    from soma.llm import backend_from_env
     from soma.llm.backends import _ollama_alive  # noqa: PLC2701
 
     has_live_backend = bool(
@@ -515,8 +512,14 @@ def main() -> None:
             os.environ.get("SOMA_LLM_BASE_URL") or "http://localhost:11434"
         )
     )
+    def _live_factory() -> LLMBackend:
+        return backend_from_env()
+
+    def _dry_factory() -> LLMBackend:
+        return DryRunBackend()
+
     if has_live_backend:
-        llm_factory: Callable[[], LLMBackend] = lambda: backend_from_env()
+        llm_factory: Callable[[], LLMBackend] = _live_factory
     else:
         print(
             "  WARNING: no live LLM backend reachable "
@@ -524,7 +527,7 @@ def main() -> None:
             "Running with DryRunBackend — the sweep will emit a "
             "smoke report; re-run with a real backend for real data."
         )
-        llm_factory = lambda: DryRunBackend()  # noqa: E731
+        llm_factory = _dry_factory
 
     responder = _pick_qa_backend()
     judge = _pick_qa_backend(args.judge_llm_name) if args.judge_llm_name else responder

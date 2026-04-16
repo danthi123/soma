@@ -24,8 +24,8 @@ from pathlib import Path
 import torch
 
 from benchmarks.run_conv_threshold_sweep import (
-    NEAR_DUP_GRID,
     AMBIGUOUS_GRID,
+    NEAR_DUP_GRID,
     SweepRow,
     render_report,
     run_sweep,
@@ -136,7 +136,6 @@ def test_sweep_grid_is_4_by_4() -> None:
 def test_sweep_produces_one_row_per_combo() -> None:
     """run_sweep emits exactly 16 rows on the 4x4 grid."""
     turns, queries = _tiny_corpus()
-    llm = _ScriptedLLM()
     rows = run_sweep(
         turns=turns,
         queries=queries,

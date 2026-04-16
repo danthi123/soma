@@ -36,7 +36,7 @@ Things that came up during the 2026-04-16 gap-closing push (Phases 1-7b) but wer
 - **Refresh-token endpoint.** Punted as OAuth-flow complexity. Source: Phase 4 plan §6. ~1 d if we build it.
 - **Per-token rate limiting.** Punted to reverse proxy. A lightweight in-proc limiter would be ~1 d.
 - ✅ ~~**Hashed-token store.**~~ Shipped in Phase 18 (`69d8e1a`, `632ea15`). Opt-in via `FileBlocklist(path, hashed=True)` or `SOMA_JWT_BLOCKLIST_HASHED=1` env. Dual-schema reader accepts legacy + new records so operators can flip without migration.
-- **Redis-backed revocation blocklist.** Optional extra `soma[redis-revocation]`. Instant propagation across workers + automatic TTL from `exp`. For multi-host / k8s deploys where the file-backed store's 30 s poll lag is too slow. ~1 d. Source: `docs/plans/2026-04-16-jwt-revocation.md`.
+- ✅ ~~**Redis-backed revocation blocklist.**~~ Shipped in Phase 20 (`14e912d`, `bb88d62`, `d7d8773`). `RedisBlocklist` alongside `FileBlocklist`; `SOMA_JWT_BLOCKLIST_REDIS_URL` env dispatch; `soma[redis-revocation]` extra; hashed-mode interop verified cross-backend.
 - ✅ ~~**Audience claim (`aud`)**~~ Shipped in Phase 18 (`708800b`, `40f9907`). `issue_token(..., audience=...)` + `verify_token(..., expected_audience=...)` + `soma auth issue --audience` + `SOMA_JWT_AUDIENCE` env.
 
 ## Tier 2 — backends (Phase 6 follow-ups)
@@ -76,8 +76,8 @@ Things that came up during the 2026-04-16 gap-closing push (Phases 1-7b) but wer
 - ✅ ~~**Prometheus sample dashboards**~~ — Shipped in Phase 9 (`3c6441c`..`fb50482`). Three RED/USE dashboards + import guide under `deploy/grafana/`.
 - ✅ ~~**`soma bundle` subcommand group**~~ — Shipped in Phase 10 (`3987062`..`e61006b`). `list` / `info` / `delete` verbs; `migrate` still deferred.
 - **`soma bundle migrate`** — schema upgrade verb for cross-version bundle migration. Not yet needed since bundle format is stable. Revisit if we break schema.
-- **Benchmark scheduler / cron** — re-run the matrix on PRs affecting `src/soma/memory/` to catch perf regressions. ~1 d.
-- **Ephemeral/in-RAM mode ergonomics.** Capability already exists (instantiate `MemoryLayer` without `bundle_path` → no WAL, pure RAM, `.save()` at session end). Worth formalising: a `MemoryLayer.ephemeral()` classmethod, a `soma chat --save-on-exit` flag, and a REST `/snapshot` endpoint for end-of-session dumps. Right for notebooks/REPLs/short agent runs; keep WAL as the default elsewhere. ~4 h.
+- ✅ ~~**Benchmark scheduler / cron**~~ Shipped in Phase 21 (`4a79903`..`c532def`). `scripts/check_bench_regressions.py` + JSON sidecar on scale/retrieval harnesses + `benchmarks/golden/*.json` snapshots + `.github/workflows/bench-regression.yml` (PR non-blocking, nightly blocking). Follow-up: dedicated `[bench]` extra in pyproject to tidy the CI install list.
+- ✅ ~~**Ephemeral/in-RAM mode ergonomics.**~~ Shipped in Phase 19 (`662606e`, `aa9b052`, `2fe6fde`). `MemoryLayer.ephemeral()` classmethod; `soma chat --ephemeral` + `--save-on-exit` flags with atexit hook; `POST /snapshot` REST endpoint with cwd-escape safety.
 
 ## Pre-existing (carried forward)
 

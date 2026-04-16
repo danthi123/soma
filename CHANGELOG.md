@@ -78,6 +78,79 @@ All notable changes to SOMA are documented here.
 - **README feature comparison**: Pluggable-vector-backends row now
   reads *yes (InProc + Qdrant + LanceDB)*.
 
+### Added — ephemeral / RAM-only mode (Phase 19)
+
+- **`MemoryLayer.ephemeral()` classmethod**: first-class idiom for
+  "RAM-only, no WAL, persist only on `.save()`". Right for notebooks,
+  REPLs, and short agent runs where durability is paid at session
+  end. Supports either a custom `embed_fn` + `embed_dim` or an
+  `sbert_model` shorthand. WAL stays the default for long-lived
+  services via the normal `MemoryLayer(...)` constructor.
+- **`soma chat --ephemeral` + `--save-on-exit PATH`** CLI flags.
+  `--ephemeral` starts a fresh in-RAM MemoryLayer (mutually exclusive
+  with `--bundle`). `--save-on-exit` registers an `atexit` handler
+  that calls `.save(path)` when the process exits — works with or
+  without `--ephemeral`. Exceptions in the save hook are swallowed
+  with a warning so they don't mask the underlying exit cause.
+- **`POST /snapshot` REST endpoint**: one-shot bundle dump from a
+  running server. Body `{"path": "..."}` → `200 {"saved": true,
+  "path": "...", "entries": N}`. Rejects paths that escape the
+  server's cwd (safety belt). Requires `write` perm when JWT auth
+  is on; matches existing endpoint pattern.
+- **+16 tests** across `test_ephemeral.py`, `test_cli.py`,
+  `test_serve_smoke.py`.
+
+### Added — Redis revocation blocklist (Phase 20)
+
+- **`RedisBlocklist`** alongside `FileBlocklist` for multi-host /
+  k8s deploys where the file-backed store's 30s poll lag is too
+  slow. `setex(key, ttl=exp-now, reason)` gives instant cross-worker
+  propagation and automatic expiry without a manual `gc_expired`.
+  Same `BlocklistBackend` Protocol so existing callers don't change.
+- **Optional extra**: `pip install "soma[redis-revocation]"` pulls
+  `redis>=5.0`. Missing dep raises `ImportError` with a clear
+  install hint at construction time.
+- **`SOMA_JWT_BLOCKLIST_REDIS_URL`** env var wires Redis into
+  `blocklist_from_env`. Resolution order: Redis URL > file path >
+  null (behaviour unchanged when env vars unset). Warning logged if
+  both URL and file-path env vars are set (Redis wins).
+- **Hashed-mode interop verified**: `FileBlocklist(hashed=True)` and
+  `RedisBlocklist(hashed=True)` produce the same lookup key for the
+  same jti — operators can migrate file→Redis with a straight re-key.
+- **Tests via `fakeredis`**: module-level `pytest.importorskip` so
+  CI without the dev dep skips cleanly. +14 tests (11 Redis unit,
+  3 env-dispatch).
+- **Docs**: new Redis section in `docs/auth.md` with when-to-use
+  table, env vars, minimal docker-compose snippet.
+
+### Added — benchmark regression CI (Phase 21)
+
+- **`scripts/check_bench_regressions.py`**: CLI that diffs a
+  `--current` JSON against a committed `--golden` JSON with
+  per-metric tolerances (±20% latency, ±5% recall by default). Exits
+  1 with a diff table on regression, 0 on pass. Auto-creates the
+  golden on first run if missing (bootstrap).
+- **JSON sidecar output** on `run_scale_vs_chroma.py` and
+  `run_retrieval.py` — matches the existing pattern in
+  `run_backend_matrix.py`. New `--json-out` flag and `--lite` mode
+  for CI-sized runs. Markdown output byte-identical in the default
+  path.
+- **`benchmarks/golden/` directory** with initial snapshots captured
+  from live harness runs against `main` at `d54621e`. Three JSONs
+  (scale_vs_chroma, retrieval, backend_matrix) + README documenting
+  provenance and regeneration steps.
+- **GitHub Actions workflow** (`.github/workflows/bench-regression.yml`):
+  triggers on PRs touching `src/soma/memory/**`, `src/soma/io/**`,
+  `benchmarks/**`, or the workflow itself; nightly cron at 08:00
+  UTC; manual dispatch. Non-blocking on PRs (posts comment on
+  regression); blocking on nightly so main gets fail-loud surfaces.
+- **+5 tests** (4 plan-required + 1 Diff round-trip). Test count
+  in `tests/test_scripts/` now 39 pass.
+- **Known follow-up**: the CI workflow installs `[dev,metrics,ann,sbert]`
+  + `chromadb` — a dedicated `[bench]` extra in `pyproject.toml`
+  would tidy that. Parked since it didn't block anything and would
+  have conflicted with Phase 20's concurrent `pyproject.toml` edit.
+
 ### Added — backend perf (Phase 16)
 
 - **`VectorBackend.search_near_id(node_id, k, exclude_self=True)`**:

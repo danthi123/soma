@@ -98,13 +98,10 @@ class ChromaBackend:
     ) -> None:
         if not _HAS_CHROMA:
             raise ImportError(
-                "ChromaBackend requires chromadb. "
-                "Install with: pip install 'soma[chroma]'"
+                "ChromaBackend requires chromadb. Install with: pip install 'soma[chroma]'"
             )
         if client is None and path is None:
-            raise ValueError(
-                "ChromaBackend requires either path= or client="
-            )
+            raise ValueError("ChromaBackend requires either path= or client=")
         self._external_client = client is not None
         self._path = path
         self._collection_name = collection_name
@@ -237,28 +234,19 @@ class ChromaBackend:
         assert self._coll is not None
         arr = np.asarray(vectors, dtype=np.float32)
         expected_dim = self._dim if self._dim is not None else arr.shape[-1]
-        if (
-            arr.ndim != 2
-            or arr.shape[0] != len(ids)
-            or arr.shape[1] != expected_dim
-        ):
+        if arr.ndim != 2 or arr.shape[0] != len(ids) or arr.shape[1] != expected_dim:
             raise ValueError(
-                f"vectors shape {arr.shape} mismatched; "
-                f"expected ({len(ids)}, {expected_dim})"
+                f"vectors shape {arr.shape} mismatched; expected ({len(ids)}, {expected_dim})"
             )
         if self._dim is None:
             self._dim = int(arr.shape[1])
         embeddings = arr.tolist()
         if metadatas is not None:
             if len(metadatas) != len(ids):
-                raise ValueError(
-                    f"metadatas length {len(metadatas)} != ids length {len(ids)}"
-                )
+                raise ValueError(f"metadatas length {len(metadatas)} != ids length {len(ids)}")
             # Chroma rejects empty metadata dicts on add; replace with
             # None cell-by-cell so the collection accepts the batch.
-            cleaned: list[dict[str, Any] | None] = [
-                (m if m else None) for m in metadatas
-            ]
+            cleaned: list[dict[str, Any] | None] = [(m if m else None) for m in metadatas]
             if any(m is not None for m in cleaned):
                 self._has_metadata = True
             # Chroma 0.5 still requires every row have a metadata dict
@@ -316,9 +304,7 @@ class ChromaBackend:
         assert self._coll is not None
         q = np.asarray(query, dtype=np.float32).reshape(-1)
         if self._dim is not None and q.shape[0] != self._dim:
-            raise ValueError(
-                f"query dim mismatch: backend={self._dim}, got={q.shape[0]}"
-            )
+            raise ValueError(f"query dim mismatch: backend={self._dim}, got={q.shape[0]}")
         # Translator raises FilterPushdownUnsupported for anything
         # we can't express; MemoryLayer catches + falls back.
         translated_where = to_chroma_where(where)
@@ -375,9 +361,7 @@ class ChromaBackend:
         # what MemoryLayer's default path does for adapters without
         # server-side subset search, and keeps the cost proportional
         # to the subset size rather than ntotal.
-        result = self._coll.get(
-            ids=list(candidate_ids), include=["embeddings"]
-        )
+        result = self._coll.get(ids=list(candidate_ids), include=["embeddings"])
         got_ids = list(result.get("ids") or [])
         got_embs_raw = result.get("embeddings")
         got_embs = list(got_embs_raw) if got_embs_raw is not None else []
@@ -405,9 +389,7 @@ class ChromaBackend:
         as good as any adapter-specific path would be — both round-
         trip the pivot vector through Python.
         """
-        return _default_search_near_id(
-            self, node_id, k, exclude_self=exclude_self
-        )
+        return _default_search_near_id(self, node_id, k, exclude_self=exclude_self)
 
     # ------------------------------------------------------------------
     # Snapshot / restore
@@ -428,9 +410,7 @@ class ChromaBackend:
             "collection_name": self._collection_name,
             "chromadb_version": _chromadb_version(),
         }
-        (bundle_dir / "backend.json").write_text(
-            json.dumps(meta, indent=2), encoding="utf-8"
-        )
+        (bundle_dir / "backend.json").write_text(json.dumps(meta, indent=2), encoding="utf-8")
         if self._path is None:
             # External client (e.g. HTTP) — we can't copy a directory
             # we don't own. Sidecar-only snapshot; restore() will
@@ -461,9 +441,7 @@ class ChromaBackend:
         if meta_path.exists():
             meta = json.loads(meta_path.read_text(encoding="utf-8"))
             if meta.get("backend") == "chroma":
-                self._collection_name = meta.get(
-                    "collection_name", self._collection_name
-                )
+                self._collection_name = meta.get("collection_name", self._collection_name)
                 if meta.get("dim") is not None:
                     self._dim = int(meta["dim"])
         src = bundle_dir / "chroma"

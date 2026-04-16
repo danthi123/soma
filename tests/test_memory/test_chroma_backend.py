@@ -114,9 +114,7 @@ def test_add_and_search_round_trip(tmp_path: Path) -> None:
 
 
 def test_ntotal_and_dim(tmp_path: Path) -> None:
-    b = ChromaBackend(
-        path=str(tmp_path / "c"), collection_name="soma_test", dim=4
-    )
+    b = ChromaBackend(path=str(tmp_path / "c"), collection_name="soma_test", dim=4)
     try:
         assert b.ntotal == 0
         assert b.dim == 4
@@ -274,9 +272,7 @@ def test_filter_pushdown_in(tmp_path: Path) -> None:
                 {"tag": "x"},
             ],
         )
-        hits = b.search(
-            _rand_vecs(1, 8)[0], k=5, where={"tag": {"$in": ["x", "y"]}}
-        )
+        hits = b.search(_rand_vecs(1, 8)[0], k=5, where={"tag": {"$in": ["x", "y"]}})
         returned = {nid for nid, _ in hits}
         assert returned == {"a", "b", "d"}
     finally:
@@ -307,9 +303,7 @@ def test_filter_pushdown_on_missing_metadata_falls_back(tmp_path: Path) -> None:
     try:
         b.add(["a", "b"], _rand_vecs(2, 8))  # no metadatas
         with pytest.raises(FilterPushdownUnsupported):
-            b.search(
-                _rand_vecs(1, 8)[0], k=5, where={"tag": {"$eq": "x"}}
-            )
+            b.search(_rand_vecs(1, 8)[0], k=5, where={"tag": {"$eq": "x"}})
     finally:
         b.close()
 

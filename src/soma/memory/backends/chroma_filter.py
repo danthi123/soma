@@ -59,9 +59,7 @@ def _clause_for_field(field: str, spec: Any) -> list[dict[str, Any]]:
                 raise FilterPushdownUnsupported(
                     op=op,
                     field=field,
-                    message=(
-                        f"{op} expects a list, got {type(expected).__name__}"
-                    ),
+                    message=(f"{op} expects a list, got {type(expected).__name__}"),
                 )
             if len(expected) == 0:
                 # Chroma rejects `$in: []` / `$nin: []` with

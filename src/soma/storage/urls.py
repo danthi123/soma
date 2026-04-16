@@ -81,7 +81,42 @@ def parse_store_url(url: str | os.PathLike[str]) -> ObjectStore:
     if scheme == "s3":
         return _s3_url_to_store(url)
 
+    if scheme == "gs":
+        return _gcs_url_to_store(url)
+
     raise ValueError(f"unsupported store scheme: {scheme}")
+
+
+def _gcs_url_to_store(url: str) -> ObjectStore:
+    """Turn ``gs://bucket[/prefix][?project=...]`` into a store.
+
+    Split on the first ``/`` after the authority: everything before is
+    the bucket, everything after is the prefix (trailing slash stripped).
+    Query-string kwargs map to :class:`GCSObjectStore` constructor params.
+    """
+    # Import here so the core storage package doesn't hard-depend on
+    # google-cloud-storage — users who never touch GCS don't need the
+    # extra installed.
+    from soma.storage.gcs import GCSObjectStore
+
+    parsed = urlparse(url)
+    bucket = parsed.netloc
+    if not bucket:
+        raise ValueError(f"gs:// URL missing bucket: {url!r}")
+    # ``parsed.path`` is ``"/prefix/..."`` or empty. Trim the leading
+    # slash so the store's prefix stays the POSIX form we document.
+    prefix = parsed.path.lstrip("/").rstrip("/")
+    # Query-string kwargs. ``parse_qs`` returns ``dict[str, list[str]]``
+    # — we take the first value of each. Only ``project`` is honoured
+    # today; the standard ADC chain covers credentials + endpoint, so
+    # there's nothing else to thread through the URL.
+    qs = parse_qs(parsed.query)
+    project = qs.get("project", [None])[0]
+    return GCSObjectStore(
+        bucket=bucket,
+        prefix=prefix,
+        project=project,
+    )
 
 
 def _s3_url_to_store(url: str) -> ObjectStore:

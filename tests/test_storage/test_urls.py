@@ -116,10 +116,87 @@ def test_parse_store_url_s3_bucket_only() -> None:
         assert store._prefix == ""
 
 
-def test_gcs_scheme_raises_today() -> None:
-    """Same pin for GCS — Phase 32 flips this."""
-    with pytest.raises(ValueError, match="unsupported store scheme"):
-        parse_store_url("gs://bucket/prefix")
+def test_parse_store_url_dispatches_to_gcs() -> None:
+    """Phase 32 flipped the earlier ``unsupported scheme`` pin into a
+    real dispatch: ``gs://bucket/prefix`` now resolves to a
+    :class:`GCSObjectStore`. Gated via ``importorskip`` so the test is
+    skipped (not failed) on environments without
+    ``google-cloud-storage`` / ``gcp-storage-emulator``."""
+    pytest.importorskip("google.cloud.storage")
+    pytest.importorskip("gcp_storage_emulator")
+
+    import contextlib
+    import socket
+    import threading
+    import time
+    import uuid
+
+    from gcp_storage_emulator.server import create_server
+    from google.cloud import storage as _gcs
+
+    from soma.storage.gcs import GCSObjectStore
+
+    sock = socket.socket()
+    sock.bind(("localhost", 0))
+    port = int(sock.getsockname()[1])
+    sock.close()
+    server = create_server("localhost", port, in_memory=True, default_bucket="")
+    thread = threading.Thread(target=server.start, daemon=True)
+    thread.start()
+    time.sleep(1.0)
+
+    try:
+        import os
+
+        os.environ["STORAGE_EMULATOR_HOST"] = f"http://localhost:{port}"
+        try:
+            bucket_name = f"url-{uuid.uuid4().hex[:8]}"
+            client = _gcs.Client.create_anonymous_client()
+            client.project = "test-project"
+            with contextlib.suppress(Exception):
+                client.create_bucket(bucket_name)
+            store = parse_store_url(f"gs://{bucket_name}/bundle")
+            assert isinstance(store, GCSObjectStore)
+            # Round-trip a byte so we know the bucket + prefix split
+            # landed correctly.
+            store.put_bytes("probe.bin", b"ok")
+            assert store.get_bytes("probe.bin") == b"ok"
+            # Expected prefix is the path portion of the URL.
+            assert store._prefix == "bundle"
+        finally:
+            os.environ.pop("STORAGE_EMULATOR_HOST", None)
+    finally:
+        with contextlib.suppress(Exception):
+            server.stop()
+
+
+def test_parse_store_url_gcs_carries_project_query_param() -> None:
+    """Query-string ``?project=...`` overrides the ADC project
+    attribution so callers can pin a specific project straight from
+    the URL without writing Python. Cross-project service-account
+    setups need this."""
+    pytest.importorskip("google.cloud.storage")
+
+    # We don't need a live emulator to probe the project kwarg plumbing:
+    # the Client constructor just records the project attribute. Any
+    # network call would fail, but we never make one.
+    import os
+
+    prev = os.environ.get("STORAGE_EMULATOR_HOST")
+    # Stub an emulator host so Client() doesn't try to fetch ADC
+    # credentials from the metadata server during the import path.
+    os.environ["STORAGE_EMULATOR_HOST"] = "http://localhost:1"
+    try:
+        from soma.storage.gcs import GCSObjectStore
+
+        store = parse_store_url("gs://test-bucket/bundle?project=my-proj")
+        assert isinstance(store, GCSObjectStore)
+        assert store._client.project == "my-proj"
+    finally:
+        if prev is None:
+            os.environ.pop("STORAGE_EMULATOR_HOST", None)
+        else:
+            os.environ["STORAGE_EMULATOR_HOST"] = prev
 
 
 def test_object_store_instance_passes_through() -> None:

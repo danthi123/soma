@@ -53,11 +53,10 @@ variant stayed deferred (see tier-2 auth below).
 
 ## Tier 2 — observability
 
-- **`soma_compaction_total` / `soma_compaction_seconds` metrics.** Phase 3 explicitly left these as follow-up; Phase 1 Task 5 compaction runs uninstrumented. Source: `docs/plans/2026-04-16-phase-3-observability.md`. ~1 h.
-- **`SOMA_METRICS_PUBLIC=0` gate** — put `/metrics` behind the bearer scheme for sensitive deploys. Phase 3 Risks §2. ~2 h.
-- **`SOMA_METRICS_BUNDLE_LABEL_DISABLE=1`** — drop `bundle` label for deploys with 10k+ bundles to control cardinality. Phase 3 Risks §1. ~1 h.
-- **Histogram bucket tuning** after first real Grafana dashboard. Phase 3 open question.
-- **`soma_reload_total`** already shipped but unused by dashboards — add a sample Grafana panel.
+- ✅ ~~**`soma_compaction_total` / `soma_compaction_seconds` metrics.**~~ Shipped in Phase 8 (`24c0bd9`).
+- ✅ ~~**`SOMA_METRICS_PUBLIC=0` gate.**~~ Shipped in Phase 8 (`99a6230`).
+- ✅ ~~**`SOMA_METRICS_BUNDLE_LABEL_DISABLE=1`.**~~ Shipped in Phase 8 (`db28877` + follow-up commit routing inproc.py through the helper).
+- **Histogram bucket tuning** after first real Grafana dashboard gets operator feedback. Phase 3 open question; defer until we have at least one production scrape history.
 
 ## Tier 2 — auth
 
@@ -97,9 +96,11 @@ variant stayed deferred (see tier-2 auth below).
 ## Tier 2 — docs / ops polish
 
 - **`soma chat` async streaming.** REPL today blocks on the full LLM response. Streaming tokens would feel better.
-- **Prometheus sample dashboards** checked in under `deploy/grafana/`. Users currently have to build from the metrics list in `docs/observability.md`.
-- **`soma bundle` subcommand group** — `bundle list`, `bundle delete`, `bundle info`, `bundle migrate` for bundle lifecycle. Today users manage via `mem.save/load`. ~1 d.
+- ✅ ~~**Prometheus sample dashboards**~~ — Shipped in Phase 9 (`3c6441c`..`fb50482`). Three RED/USE dashboards + import guide under `deploy/grafana/`.
+- ✅ ~~**`soma bundle` subcommand group**~~ — Shipped in Phase 10 (`3987062`..`e61006b`). `list` / `info` / `delete` verbs; `migrate` still deferred.
+- **`soma bundle migrate`** — schema upgrade verb for cross-version bundle migration. Not yet needed since bundle format is stable. Revisit if we break schema.
 - **Benchmark scheduler / cron** — re-run the matrix on PRs affecting `src/soma/memory/` to catch perf regressions. ~1 d.
+- **Ephemeral/in-RAM mode ergonomics.** Capability already exists (instantiate `MemoryLayer` without `bundle_path` → no WAL, pure RAM, `.save()` at session end). Worth formalising: a `MemoryLayer.ephemeral()` classmethod, a `soma chat --save-on-exit` flag, and a REST `/snapshot` endpoint for end-of-session dumps. Right for notebooks/REPLs/short agent runs; keep WAL as the default elsewhere. ~4 h.
 
 ## Pre-existing (carried forward)
 

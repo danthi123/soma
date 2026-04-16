@@ -4,7 +4,7 @@
 
 SOMA ships three layers of observability, each opt-in:
 
-1. **Prometheus `/metrics`** — 14+ counters, gauges, histograms covering
+1. **Prometheus `/metrics`** — 18+ counters, gauges, histograms covering
    every MemoryLayer hot path plus standard FastAPI per-route timings.
 2. **Structured JSON logs** — one JSON line per retrieve (and via stdlib
    `logger.info(..., extra={...})` from anywhere else in SOMA).
@@ -34,8 +34,13 @@ uvicorn soma.serve:app --port 8420
 
 The `GET /metrics` endpoint is exposed by
 `prometheus-fastapi-instrumentator` when `soma[metrics]` is installed.
-No auth on `/metrics` (standard Prom scraper practice). When the extra
-is absent, `/metrics` simply 404s.
+By default `/metrics` is public (standard Prom scraper practice). Set
+`SOMA_METRICS_PUBLIC=0` to put it behind `Depends(require_auth)` with
+a `"read"` scope requirement — useful for deploys on shared networks
+where metrics are sensitive. When no JWT secret or API key is
+configured, the gate still returns 200 (operators can't accidentally
+lock themselves out). When the `soma[metrics]` extra is absent,
+`/metrics` simply 404s.
 
 ### Metric reference
 
@@ -58,6 +63,8 @@ is absent, `/metrics` simply 404s.
 | `soma_faiss_rebuild_seconds`      | histogram | —                        | Time to rebuild the FAISS index                                               |
 | `soma_bm25_rebuild_seconds`       | histogram | —                        | Time to rebuild the BM25 index                                                |
 | `soma_consolidate_seconds`        | histogram | —                        | Per-call consolidate duration                                                 |
+| `soma_compaction_total`           | counter   | `bundle`, `outcome`      | Consolidation cycles. `outcome` ∈ {`ok`, `error`}                             |
+| `soma_compaction_seconds`         | histogram | `bundle`                 | Wall-clock duration of `consolidate()` (buckets 0.1s→5min)                    |
 | `soma_wal_flush_seconds`          | histogram | —                        | WAL flush duration (fsync cost)                                               |
 
 Histogram latency buckets are hard-coded (see `src/soma/metrics.py` —
@@ -104,14 +111,13 @@ sum(rate(soma_wal_append_total[1m])) by (op)
 
 Every per-bundle metric carries a `bundle` label. If you run a
 multi-tenant deployment with thousands of bundles, that produces
-thousands of series per metric. If you need to cap cardinality, drop
-the `bundle` label entirely (pin it to a constant in your own fork of
-`soma/metrics.py`) and rely on application-level correlation for
-per-bundle drill-downs.
+thousands of series per metric.
 
-An env-gated toggle
-(`SOMA_METRICS_BUNDLE_LABEL_DISABLE=1`) is a documented follow-up in
-`docs/plans/2026-04-16-phase-3-observability.md` §Risks.
+**Escape hatch:** set `SOMA_METRICS_BUNDLE_LABEL_DISABLE=1` to
+collapse every `bundle` label to the literal string `"_disabled"`
+across all SOMA metrics. You keep the same metric names (so dashboards
+don't break) but Prometheus sees a single series per metric. Trade off
+per-bundle drill-down for cardinality control.
 
 ## Structured JSON logs
 
@@ -249,9 +255,38 @@ tell you *route-level* health, the `soma_*` series tell you
 - **High cardinality on `soma_entries`** — one series per bundle
   is the design; see §High-cardinality considerations above.
 
+## Sample Grafana dashboards
+
+Three importable dashboards ship under `deploy/grafana/`:
+
+- **`soma-overview.json`** — RED (Rate / Errors / Duration) across
+  the REST surface. Stats for total requests, p95 retrieve latency,
+  auth failure rate; time series for per-route request rate,
+  p50/p95/p99 retrieve latency, per-bundle store rate, 5xx rate;
+  slowest-routes table.
+- **`soma-auth.json`** — auth-focused. Failures by reason (stacked),
+  revoked-token hits, blended success rate, per-reason table. Pairs
+  with the Phase 4 JWT + Phase 4-followup revocation metrics.
+- **`soma-bundle-health.json`** — USE (Utilization / Saturation /
+  Errors) for the memory layer. WAL append rate, flush p95,
+  consolidation p95 (dual-sourced from `soma_consolidate_seconds`
+  and `soma_compaction_seconds`), live-entries / FAISS-index-size
+  timeseries, peer-reload rate, retrieve-latency heatmap.
+
+All three declare `${DS_PROMETHEUS}` as their datasource placeholder
+and templated `$bundle` / `$instance` variables. Import via the
+Grafana web UI, `grafana-cli admin`, docker-compose provisioning, or
+a Kubernetes ConfigMap — see `deploy/grafana/README.md` for each
+path and a smoke-test procedure.
+
 ## Related plans
 
 - Phase 1 — `docs/plans/2026-04-16-phase-1-wal-autosave.md`
   (`soma_wal_append_total`, `soma_wal_flush_seconds`, `soma_reload_total`)
 - Phase 4 — `docs/plans/2026-04-16-phase-4-jwt-auth.md`
-  (`soma_auth_failures_total{reason}` when Phase 4 lands)
+  (`soma_auth_failures_total{reason}`)
+- Phase 8 — `docs/plans/2026-04-16-phase-8-observability-loose-ends.md`
+  (`soma_compaction_total`, `soma_compaction_seconds`,
+  `SOMA_METRICS_PUBLIC`, `SOMA_METRICS_BUNDLE_LABEL_DISABLE`)
+- Phase 9 — `docs/plans/2026-04-16-phase-9-grafana-dashboards.md`
+  (sample dashboards under `deploy/grafana/`)

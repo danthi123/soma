@@ -78,6 +78,85 @@ All notable changes to SOMA are documented here.
 - **README feature comparison**: Pluggable-vector-backends row now
   reads *yes (InProc + Qdrant + LanceDB)*.
 
+### Added — observability loose ends (Phase 8)
+
+- **`soma_compaction_total{bundle, outcome}`** Counter +
+  **`soma_compaction_seconds{bundle}`** Histogram: consolidation
+  cycles now record success/error outcome and wall-clock duration
+  (buckets 0.1s → 5min). Closes the explicit Phase 3 Risks §1 gap.
+  Wrapped around `MemoryLayer.consolidate()` with `try/finally` so
+  exceptions still propagate unchanged while metrics still fire.
+- **`SOMA_METRICS_PUBLIC=0` env gate**: when set, `/metrics` is
+  wrapped with `Depends(require_auth(None, "read"))` so sensitive
+  operator deploys can keep metrics behind bearer auth while
+  retaining the zero-friction public-scrape default. If no JWT
+  secret or API key is configured, the gate still returns 200
+  (matches `require_auth`'s fast-path — operators can't
+  accidentally lock themselves out).
+- **`SOMA_METRICS_BUNDLE_LABEL_DISABLE=1` cardinality escape**:
+  routes every `.labels(bundle=...)` call site through a
+  centralised `_bundle_label()` helper that returns `"_disabled"`
+  when the env is set. Lets multi-tenant deploys with 10K+ bundles
+  keep the same metric surface without exploding Prometheus
+  series counts. Applied across `MemoryLayer`, REST wrappers,
+  and the InProc backend's FAISS index gauge.
+
+### Added — Grafana dashboards (Phase 9)
+
+- **Three importable dashboards** under `deploy/grafana/`:
+  `soma-overview.json` (8 RED panels — request rate, error rate,
+  p50/p95/p99 retrieve latency, per-route 5xx, slowest-routes
+  table), `soma-auth.json` (5 panels — failures by reason,
+  revoked-token hits, success rate, per-reason breakdown),
+  `soma-bundle-health.json` (6 USE panels — WAL append rate,
+  flush p95, consolidation p95 with dual `soma_consolidate_seconds`
+  + `soma_compaction_seconds` targets, entry/FAISS size timeseries,
+  peer-reload rate, retrieve latency heatmap).
+- **Template variables** wired via `${DS_PROMETHEUS}` datasource
+  placeholder plus `$bundle` and `$instance` drop-downs (both
+  driven by `label_values` Prometheus queries).
+- **Import guide** (`deploy/grafana/README.md`): four paths —
+  Grafana web UI, `grafana-cli admin` + HTTP API fallback,
+  docker-compose provisioning, and a Kubernetes ConfigMap
+  pattern — plus smoke-test + UI-round-trip editing workflow.
+- **Validation tests** (`tests/test_deploy/test_grafana_dashboards.py`):
+  26 parametrized runs confirm JSON parses, `schemaVersion >= 36`,
+  every target has a non-empty `expr`, every target uses the
+  `${DS_PROMETHEUS}` placeholder, required `$bundle` / `$instance`
+  template variables exist, panel counts match the plan.
+- **Methodology**: dashboards follow the RED (Rate / Errors /
+  Duration) and USE (Utilization / Saturation / Errors) patterns
+  popularised in the wshobson/agents public skill; structural
+  conventions adapted to SOMA's Prometheus metric names.
+
+### Added — CLI bundle management (Phase 10)
+
+- **New `soma bundle` subcommand group**: `list`, `info`, `delete`.
+  Fills the obvious gap — the CLI had per-entry verbs (`search`,
+  `forget`) and session verbs (`chat`, `index`) but nothing for
+  whole-bundle lifecycle.
+- **`soma bundle list [root]`**: depth-3 scan from the given root
+  (default `.`), prints an aligned table with path / entries /
+  embed-dim / backend / last-modified / WAL size. Detects and
+  badge-marks corrupt bundles (missing `memory_index.json`, bad
+  JSON, truncated) with a footnote explaining each.
+- **`soma bundle info <path>`**: per-bundle detail view including
+  total disk bytes, WAL state, snapshot generation timestamp.
+- **`soma bundle delete <path> [--yes]`**: interactive y/N prompt
+  by default (case-insensitive y|yes accepted); `--yes` skips
+  the prompt. **Safety invariant**: always calls `is_bundle_dir()`
+  first and exits 2 on non-bundle paths — even with `--yes`, so
+  `soma bundle delete ~` is blocked.
+- **New `src/soma/bundle.py` module**: stdlib-only
+  `is_bundle_dir()`, `BundleInfo` frozen dataclass, `load_info()`,
+  `list_bundles()` — no `MemoryLayer` / `torch` imports so
+  `bundle list` stays fast across directories with hundreds of
+  bundles. Reads `memory_index.json` + `backend.json` directly.
+- **Tests**: +63 tests (20 in `tests/test_bundle.py` covering
+  introspection helpers + corrupt-bundle handling; 43 in
+  `tests/test_cli.py` covering each verb end-to-end, interactive
+  prompts, and safety checks).
+
 ### Added — pluggable vector backends (Phase 6)
 
 - **`VectorBackend` protocol** (`src/soma/memory/backend.py`):

@@ -1,0 +1,39 @@
+# Keep the build context small + reproducible. `src/` and `pyproject.toml`
+# are needed for `pip install -e ".[serve]"`; everything else is noise.
+
+# VCS / local tooling
+.git/
+.gitea/
+.claude/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.soma-loop/
+
+# Python build artifacts
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+build/
+dist/
+
+# Heavy / generated data the container should never ship with
+artifacts/
+benchmarks/reports/
+benchmarks/datasets/scale_cache/
+data/
+checkpoints/
+*.pt
+*.ckpt
+
+# Planning docs + tests aren't part of the runtime image
+docs/plans/
+tests/
+
+# Editor / OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db

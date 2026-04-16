@@ -174,6 +174,15 @@ curl -X POST http://localhost:8420/retrieve \
   -d '{"query": "where does the user live?", "k": 3}'
 ```
 
+## Cloud deploy (<5 min)
+
+[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/new/template?template=https://github.com/soma-ai/SOMA&envs=SOMA_API_KEY)
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/soma-ai/SOMA)
+
+Fly.io: `fly launch --from https://github.com/soma-ai/SOMA --copy-config`
+
+Per-platform runbook: [`docs/deployment-cloud.md`](docs/deployment-cloud.md). Minimum tier: 2 GB RAM (1 GB OOMs on first retrieve).
+
 ## Scaling
 
 MemoryLayer auto-switches to a FAISS `IndexFlatIP` (exact) when the store exceeds 10K entries (configurable via `faiss_threshold`). Below that, the O(N) linear scan is faster with zero overhead.

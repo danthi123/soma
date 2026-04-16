@@ -1,0 +1,29 @@
+app = "soma-memory"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  SOMA_EMBED_MODEL = "all-MiniLM-L6-v2"
+  SOMA_BUNDLE_PATH = "/data/memory"
+  SOMA_BUNDLES_DIR = "/data/bundles"
+
+[[mounts]]
+  source = "soma_data"
+  destination = "/data"
+
+[http_service]
+  internal_port = 8420
+  force_https = true
+  auto_start_machines = true
+  auto_stop_machines = "stop"
+  min_machines_running = 1
+
+[[vm]]
+  cpu_kind = "shared"
+  cpus = 1
+  memory_mb = 2048
+
+[[http_service.checks]]
+  path = "/health"

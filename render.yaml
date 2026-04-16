@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: soma-memory
+    runtime: docker
+    plan: standard
+    healthCheckPath: /health
+    envVars:
+      - key: SOMA_API_KEY
+        generateValue: true
+      - key: SOMA_EMBED_MODEL
+        value: all-MiniLM-L6-v2
+    disk:
+      name: soma-data
+      mountPath: /app/data
+      sizeGB: 1

@@ -4,6 +4,27 @@ All notable changes to SOMA are documented here.
 
 ## [Unreleased] — 2026-04-16
 
+### Added — cloud deploy
+
+- One-click templates for **Railway** (`railway.json`), **Render**
+  (`render.yaml`), and **Fly.io** (`fly.toml`) at the repo root. README
+  carries Deploy-on-Railway / Deploy-to-Render buttons and a `fly
+  launch` one-liner; full per-platform runbook (including
+  DigitalOcean / VPS compose flow) in `docs/deployment-cloud.md`.
+- **Dockerfile `$PORT` support** — shell-form `CMD` expands
+  `${PORT:-8420}` at runtime so Railway / Render / Fly can inject
+  their own port. Local `docker run` still defaults to 8420.
+- **Pre-baked sbert model** in the Docker image — `all-MiniLM-L6-v2`
+  is downloaded during `docker build` into `HF_HOME=/app/.cache/
+  huggingface`, cutting cold-start from ~60 s to ~8 s at a ~90 MB
+  image-size cost. Model is still overridable via `SOMA_EMBED_MODEL`.
+- **Layer-cache friendly build** — `pyproject.toml` + `README.md`
+  copied before source, so source-only edits don't re-run
+  `pip install -e ".[serve]"`.
+- `.dockerignore` at the repo root trims the build context (drops
+  `artifacts/`, `benchmarks/reports/`, `data/`, `checkpoints/`,
+  `tests/`, `docs/plans/`, `.git/`, caches).
+
 ### Added — API + perf
 
 - `MemoryLayer.store_batch(texts, metadatas=)` — bulk ingest that calls

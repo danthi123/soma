@@ -166,6 +166,11 @@ class ConversationalSomaAdapter(SomaAdapter):
     ``ConversationalMemory.retrieve`` so superseded entries are
     filtered out by default.
 
+    Optional ``extractor_llm=`` kwarg is forwarded to
+    :class:`ConversationalMemory` so benchmark users can pin a stronger
+    JSON-reliable model for extract + reconcile while keeping a smaller
+    one for chat + summary.
+
     Reports the per-run "facts stored / turns processed" ratio so the
     report can surface how much structure the LLM pulled out of raw
     turns.
@@ -177,6 +182,7 @@ class ConversationalSomaAdapter(SomaAdapter):
         self,
         *,
         llm: Any,
+        extractor_llm: Any = None,
         session_id: str | None = None,
         summary_every: int = 20,
         near_dup_threshold: float = 0.92,
@@ -190,6 +196,9 @@ class ConversationalSomaAdapter(SomaAdapter):
         use_sbert = embed_fn is None
         super().__init__(use_sbert=use_sbert, **soma_kwargs)
         self._llm = llm
+        # Optional stronger model for the structured-JSON steps
+        # (extract + reconcile). None = fall back to the main llm.
+        self._extractor_llm = extractor_llm
         self._cm_session_id = session_id or "locomo"
         self._summary_every = summary_every
         self._near_dup_threshold = near_dup_threshold
@@ -212,6 +221,7 @@ class ConversationalSomaAdapter(SomaAdapter):
         self._cm = ConversationalMemory(
             memory=self._mem,
             llm=self._llm,
+            extractor_llm=self._extractor_llm,
             session_id=self._cm_session_id,
             summary_every=self._summary_every,
             near_dup_threshold=self._near_dup_threshold,

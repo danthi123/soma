@@ -123,3 +123,41 @@ def test_facts_per_turn_ratio_reported() -> None:
     assert adapter.turns_processed == 1
     assert adapter.facts_stored == 2
     adapter.teardown()
+
+
+def test_conv_adapter_forwards_extractor_llm() -> None:
+    """``extractor_llm=`` kwarg threads through to the inner
+    :class:`ConversationalMemory` so benchmark users can run a stronger
+    model for extract/reconcile while keeping the small one for
+    chat/summary."""
+    chat_backend = _ScriptedLLM()
+    extract_backend = _ScriptedLLM()
+    adapter = ConversationalSomaAdapter(
+        llm=chat_backend,
+        extractor_llm=extract_backend,
+        embed_fn=_stub_embed,
+        embed_dim=16,
+        session_id="test",
+    )
+    adapter.prepare()
+    assert adapter._cm is not None
+    assert adapter._cm._extractor_llm is extract_backend
+    assert adapter._cm._llm is chat_backend
+    adapter.teardown()
+
+
+def test_conv_adapter_extractor_llm_defaults_to_none() -> None:
+    """Omitting ``extractor_llm=`` keeps backward-compat behaviour:
+    the inner :class:`ConversationalMemory` falls back to the main
+    ``llm`` for extract + reconcile."""
+    chat_backend = _ScriptedLLM()
+    adapter = ConversationalSomaAdapter(
+        llm=chat_backend,
+        embed_fn=_stub_embed,
+        embed_dim=16,
+        session_id="test",
+    )
+    adapter.prepare()
+    assert adapter._cm is not None
+    assert adapter._cm._extractor_llm is chat_backend
+    adapter.teardown()

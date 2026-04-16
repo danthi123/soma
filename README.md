@@ -175,6 +175,19 @@ curl -X POST http://localhost:8420/retrieve \
   -d '{"query": "where does the user live?", "k": 3}'
 ```
 
+Full endpoint list: `/health` (liveness), `/version`, `/status`, `/store`,
+`/store_batch`, `/retrieve`, `/get/{id}`, `/related/{id}`, `/recent`,
+`/forget`, `/consolidate`, `/save`, plus `/bundles/{name}/...`
+multi-tenant variants.
+
+**Observability** (`pip install "soma[metrics]"`): `GET /metrics`
+exposes 14+ Prometheus counters/gauges/histograms covering every
+MemoryLayer hot path plus per-route HTTP timings. Set `SOMA_LOG_JSON=1`
+to swap stdout logging to structured JSON for Loki/Datadog ingest.
+OpenTelemetry spans via `pip install "soma[otel]"` + `SOMA_OTEL_ENABLED=1`.
+See [`docs/observability.md`](docs/observability.md) for the full
+metric table + Grafana examples + log schema.
+
 ## Cloud deploy (<5 min)
 
 [![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/new/template?template=https://github.com/soma-ai/SOMA&envs=SOMA_API_KEY)

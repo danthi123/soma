@@ -4,6 +4,34 @@ All notable changes to SOMA are documented here.
 
 ## [Unreleased] — 2026-04-16
 
+### Added — observability
+
+- **Prometheus `/metrics` endpoint** (optional via
+  `pip install "soma[metrics]"`). Exposes 14+ SOMA-specific
+  counters/gauges/histograms (`soma_store_total`,
+  `soma_retrieve_latency_seconds`, `soma_entries`, etc.) alongside
+  the standard per-route HTTP metrics that
+  `prometheus-fastapi-instrumentator` layers on automatically.
+  When the extra isn't installed, `/metrics` 404s and the core
+  `serve` path keeps its zero-observability-dep footprint.
+- **Structured JSON logging** via `soma.log.JSONFormatter` +
+  `configure_json_logging()`. Gated on `SOMA_LOG_JSON=1`. Zero new
+  deps (stdlib only). Emits one JSON line per retrieve with a
+  pinned schema (`event`, `bundle`, `query_len`, `k`, `has_where`,
+  `hybrid_alpha`, `rerank_top_n`, `n_hits`, `backend`, `latency_ms`,
+  `cache_miss`) — ready for Loki / Datadog / CloudWatch ingest with
+  no format parsing.
+- **OpenTelemetry tracing** (optional via `pip install "soma[otel]"`
+  + `SOMA_OTEL_ENABLED=1`). Lazy-imports `FastAPIInstrumentor`, so
+  the 5-package OTel dependency footprint stays truly optional.
+  Uses standard `OTEL_EXPORTER_OTLP_*` env vars — no in-code
+  collector config.
+- `soma_reload_total{bundle}` counter fires on every
+  `reload_if_stale()` call that actually picks up a peer-committed
+  record — pairs with the Phase 1 multi-worker staleness fix.
+- Reference docs: `docs/observability.md` (metric table, Grafana
+  query examples, log schema, OTel collector config).
+
 ### Added — durability + concurrency
 
 - **Write-ahead log** (`src/soma/memory/wal.py`). Every `store()` /

@@ -77,6 +77,14 @@ langchain = [
 llamaindex = [
     "llama-index-core>=0.10.0",
 ]
+metrics = [
+    # Prometheus instrumentation. Kept as an optional extra so the core
+    # `serve` path runs without observability deps. Install with
+    # `pip install soma[metrics]` to enable the /metrics endpoint and
+    # soma_* counters/histograms in soma.metrics.
+    "prometheus-fastapi-instrumentator>=7.1",
+    "prometheus-client>=0.20",
+]
 
 [project.scripts]
 soma = "soma.cli:main"

@@ -23,12 +23,16 @@ import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
+import portalocker
 import torch
 from torch.nn import functional as F  # noqa: N812
 
 from soma.io.text_encoder import TextEncoder, load_tokenizer
+from soma.memory.wal import WAL, WalRecord
+
+_VALID_DURABILITY = {"sync", "batch", "async"}
 
 
 def _atomic_write_bytes(path: Path, data: bytes) -> None:
@@ -205,9 +209,15 @@ class MemoryLayer:
         auto_consolidate_every: int = 0,
         graph_rerank_alpha: float = 0.0,
         graph_rerank_stable_capture: bool = True,
+        bundle_path: str | Path | None = None,
+        durability: Literal["sync", "batch", "async"] = "sync",
     ) -> None:
         if embed_fn is None and encoder is None:
             raise ValueError("MemoryLayer needs either (tokenizer + encoder) or embed_fn")
+        if durability not in _VALID_DURABILITY:
+            raise ValueError(
+                f"durability must be one of {sorted(_VALID_DURABILITY)}, got {durability!r}"
+            )
         self._tokenizer = tokenizer
         self._encoder = encoder
         self._custom_embed_fn = embed_fn
@@ -278,6 +288,27 @@ class MemoryLayer:
         # Cross-encoder (or any Reranker) for re-ranking top-N.
         self._reranker: Any = None
 
+        # Durability / persistence state. When bundle_path is None the
+        # MemoryLayer runs in-memory only and keeps its pre-WAL behavior.
+        self._bundle_path: Path | None = (
+            Path(bundle_path) if bundle_path is not None else None
+        )
+        self._durability: Literal["sync", "batch", "async"] = durability
+        self._wal: WAL | None = None
+        self._lock_path: Path | None = None
+        if self._bundle_path is not None:
+            self._bundle_path.mkdir(parents=True, exist_ok=True)
+            self._lock_path = self._bundle_path / "bundle.lock"
+            # Ensure the lock file exists so portalocker.Lock can open it
+            # in "r+" mode on both Windows and POSIX.
+            self._lock_path.touch(exist_ok=True)
+            self._wal = WAL(
+                self._bundle_path,
+                embed_dim=self._embed_dim,
+                durability=self._durability,
+            )
+            self._wal.open()
+
     # ------------------------------------------------------------------
     # Factory methods
     # ------------------------------------------------------------------
@@ -332,6 +363,49 @@ class MemoryLayer:
         self._consolidation_cursor = 0
 
     # ------------------------------------------------------------------
+    # Durability helpers
+    # ------------------------------------------------------------------
+    @contextlib.contextmanager
+    def _bundle_lock(self) -> Any:
+        """Acquire the bundle.lock sidecar while mutating the WAL.
+
+        No-op when the MemoryLayer has no bundle attached (in-memory
+        mode). Uses portalocker so two processes pointing at the same
+        bundle dir serialize their writes without stepping on each
+        other's WAL offsets.
+        """
+        if self._lock_path is None:
+            yield
+            return
+        with portalocker.Lock(
+            str(self._lock_path),
+            mode="r+",
+            timeout=30,
+        ):
+            yield
+
+    def flush(self) -> None:
+        """Force-sync the WAL to stable storage.
+
+        No-op when no bundle is attached. Callers on ``durability="async"``
+        or ``"batch"`` use this before a planned shutdown to close the
+        durability gap.
+        """
+        if self._wal is None:
+            return
+        with self._bundle_lock():
+            self._wal.flush()
+
+    def close(self) -> None:
+        """Close the WAL, flushing any buffered state. Safe to call
+        multiple times; safe when no bundle is attached."""
+        if self._wal is None:
+            return
+        with self._bundle_lock():
+            self._wal.close()
+        self._wal = None
+
+    # ------------------------------------------------------------------
     # Core API
     # ------------------------------------------------------------------
     def store(self, text: str, *, metadata: dict[str, Any] | None = None) -> str:
@@ -340,16 +414,34 @@ class MemoryLayer:
             raise ValueError("MemoryLayer.store rejects empty text")
         node_id = uuid.uuid4().hex
         embedding = self._embed(text)
-        self._id_to_idx[node_id] = len(self._ids)
-        self._ids.append(node_id)
-        self._texts.append(text)
-        self._metadatas.append(dict(metadata) if metadata else {})
-        self._timestamps.append(self._step)
-        self._embeddings_list.append(embedding)
-        self._soma_activations.append(None)
-        self._step += 1
-        self._faiss_index = None  # invalidate; rebuilt on next retrieve
-        self._stores_since_consolidation += 1
+        meta_dict = dict(metadata) if metadata else {}
+        ts_step = self._step
+        # Under a bundle lock: WAL append first (committed on disk before
+        # we mutate in-memory state), then in-memory mutation. If the
+        # append raises, we leave the in-memory state untouched.
+        with self._bundle_lock():
+            if self._wal is not None:
+                self._wal.append(
+                    WalRecord(
+                        op="store",
+                        node_id=node_id,
+                        text=text,
+                        metadata=meta_dict,
+                        timestamp_step=ts_step,
+                        embedding=embedding,
+                        emb_offset=None,
+                    )
+                )
+            self._id_to_idx[node_id] = len(self._ids)
+            self._ids.append(node_id)
+            self._texts.append(text)
+            self._metadatas.append(meta_dict)
+            self._timestamps.append(ts_step)
+            self._embeddings_list.append(embedding)
+            self._soma_activations.append(None)
+            self._step += 1
+            self._faiss_index = None  # invalidate; rebuilt on next retrieve
+            self._stores_since_consolidation += 1
         if (
             self._auto_consolidate_every > 0
             and self._soma is not None
@@ -371,6 +463,9 @@ class MemoryLayer:
         it once for the whole batch instead of N round-trips; this is the
         main reason to prefer ``store_batch`` over a loop of ``store``. The
         FAISS index is invalidated once at the end rather than per-entry.
+
+        Acquires the bundle lock ONCE for the whole batch, so N records
+        cost one fsync cycle under ``durability="sync"`` rather than N.
         """
         if not texts:
             return []
@@ -383,21 +478,34 @@ class MemoryLayer:
                 raise ValueError("MemoryLayer.store_batch rejects empty text")
         embeddings = self._embed_batch(texts)
         node_ids: list[str] = []
-        for i, text in enumerate(texts):
-            nid = uuid.uuid4().hex
-            self._id_to_idx[nid] = len(self._ids)
-            self._ids.append(nid)
-            self._texts.append(text)
-            self._metadatas.append(
-                dict(metadatas[i]) if metadatas is not None else {}
-            )
-            self._timestamps.append(self._step)
-            self._embeddings_list.append(embeddings[i])
-            self._soma_activations.append(None)
-            self._step += 1
-            node_ids.append(nid)
-        self._faiss_index = None
-        self._stores_since_consolidation += len(texts)
+        with self._bundle_lock():
+            for i, text in enumerate(texts):
+                nid = uuid.uuid4().hex
+                meta_dict = dict(metadatas[i]) if metadatas is not None else {}
+                ts_step = self._step
+                if self._wal is not None:
+                    self._wal.append(
+                        WalRecord(
+                            op="store",
+                            node_id=nid,
+                            text=text,
+                            metadata=meta_dict,
+                            timestamp_step=ts_step,
+                            embedding=embeddings[i],
+                            emb_offset=None,
+                        )
+                    )
+                self._id_to_idx[nid] = len(self._ids)
+                self._ids.append(nid)
+                self._texts.append(text)
+                self._metadatas.append(meta_dict)
+                self._timestamps.append(ts_step)
+                self._embeddings_list.append(embeddings[i])
+                self._soma_activations.append(None)
+                self._step += 1
+                node_ids.append(nid)
+            self._faiss_index = None
+            self._stores_since_consolidation += len(texts)
         if (
             self._auto_consolidate_every > 0
             and self._soma is not None
@@ -678,20 +786,39 @@ class MemoryLayer:
         return [self._hit_for_index(i, score=1.0) for i in recent_indices]
 
     def forget(self, node_id: str) -> bool:
-        """Remove an entry. Returns True if removed, False if unknown."""
-        idx = self._id_to_idx.pop(node_id, None)
-        if idx is None:
-            return False
-        self._ids.pop(idx)
-        self._texts.pop(idx)
-        self._metadatas.pop(idx)
-        self._timestamps.pop(idx)
-        self._embeddings_list.pop(idx)
-        self._soma_activations.pop(idx)
-        for later_id in self._ids[idx:]:
-            self._id_to_idx[later_id] -= 1
-        self._faiss_index = None  # invalidate
-        return True
+        """Remove an entry. Returns True if removed, False if unknown.
+
+        Appends a ``forget`` tombstone to the WAL (if attached) before
+        mutating in-memory state, so a crash after append + before the
+        in-memory pop still has the tombstone on disk for replay.
+        """
+        with self._bundle_lock():
+            idx = self._id_to_idx.get(node_id)
+            if idx is None:
+                return False
+            if self._wal is not None:
+                self._wal.append(
+                    WalRecord(
+                        op="forget",
+                        node_id=node_id,
+                        text=None,
+                        metadata={},
+                        timestamp_step=self._step,
+                        embedding=None,
+                        emb_offset=None,
+                    )
+                )
+            self._id_to_idx.pop(node_id, None)
+            self._ids.pop(idx)
+            self._texts.pop(idx)
+            self._metadatas.pop(idx)
+            self._timestamps.pop(idx)
+            self._embeddings_list.pop(idx)
+            self._soma_activations.pop(idx)
+            for later_id in self._ids[idx:]:
+                self._id_to_idx[later_id] -= 1
+            self._faiss_index = None  # invalidate
+            return True
 
     def consolidate(self) -> int:
         """Push stored entries through SOMA's graph to trigger plasticity.
@@ -848,6 +975,7 @@ class MemoryLayer:
         *,
         embed_fn: EmbedFn | None = None,
         device: torch.device | str | None = None,
+        durability: Literal["sync", "batch", "async"] = "sync",
     ) -> MemoryLayer:
         """Rehydrate a MemoryLayer from a ``save()``-produced directory.
 
@@ -855,22 +983,47 @@ class MemoryLayer:
         and ``encoder.pt``; those are reloaded automatically. Bundles saved
         with a custom ``embed_fn`` only store embeddings + index — pass the
         same ``embed_fn`` at load time so new stores can be embedded.
+
+        If the bundle also has WAL sidecar files (``memory_ops.wal.jsonl``
+        + ``memory_embeddings.wal.bin``), their records are replayed on
+        top of the snapshot and the WAL stays open for subsequent writes.
+        A bundle that only has WAL files (no snapshot yet — the common
+        case for a brand-new store that never called ``save()``) loads
+        from the WAL header for ``embed_dim`` and replays from there.
         """
         src = Path(path)
         index_path = src / "memory_index.json"
         embeddings_path = src / "memory_embeddings.pt"
-        for required in (index_path, embeddings_path):
-            if not required.exists():
-                raise FileNotFoundError(f"MemoryLayer bundle missing {required.name}")
+        has_snapshot = index_path.exists() and embeddings_path.exists()
+        wal_ops_path = src / "memory_ops.wal.jsonl"
+        has_wal = wal_ops_path.exists()
 
-        index = json.loads(index_path.read_text(encoding="utf-8"))
-        if index.get("schema_version") != 1:
-            raise ValueError(
-                f"Unsupported MemoryLayer schema version {index.get('schema_version')!r}"
+        if not has_snapshot and not has_wal:
+            raise FileNotFoundError(
+                f"MemoryLayer bundle missing {index_path.name} (and no WAL found)"
             )
 
-        embed_type = index.get("embed_type", "text_encoder")
-        embed_dim = int(index["embed_dim"])
+        # --- Determine the embedder + embed_dim. --------------------------
+        # Preference: snapshot index.json (richer metadata). Fallback:
+        # WAL header.
+        index: dict[str, Any] | None = None
+        if has_snapshot:
+            index = json.loads(index_path.read_text(encoding="utf-8"))
+            schema = index.get("schema_version")
+            if schema not in (1, 2):
+                raise ValueError(
+                    f"Unsupported MemoryLayer schema version {schema!r}"
+                )
+            embed_dim = int(index["embed_dim"])
+            embed_type = index.get("embed_type", "text_encoder")
+        else:
+            # No snapshot — must derive embed_dim from the WAL header.
+            first_line = wal_ops_path.read_text(encoding="utf-8").splitlines()[0]
+            header = json.loads(first_line)
+            embed_dim = int(header["embed_dim"])
+            # No snapshot means no tokenizer/encoder files either →
+            # caller must supply embed_fn.
+            embed_type = "custom"
 
         if embed_type == "text_encoder":
             tokenizer_path = src / "tokenizer.json"
@@ -882,7 +1035,7 @@ class MemoryLayer:
             encoder = TextEncoder(
                 tokenizer,
                 embed_dim=embed_dim,
-                max_seq_len=int(index.get("max_seq_len", 512)),
+                max_seq_len=int((index or {}).get("max_seq_len", 512)),
                 device=device,
             )
             encoder_state = torch.load(
@@ -891,7 +1044,13 @@ class MemoryLayer:
                 weights_only=True,
             )
             encoder.load_state_dict(encoder_state)
-            instance = cls(tokenizer=tokenizer, encoder=encoder, device=device)
+            instance = cls(
+                tokenizer=tokenizer,
+                encoder=encoder,
+                device=device,
+                bundle_path=src,
+                durability=durability,
+            )
         else:
             if embed_fn is None:
                 raise ValueError(
@@ -902,19 +1061,65 @@ class MemoryLayer:
                 embed_fn=embed_fn,
                 embed_dim=embed_dim,
                 device=device,
+                bundle_path=src,
+                durability=durability,
             )
-        instance._step = int(index.get("step", 0))
-        embeddings = torch.load(embeddings_path, map_location=device or "cpu", weights_only=True)
+
+        # --- Replay snapshot (if any). ------------------------------------
         target_device = instance._device
-        for entry, vec in zip(index["entries"], embeddings, strict=True):
-            nid = str(entry["node_id"])
-            instance._id_to_idx[nid] = len(instance._ids)
-            instance._ids.append(nid)
-            instance._texts.append(str(entry["text"]))
-            instance._metadatas.append(dict(entry.get("metadata", {})))
-            instance._timestamps.append(int(entry.get("timestamp_step", 0)))
-            instance._embeddings_list.append(vec.to(target_device))
-            instance._soma_activations.append(None)
+        if has_snapshot:
+            assert index is not None
+            instance._step = int(index.get("step", 0))
+            embeddings = torch.load(
+                embeddings_path, map_location=device or "cpu", weights_only=True
+            )
+            for entry, vec in zip(index["entries"], embeddings, strict=True):
+                nid = str(entry["node_id"])
+                instance._id_to_idx[nid] = len(instance._ids)
+                instance._ids.append(nid)
+                instance._texts.append(str(entry["text"]))
+                instance._metadatas.append(dict(entry.get("metadata", {})))
+                instance._timestamps.append(int(entry.get("timestamp_step", 0)))
+                instance._embeddings_list.append(vec.to(target_device))
+                instance._soma_activations.append(None)
+
+        # --- Replay WAL on top of snapshot. -------------------------------
+        # The WAL was opened during __init__; replay re-reads from disk.
+        if instance._wal is not None:
+            for rec in instance._wal.replay():
+                if rec.op == "store":
+                    if rec.node_id in instance._id_to_idx:
+                        # Snapshot already had this id — WAL append was
+                        # the same record, don't double-apply.
+                        continue
+                    instance._id_to_idx[rec.node_id] = len(instance._ids)
+                    instance._ids.append(rec.node_id)
+                    instance._texts.append(rec.text or "")
+                    instance._metadatas.append(dict(rec.metadata))
+                    instance._timestamps.append(int(rec.timestamp_step))
+                    emb = rec.embedding
+                    assert emb is not None
+                    instance._embeddings_list.append(emb.to(target_device))
+                    instance._soma_activations.append(None)
+                    instance._step = max(
+                        instance._step, int(rec.timestamp_step) + 1
+                    )
+                elif rec.op == "forget":
+                    idx = instance._id_to_idx.pop(rec.node_id, None)
+                    if idx is None:
+                        continue
+                    instance._ids.pop(idx)
+                    instance._texts.pop(idx)
+                    instance._metadatas.pop(idx)
+                    instance._timestamps.pop(idx)
+                    instance._embeddings_list.pop(idx)
+                    instance._soma_activations.pop(idx)
+                    for later_id in instance._ids[idx:]:
+                        instance._id_to_idx[later_id] -= 1
+                    instance._step = max(
+                        instance._step, int(rec.timestamp_step) + 1
+                    )
+        instance._faiss_index = None  # fresh replay invalidates any prior index
         return instance
 
     # ------------------------------------------------------------------

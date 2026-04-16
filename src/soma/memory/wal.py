@@ -208,11 +208,18 @@ class WAL:
             payload = _pack_embedding(record.embedding)
             crc = zlib.crc32(payload) & 0xFFFFFFFF
             header = _FRAME_HEADER.pack(len(payload), crc)
-            emb_offset = self._emb_size
+            # Re-stat the file under the bundle lock so concurrent writers
+            # on the same bundle agree on the next offset. The cached
+            # ``_emb_size`` can lag if another process appended while we
+            # held the python-side handle.
+            try:
+                emb_offset = self._emb_path.stat().st_size
+            except FileNotFoundError:
+                emb_offset = self._emb_size
             self._emb_fh.write(header)
             self._emb_fh.write(payload)
             self._emb_fh.flush()
-            self._emb_size += len(header) + len(payload)
+            self._emb_size = emb_offset + len(header) + len(payload)
         elif record.op == "forget":
             # forget records don't consume the binary file.
             pass

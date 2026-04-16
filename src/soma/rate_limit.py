@@ -30,8 +30,49 @@ import math
 import os
 import time
 from dataclasses import dataclass
+from typing import Any
 
-__all__ = ["RateLimiter", "TokenBucket"]
+__all__ = ["RATE_LIMITED_TOTAL", "RateLimiter", "TokenBucket"]
+
+
+# ---------------------------------------------------------------------------
+# Metric: total 429s emitted by the limiter. Label = scope so operators
+# can tell `per-token` from `per-subject` rejections. No per-key label —
+# that's a cardinality explosion risk; "total 429s / minute" is the
+# actionable number on a dashboard anyway.
+#
+# Noop-compatible fallback mirrors soma.metrics — if prometheus-client
+# isn't installed, ``RATE_LIMITED_TOTAL.labels(...).inc()`` is a silent
+# no-op instead of an ImportError at middleware time.
+# ---------------------------------------------------------------------------
+
+_PROM_AVAILABLE: bool
+try:
+    from prometheus_client import Counter as _Counter
+
+    _PROM_AVAILABLE = True
+except ImportError:  # pragma: no cover
+    _PROM_AVAILABLE = False
+    _Counter = None  # type: ignore[assignment, misc]
+
+
+class _NoopCounter:
+    def labels(self, *_args: Any, **_kwargs: Any) -> _NoopCounter:
+        return self
+
+    def inc(self, _amount: float = 1.0) -> None:
+        return None
+
+
+RATE_LIMITED_TOTAL: Any
+if _PROM_AVAILABLE:
+    RATE_LIMITED_TOTAL = _Counter(
+        "soma_rate_limited_total",
+        "Total requests rejected by the in-proc rate limiter.",
+        ["scope"],
+    )
+else:  # pragma: no cover
+    RATE_LIMITED_TOTAL = _NoopCounter()
 
 
 # ---------------------------------------------------------------------------

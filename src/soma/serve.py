@@ -82,6 +82,7 @@ from soma.auth import Perm, Principal, parse_ttl_spec, refresh_token, verify_tok
 from soma.auth_revocation import blocklist_from_env
 from soma.log import configure_json_logging
 from soma.memory import MemoryLayer
+from soma.rate_limit import RATE_LIMITED_TOTAL, RateLimiter
 
 # Structured JSON logging swap (no-op unless SOMA_LOG_JSON=1). Called at
 # import time so `uvicorn soma.serve:app` picks up the formatter before
@@ -163,6 +164,48 @@ def _parse_ttl_env(var: str) -> timedelta | None:
 # resolved once at import time so peer processes can share the file
 # via portalocker + mtime poll (~30 s propagation).
 _blocklist = blocklist_from_env()
+
+# Phase 26 — in-proc per-token rate limiter. Opt-in via
+# SOMA_RATE_LIMIT_RPS; when unset, ``RateLimiter.from_env()`` returns
+# ``None`` and every request flows through the limiter check as a no-op.
+# Keyed on JWT ``jti`` by default (``per-token``); flip to
+# ``per-subject`` to share a bucket across token refreshes for the same
+# ``sub``. Exempt: ``/metrics`` (Prometheus scrape) and ``/health``
+# (liveness probe) — a noisy tenant shouldn't throttle monitoring.
+_RATE_LIMITER: RateLimiter | None = RateLimiter.from_env()
+_RATE_LIMIT_SCOPE: str = os.environ.get("SOMA_RATE_LIMIT_SCOPE", "per-token").strip() or "per-token"
+_RATE_LIMIT_EXEMPT_PATHS: frozenset[str] = frozenset({"/metrics", "/health"})
+
+
+def _enforce_rate_limit(request: Request, principal: Principal) -> None:
+    """Consume one token from the principal's bucket, or raise 429.
+
+    Called from inside :func:`require_auth` after verification succeeds
+    so the limiter always sees a valid ``Principal``. Exempts
+    ``/metrics`` and ``/health`` so monitoring + k8s probes never get
+    throttled. No-op when ``_RATE_LIMITER`` is ``None`` (the default).
+    """
+    if _RATE_LIMITER is None:
+        return
+    if request.url.path in _RATE_LIMIT_EXEMPT_PATHS:
+        return
+    # per-token scoping uses the jti so refreshes get a fresh budget;
+    # per-subject shares across refreshes. Fall back to sub when jti is
+    # missing (pre-Phase-18 tokens or the legacy-api-key principal).
+    key = (
+        principal.sub
+        if _RATE_LIMIT_SCOPE == "per-subject"
+        else (principal.jti or principal.sub)
+    )
+    allowed, retry_after = _RATE_LIMITER.check(key)
+    if allowed:
+        return
+    RATE_LIMITED_TOTAL.labels(scope=_RATE_LIMIT_SCOPE).inc()
+    raise HTTPException(
+        status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+        detail="rate limit exceeded",
+        headers={"Retry-After": f"{max(retry_after, 0.0):.2f}"},
+    )
 
 app = FastAPI(
     title="SOMA Memory Layer",
@@ -389,6 +432,7 @@ def require_auth(
                         else f"perm {perm!r} required"
                     )
                     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=detail)
+                _enforce_rate_limit(request, principal)
                 return principal
 
         # Path 3: legacy SOMA_API_KEY admin escape hatch.
@@ -399,6 +443,7 @@ def require_auth(
             and credentials.credentials == API_KEY
         ):
             response.headers["X-SOMA-Deprecated"] = "use JWT"
+            _enforce_rate_limit(request, _LEGACY_PRINCIPAL)
             return _LEGACY_PRINCIPAL
 
         # Anything else is a clean 401.

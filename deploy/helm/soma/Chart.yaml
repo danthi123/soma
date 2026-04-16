@@ -1,0 +1,23 @@
+apiVersion: v2
+name: soma
+description: SOMA — local-first agent memory layer
+type: application
+version: 0.1.0            # chart version
+appVersion: "0.1.0"       # application version
+kubeVersion: ">=1.28.0-0"
+home: https://github.com/soma-ai/SOMA
+sources:
+  - https://github.com/soma-ai/SOMA
+keywords:
+  - memory
+  - vector-db
+  - rag
+  - ai
+  - agent
+maintainers:
+  - name: Daniel Thiberge
+    email: daniel.thiberge@gmail.com
+icon: https://raw.githubusercontent.com/soma-ai/SOMA/main/docs/assets/soma-icon.png
+annotations:
+  category: AI
+  licenses: MIT

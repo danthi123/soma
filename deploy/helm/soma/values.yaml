@@ -1,0 +1,240 @@
+# Default values for the SOMA Helm chart.
+# This is a YAML-formatted file — every key below is documented and safe
+# to copy-paste into your own overrides file.
+#
+# Reference runbook: docs/deployment-k8s.md in the source tree.
+
+# -- Number of SOMA pods. LOCKED at 1 until Phase 6 ships an external
+# vector backend. WAL is single-writer; a second replica would corrupt
+# the paired WAL files. `values.schema.json` pins `maximum: 1` and the
+# StatefulSet template re-asserts the lock via `{{ fail }}`.
+replicaCount: 1
+
+image:
+  repository: ghcr.io/soma-ai/soma
+  # -- Overrides the image tag whose default is the chart appVersion.
+  tag: ""
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  # -- Create a ServiceAccount for the SOMA pod.
+  create: true
+  # -- Annotations to add to the service account.
+  annotations: {}
+  # -- The name of the service account to use. If not set and `create`
+  # is true, the chart's fullname is used.
+  name: ""
+
+# -- Pod-level annotations (merged with prometheus scrape annotations
+# when `metrics.annotations.enabled` is true).
+podAnnotations: {}
+
+# -- Pod-level labels.
+podLabels: {}
+
+# -- Non-root posture. The Docker image runs as uid 1000.
+podSecurityContext:
+  fsGroup: 1000
+  runAsNonRoot: true
+  runAsUser: 1000
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+  readOnlyRootFilesystem: false  # HF cache, WAL rotations need writes
+  runAsNonRoot: true
+  runAsUser: 1000
+
+service:
+  type: ClusterIP
+  port: 8420
+  # -- NodePort when `service.type: NodePort`.
+  nodePort: ""
+  annotations: {}
+
+# -- Container port inside the pod. Match to `$PORT` in the Dockerfile.
+containerPort: 8420
+
+# -- API authentication. Default: generate a random 32-byte hex key once
+# on fresh install. The Secret carries annotation
+# `helm.sh/resource-policy: keep` so `helm uninstall` never deletes it.
+api:
+  # Enable Bearer-token auth on non-liveness endpoints.
+  enabled: true
+  # Use an existing Secret (opaque, key: `SOMA_API_KEY`) instead of
+  # generating one. When set, chart will not render a Secret template.
+  existingSecret: ""
+  # Override the key name inside `existingSecret`. Default `SOMA_API_KEY`.
+  existingSecretKey: "SOMA_API_KEY"
+
+# -- Non-secret environment (paths, embed model). Merged onto the Pod's
+# envFrom ConfigMap.
+env:
+  SOMA_BUNDLE_PATH: /app/data/memory
+  SOMA_BUNDLES_DIR: /app/data/bundles
+  SOMA_EMBED_MODEL: all-MiniLM-L6-v2
+  # SOMA_LOG_JSON: "1"          # structured JSON logs for Loki/Datadog
+
+# -- Extra env (free-form; e.g. feature flags, OTEL endpoint).
+extraEnv: []
+# - name: SOMA_OTEL_ENABLED
+#   value: "1"
+# - name: OTEL_EXPORTER_OTLP_ENDPOINT
+#   value: "http://otel-collector.observability:4317"
+
+# -- Extra env loaded from ConfigMap / Secret references.
+extraEnvFrom: []
+# - configMapRef:
+#     name: soma-extra-config
+# - secretRef:
+#     name: soma-extra-secret
+
+persistence:
+  # -- Request a PVC via StatefulSet.volumeClaimTemplates.
+  enabled: true
+  # -- Leave empty to use the cluster default. Use "manual" on
+  # minikube/kind when pre-creating a PV.
+  storageClassName: ""
+  # -- PVC access mode. StatefulSet + RWO survives rolling upgrades
+  # because OrderedReady releases the volume before the next pod binds.
+  accessModes:
+    - ReadWriteOnce
+  size: 10Gi
+  # -- Annotations to apply to the generated PVC (e.g., Velero backup).
+  annotations: {}
+
+resources:
+  requests:
+    cpu: 500m
+    # REQUIRED — sbert model loads ~400 MB resident on first /retrieve.
+    # 1 Gi nodes OOM-kill the pod mid-load.
+    memory: 2Gi
+  limits:
+    # No CPU limit by default — throttling hurts sbert embedding latency.
+    memory: 3Gi
+
+# Probes are all HTTP GET /health (non-authenticated liveness endpoint).
+# startupProbe gives sbert a 150 s warmup budget on first boot (cold
+# pull on a 2 GB node); the image pre-bakes the MiniLM snapshot so
+# cached layers reach Ready in ~10 s.
+probes:
+  startup:
+    enabled: true
+    httpGet:
+      path: /health
+      port: 8420
+    initialDelaySeconds: 5
+    periodSeconds: 5
+    failureThreshold: 30        # 30 * 5 = 150 s budget
+    timeoutSeconds: 3
+  liveness:
+    enabled: true
+    httpGet:
+      path: /health
+      port: 8420
+    initialDelaySeconds: 0
+    periodSeconds: 30
+    failureThreshold: 3
+    timeoutSeconds: 5
+  readiness:
+    enabled: true
+    httpGet:
+      path: /health
+      port: 8420
+    initialDelaySeconds: 0
+    periodSeconds: 10
+    failureThreshold: 3
+    timeoutSeconds: 5
+
+# -- Optional Ingress. Mutually exclusive with `httpRoute.enabled`; the
+# `soma.validateNetworking` helper calls `{{ fail }}` if both are set.
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+    # cert-manager.io/cluster-issuer: letsencrypt-prod
+    # nginx.ingress.kubernetes.io/proxy-body-size: 10m
+  hosts:
+    - host: soma.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+  #  - secretName: soma-tls
+  #    hosts:
+  #      - soma.example.com
+
+# -- Optional Gateway API HTTPRoute (v1). Requires
+# `gateway.networking.k8s.io/v1` to be installed on the cluster;
+# gated behind `.Capabilities.APIVersions.Has` at render time.
+# Mutually exclusive with `ingress.enabled`.
+httpRoute:
+  enabled: false
+  parentRefs:
+    - name: gateway
+      namespace: ""
+      sectionName: ""
+  hostnames:
+    - soma.example.com
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+
+# -- Prometheus Operator integration. Gated on CRD presence
+# (`monitoring.coreos.com/v1`). Disable both to render a plain chart.
+metrics:
+  annotations:
+    # -- Emit legacy `prometheus.io/scrape` annotations on the Pod.
+    enabled: false
+  serviceMonitor:
+    enabled: false
+    namespace: ""
+    interval: 30s
+    scrapeTimeout: 10s
+    labels: {}
+    relabelings: []
+    metricRelabelings: []
+  podMonitor:
+    enabled: false
+    namespace: ""
+    interval: 30s
+    scrapeTimeout: 10s
+    labels: {}
+    relabelings: []
+    metricRelabelings: []
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# -- Topology spread (off by default). Production users pick whichever
+# scheduling hint matches their fleet.
+topologySpreadConstraints: []
+# - maxSkew: 1
+#   topologyKey: topology.kubernetes.io/zone
+#   whenUnsatisfiable: ScheduleAnyway
+#   labelSelector:
+#     matchLabels:
+#       app.kubernetes.io/name: soma
+
+# -- Extra volumes + volumeMounts (e.g., shared embedding cache).
+extraVolumes: []
+extraVolumeMounts: []
+
+# -- Override container command. Leave empty to use the image default.
+command: []
+args: []
+
+# -- Pod termination grace. Consolidation + WAL flush finishes fast;
+# 30 s is comfortable.
+terminationGracePeriodSeconds: 30

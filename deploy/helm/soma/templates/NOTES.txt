@@ -1,0 +1,56 @@
+SOMA has been installed in namespace {{ .Release.Namespace }}.
+
+1. Port-forward the primary Service to your local machine:
+
+   kubectl --namespace {{ .Release.Namespace }} port-forward \
+     svc/{{ include "soma.fullname" . }} 8420:{{ .Values.service.port }}
+
+2. Check liveness (unauthenticated /health endpoint):
+
+   curl http://localhost:8420/health
+
+3. Authenticated requests — fetch the API key{{- if .Values.api.existingSecret }} from your pre-created Secret {{ .Values.api.existingSecret | quote }}{{- else if .Values.api.enabled }} from the auto-generated Secret{{- end }}:
+{{- if .Values.api.enabled }}
+
+   export SOMA_API_KEY=$(kubectl --namespace {{ .Release.Namespace }} get secret \
+     {{ include "soma.apiSecretName" . }} \
+     -o jsonpath="{.data.{{ include "soma.apiSecretKey" . }}}" | base64 -d)
+
+   curl -H "Authorization: Bearer $SOMA_API_KEY" \
+     -H "Content-Type: application/json" \
+     -X POST http://localhost:8420/store \
+     -d '{"text": "hello from k8s"}'
+{{- else }}
+
+   API auth is DISABLED (api.enabled=false) — every endpoint is open.
+   Set api.enabled=true and `helm upgrade` to require a Bearer token.
+{{- end }}
+
+{{- if .Values.ingress.enabled }}
+
+4. Ingress is enabled. Hosts:
+{{- range .Values.ingress.hosts }}
+     http{{ if $.Values.ingress.tls }}s{{ end }}://{{ .host }}
+{{- end }}
+{{- else if .Values.httpRoute.enabled }}
+
+4. Gateway API HTTPRoute is enabled. Hostnames:
+{{- range .Values.httpRoute.hostnames }}
+     {{ . }}
+{{- end }}
+{{- end }}
+
+{{- if .Values.metrics.serviceMonitor.enabled }}
+
+5. ServiceMonitor rendered — Prometheus Operator will scrape /metrics
+   on port {{ .Values.service.port }} every {{ .Values.metrics.serviceMonitor.interval }}.
+{{- else if .Values.metrics.podMonitor.enabled }}
+
+5. PodMonitor rendered — Prometheus Operator will scrape /metrics.
+{{- end }}
+
+Reminder: replicaCount is LOCKED at 1 until Phase 6 (external
+VectorBackend). Scale horizontally through bundle sharding today;
+HPA/autoscaling comes post-Phase-6.
+
+Runbook: https://github.com/soma-ai/SOMA/blob/main/docs/deployment-k8s.md

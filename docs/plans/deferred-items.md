@@ -2,43 +2,16 @@
 
 Things that came up during the 2026-04-16 gap-closing push (Phases 1-7b) but were explicitly scoped out or flagged for later. Organized by category with source pointers, rough effort, and reasoning.
 
-> **Triage:** the remaining next-sprint set is LoCoMo-QA eval, threshold calibration, and LanceDB. Everything below those is tier-2+.
+> **Triage:** post-2026-04-16 every item from the original "next-sprint set" has shipped (LoCoMo-QA eval in `065ebf7`, threshold calibration in `64dfc43`, LanceDB in Phase 6 + `36fec21`, JWT revocation in the blocklist work below). Everything below is tier-2+, ordered by rough effort.
 
 ---
 
 ## Completed (post-2026-04-16)
 
-### JWT revocation blocklist — done 2026-04-16
-File-backed JSONL blocklist shipped. New module `src/soma/auth_revocation.py`
-with `BlocklistBackend` Protocol + `FileBlocklist` impl. Wired through
-`verify_token` (optional `blocklist=` kwarg) and `serve.py` module-level
-`_blocklist = blocklist_from_env()`. New CLI subcommands: `soma auth revoke`
-(accepts `--token` or `--jti/--exp`), `soma auth list-revoked`, `soma auth
-gc`. New metric label `soma_auth_failures_total{reason="revoked_token"}`.
-Design decision memo: `docs/plans/2026-04-16-jwt-revocation.md`. Redis-backed
-variant stayed deferred (see tier-2 auth below).
-
----
-
-## Recommended next-sprint set
-
-### LoCoMo-QA eval with LLM-as-judge
-- **Why:** Quantifies our Mem0/Zep positioning. Mem0 claims +26% QA accuracy on LoCoMo — we haven't measured SOMA there.
-- **Shape:** extend `benchmarks/run_locomo.py` with `--run-qa-eval` flag. Retrieves top-k, asks LLM to answer, another LLM judges. Compare raw vs ConversationalMemory arms.
-- **Source:** `docs/plans/2026-04-16-phase-2-conversational-memory.md` §8.
-- **Effort:** ~4 h (adapter wiring, judge prompt, report column).
-
-### Threshold calibration (ConversationalMemory)
-- **Why:** `near_dup_threshold=0.92` / `ambiguous_threshold=0.75` are sbert rules-of-thumb — never tuned on our actual corpus. Poor defaults hurt Phase 2's real-world recall/precision.
-- **Shape:** sweep both thresholds over `{0.65, 0.70, 0.75, 0.80}` × `{0.88, 0.90, 0.92, 0.94}` on a LoCoMo subset; plot fact-count vs LoCoMo QA accuracy.
-- **Source:** `docs/plans/2026-04-16-phase-2-conversational-memory.md` Risks §3.
-- **Effort:** ~2 h as a bench script.
-
-### LanceDB adapter (completes local-first scale story)
-- **Why:** Qdrant-local caps at ~20K. Qdrant-HTTP requires a server. LanceDB is truly embedded, arrow-based, scales to 10M+ in-proc. Fills the "no server, but need scale" niche.
-- **Shape:** new `src/soma/memory/backends/lancedb.py` conforming to `VectorBackend` Protocol. New optional extra `soma[lancedb]`.
-- **Source:** `docs/plans/2026-04-16-phase-6-vector-backend.md` §4.
-- **Effort:** ~1.5 d (adapter + tests + matrix benchmark row).
+- **JWT revocation blocklist** — file-backed JSONL blocklist in `src/soma/auth_revocation.py`; `BlocklistBackend` Protocol + `FileBlocklist` impl; wired into `verify_token` + `serve.py`; new CLI `soma auth revoke / list-revoked / gc`; new `soma_auth_failures_total{reason="revoked_token"}` label.
+- **LoCoMo-QA LLM-as-judge eval** — `benchmarks/run_locomo.py --run-qa-eval` flag; `benchmarks/harness/qa_eval.py`; post-hoc scoring across arms; DryRunBackend fallback when no live LLM available.
+- **Threshold calibration sweep** — `benchmarks/run_conv_threshold_sweep.py` 4x4 grid harness.
+- **LanceDB adapter** — full `VectorBackend` implementation with filter pushdown, snapshot/restore, parametrized protocol suite. `soma[lancedb]` extra.
 
 ---
 

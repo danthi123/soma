@@ -40,6 +40,15 @@ Environment variables:
     SOMA_JWT_AUDIENCE   — pin the verifier to a specific ``aud`` claim
                           (Phase 18). When set, tokens without a matching
                           ``aud`` are rejected. Unset = no audience check.
+    SOMA_JWT_PRIVATE_KEY_PATH — RS256 PEM file for signing. Required on
+                          the refresh path only (Phase 23) — plain
+                          verification still works with just the public
+                          key. HS256 deployments reuse SOMA_JWT_SECRET.
+    SOMA_JWT_REFRESH_TTL — Override the default refresh window. Accepts
+                          ``30d | 24h | 60m`` (Phase 23). Unset = reuse
+                          the original token's exp-iat window.
+    SOMA_JWT_MAX_TTL    — Optional cap on any refreshed token's TTL
+                          (Phase 23, same format). Unset = no cap.
     SOMA_CORS_ORIGINS   — comma-separated allow-list for the browser
                           CORS middleware (default: http://localhost:*).
 
@@ -58,6 +67,7 @@ from __future__ import annotations
 import os
 import re
 import threading
+from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
@@ -68,7 +78,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field
 
 from soma import metrics as _metrics
-from soma.auth import Perm, Principal, verify_token
+from soma.auth import Perm, Principal, parse_ttl_spec, refresh_token, verify_token
 from soma.auth_revocation import blocklist_from_env
 from soma.log import configure_json_logging
 from soma.memory import MemoryLayer
@@ -109,6 +119,43 @@ if JWT_PUBLIC_KEY_PATH:
         _JWT_PUBLIC_KEY_PEM = Path(JWT_PUBLIC_KEY_PATH).read_bytes()
     except OSError:
         _JWT_PUBLIC_KEY_PEM = None
+
+# Phase 23 — private key for the refresh path. Only the /auth/refresh
+# endpoint needs signing material; every other route is verification-
+# only and can run with just the public key. Read at import so an
+# operator rotating the private key file knows they need to bounce
+# the server.
+JWT_PRIVATE_KEY_PATH = os.environ.get("SOMA_JWT_PRIVATE_KEY_PATH", "")
+_JWT_PRIVATE_KEY_PEM: bytes | None = None
+if JWT_PRIVATE_KEY_PATH:
+    try:
+        _JWT_PRIVATE_KEY_PEM = Path(JWT_PRIVATE_KEY_PATH).read_bytes()
+    except OSError:
+        _JWT_PRIVATE_KEY_PEM = None
+
+
+def _parse_ttl_env(var: str) -> timedelta | None:
+    """Read ``var`` from the process env and parse as a TTL spec.
+
+    Returns ``None`` when the env var is unset or empty; returns
+    ``None`` (and logs a warning) when the value is malformed, so the
+    caller falls back to its documented default instead of crashing at
+    request time.
+    """
+    raw = os.environ.get(var, "").strip()
+    if not raw:
+        return None
+    try:
+        return parse_ttl_spec(raw)
+    except ValueError:
+        import warnings
+
+        warnings.warn(
+            f"{var}={raw!r} is malformed; ignoring (expected 30d | 24h | 60m)",
+            stacklevel=2,
+        )
+        return None
+
 
 # JWT revocation blocklist. Gated on ``SOMA_JWT_BLOCKLIST_PATH``; when
 # unset, ``blocklist_from_env`` returns a no-op ``null_blocklist`` so
@@ -672,6 +719,132 @@ def version_endpoint() -> VersionResponse:
         return VersionResponse(version=_v("soma"))
     except Exception:
         return VersionResponse(version="unknown")
+
+
+# ------------------------------------------------------------------
+# Phase 23 — POST /auth/refresh
+# ------------------------------------------------------------------
+class RefreshResponse(BaseModel):
+    """Response body for ``POST /auth/refresh``."""
+
+    token: str = Field(..., description="Freshly-minted JWT with a new jti and exp.")
+    exp: int = Field(..., description="Epoch-seconds expiry of the new token.")
+
+
+@app.post(
+    "/auth/refresh",
+    response_model=RefreshResponse,
+    operation_id="auth_refresh",
+    tags=["auth"],
+    responses=ERROR_RESPONSES,
+)
+def auth_refresh(request: Request) -> RefreshResponse:
+    """Exchange a valid bearer for a fresh token with the same claims.
+
+    The bearer in ``Authorization:`` is verified end-to-end (signature,
+    exp, revocation, audience) and then re-minted via
+    :func:`soma.auth.refresh_token`. The new token carries the same
+    ``sub`` / ``bundles`` / ``aud`` as the original but a fresh ``jti``
+    and a fresh ``exp``.
+
+    Failure modes all return 401 (the bearer is itself the credential,
+    and revoking a token is the only way to block refresh loops):
+
+    - no/mismatched ``Authorization`` header
+    - expired, revoked, or malformed token
+    - server misconfigured (no signing key available)
+
+    The old token is NOT auto-revoked. Operators wanting rotation call
+    ``POST /auth/revoke`` (or ``soma auth revoke``) explicitly before
+    or after refresh — intentional: revocation is orthogonal policy.
+    """
+    # Step 1: pull the raw bearer off the header ourselves — we can't
+    # use the FastAPI dependency because Principal drops the raw token
+    # string, which the refresh helper needs.
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.lower().startswith("bearer "):
+        record_auth_failure("missing_credentials")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="missing or malformed Authorization header",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    raw_token = auth_header[len("Bearer ") :].strip()
+    if not raw_token:
+        record_auth_failure("missing_credentials")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="empty bearer token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    # Step 2: resolve signing / verification material. HS256 uses the
+    # shared secret for both; RS256 needs the private key on-hand to
+    # sign the new token. A verification-only RS256 deployment (public
+    # key but no private key) can't refresh — surface that as a 401
+    # with a hint.
+    if JWT_ALG == "HS256":
+        if not JWT_SECRET:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="refresh unavailable: SOMA_JWT_SECRET not configured",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        helper_kwargs: dict[str, Any] = {"alg": "HS256", "secret": JWT_SECRET}
+    elif JWT_ALG == "RS256":
+        if _JWT_PUBLIC_KEY_PEM is None or _JWT_PRIVATE_KEY_PEM is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail=(
+                    "refresh unavailable: RS256 needs both "
+                    "SOMA_JWT_PUBLIC_KEY_PATH and SOMA_JWT_PRIVATE_KEY_PATH"
+                ),
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        helper_kwargs = {
+            "alg": "RS256",
+            "public_key_pem": _JWT_PUBLIC_KEY_PEM,
+            "private_key_pem": _JWT_PRIVATE_KEY_PEM,
+        }
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=f"refresh unavailable: unsupported SOMA_JWT_ALG={JWT_ALG!r}",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    # Step 3: mint. Env-driven TTL knobs are resolved fresh per call so
+    # operators can tune them without restarting (tests monkeypatch
+    # them inline for the same reason).
+    try:
+        new_token = refresh_token(
+            raw_token,
+            leeway=JWT_LEEWAY,
+            blocklist=_blocklist,
+            expected_audience=JWT_AUDIENCE,
+            new_expires_in=_parse_ttl_env("SOMA_JWT_REFRESH_TTL"),
+            max_expires_in=_parse_ttl_env("SOMA_JWT_MAX_TTL"),
+            **helper_kwargs,
+        )
+    except jwt.ExpiredSignatureError:
+        record_auth_failure("expired_token")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="token expired",
+            headers={"WWW-Authenticate": 'Bearer error="invalid_token"'},
+        ) from None
+    except jwt.InvalidTokenError as exc:
+        reason = "revoked_token" if "revoked" in str(exc).lower() else "invalid_token"
+        record_auth_failure(reason)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=f"refresh failed: {exc}",
+            headers={"WWW-Authenticate": 'Bearer error="invalid_token"'},
+        ) from None
+
+    # Pull exp off the freshly-minted token for the response body.
+    new_claims = jwt.decode(new_token, options={"verify_signature": False})
+    return RefreshResponse(token=new_token, exp=int(new_claims.get("exp", 0)))
 
 
 # ------------------------------------------------------------------

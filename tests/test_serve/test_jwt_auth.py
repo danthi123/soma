@@ -51,9 +51,12 @@ def _fresh_serve(monkeypatch: pytest.MonkeyPatch, **env: str) -> object:
         "SOMA_JWT_SECRET",
         "SOMA_JWT_ALG",
         "SOMA_JWT_PUBLIC_KEY_PATH",
+        "SOMA_JWT_PRIVATE_KEY_PATH",
         "SOMA_JWT_LEEWAY",
         "SOMA_JWT_BLOCKLIST_PATH",
         "SOMA_JWT_AUDIENCE",
+        "SOMA_JWT_REFRESH_TTL",
+        "SOMA_JWT_MAX_TTL",
     ):
         monkeypatch.delenv(key, raising=False)
     for k, v in env.items():
@@ -571,3 +574,197 @@ def test_blocklist_path_unset_behaves_as_before(
         json={"text": "through"},
     )
     assert r.status_code == 200, r.text
+
+
+# ------------------------------------------------------------------
+# Phase 23 — POST /auth/refresh
+# ------------------------------------------------------------------
+def test_refresh_endpoint_happy_path(monkeypatch: pytest.MonkeyPatch) -> None:
+    """POST /auth/refresh returns a fresh token with same claims, new jti."""
+    reloaded = _fresh_serve(monkeypatch, SOMA_JWT_SECRET=_SECRET)
+    client = TestClient(reloaded.app)
+    token = issue_token(
+        sub="alex",
+        bundles={"alex": ["read", "write"]},
+        expires_in=timedelta(minutes=30),
+        secret=_SECRET,
+    )
+    r = client.post(
+        "/auth/refresh",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert "token" in body
+    assert "exp" in body
+    assert body["token"] != token
+
+    # Fresh token must verify and carry the same claims but a fresh jti.
+    from soma.auth import verify_token as _vt
+
+    old = _vt(token, secret=_SECRET)
+    new = _vt(body["token"], secret=_SECRET)
+    assert old.sub == new.sub == "alex"
+    assert old.bundles == new.bundles == {"alex": ["read", "write"]}
+    assert new.jti is not None
+    assert new.jti != old.jti
+
+
+def test_refresh_endpoint_without_bearer_returns_401(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    reloaded = _fresh_serve(monkeypatch, SOMA_JWT_SECRET=_SECRET)
+    client = TestClient(reloaded.app)
+    # No Authorization header at all.
+    r = client.post("/auth/refresh")
+    assert r.status_code == 401, r.text
+    assert r.headers.get("WWW-Authenticate", "").lower().startswith("bearer")
+
+
+def test_refresh_endpoint_with_expired_token_returns_401(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    reloaded = _fresh_serve(monkeypatch, SOMA_JWT_SECRET=_SECRET)
+    client = TestClient(reloaded.app)
+    token = issue_token(
+        sub="a",
+        bundles={},
+        expires_in=timedelta(minutes=-10),
+        secret=_SECRET,
+    )
+    r = client.post(
+        "/auth/refresh",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert r.status_code == 401, r.text
+    assert r.headers.get("WWW-Authenticate", "").lower().startswith("bearer")
+
+
+def test_refresh_endpoint_with_revoked_token_returns_401(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A revoked jti must not be refreshable — otherwise revocation is meaningless."""
+    import time
+
+    bl_path = tmp_path / "bl.jsonl"
+    reloaded = _fresh_serve(
+        monkeypatch,
+        SOMA_JWT_SECRET=_SECRET,
+        SOMA_JWT_BLOCKLIST_PATH=str(bl_path),
+    )
+    client = TestClient(reloaded.app)
+    token = issue_token(
+        sub="alex",
+        bundles={"alex": ["read"]},
+        expires_in=timedelta(minutes=10),
+        secret=_SECRET,
+    )
+    from soma.auth import verify_token as _vt
+
+    principal = _vt(token, secret=_SECRET)
+    assert principal.jti is not None
+    _revoke_via_bl(bl_path, principal.jti, exp_ts=int(time.time()) + 600)
+    reloaded._blocklist._reload()
+
+    r = client.post(
+        "/auth/refresh",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert r.status_code == 401, r.text
+    body = r.json()
+    assert "revoked" in body.get("detail", "").lower() or "revoked" in r.text.lower()
+
+
+def test_refresh_endpoint_respects_soma_jwt_refresh_ttl(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """SOMA_JWT_REFRESH_TTL=60m forces the new token's window to ~60m."""
+    reloaded = _fresh_serve(
+        monkeypatch,
+        SOMA_JWT_SECRET=_SECRET,
+        SOMA_JWT_REFRESH_TTL="60m",
+    )
+    client = TestClient(reloaded.app)
+    token = issue_token(
+        sub="a",
+        bundles={},
+        expires_in=timedelta(days=30),  # intentionally very different
+        secret=_SECRET,
+    )
+    r = client.post(
+        "/auth/refresh",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert r.status_code == 200, r.text
+    import jwt as _j
+
+    new_claims = _j.decode(r.json()["token"], _SECRET, algorithms=["HS256"])
+    window = int(new_claims["exp"]) - int(new_claims["iat"])
+    # 60 minutes ± 5s slack for request latency.
+    assert abs(window - 3600) <= 5
+
+
+def test_refresh_endpoint_preserves_audience(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Token with aud=X verified against server-side SOMA_JWT_AUDIENCE=X
+    refreshes into another token still carrying aud=X."""
+    reloaded = _fresh_serve(
+        monkeypatch,
+        SOMA_JWT_SECRET=_SECRET,
+        SOMA_JWT_AUDIENCE="svc-A",
+    )
+    client = TestClient(reloaded.app)
+    token = issue_token(
+        sub="a",
+        bundles={"a": ["read"]},
+        expires_in=timedelta(minutes=10),
+        secret=_SECRET,
+        audience="svc-A",
+    )
+    r = client.post(
+        "/auth/refresh",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert r.status_code == 200, r.text
+    # The refreshed token must still verify with the same audience check.
+    from soma.auth import verify_token as _vt
+
+    principal = _vt(r.json()["token"], secret=_SECRET, expected_audience="svc-A")
+    assert principal.sub == "a"
+
+
+def test_refresh_endpoint_does_not_auto_revoke_old(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Deliberate property: refresh does NOT revoke the old token.
+
+    Rotating-if-you-want-to is an operator choice. This pins that choice
+    so a future refactor doesn't silently add auto-revoke.
+    """
+    bl_path = tmp_path / "bl.jsonl"
+    reloaded = _fresh_serve(
+        monkeypatch,
+        SOMA_JWT_SECRET=_SECRET,
+        SOMA_JWT_BLOCKLIST_PATH=str(bl_path),
+    )
+    client = TestClient(reloaded.app)
+    token = issue_token(
+        sub="a",
+        bundles={"__default__": ["read"]},
+        expires_in=timedelta(minutes=10),
+        secret=_SECRET,
+    )
+    r = client.post(
+        "/auth/refresh",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert r.status_code == 200, r.text
+    # The original token must still work on a read-perm route.
+    reloaded._blocklist._reload()
+    r2 = client.post(
+        "/retrieve",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"query": "hello", "k": 1},
+    )
+    assert r2.status_code == 200, r2.text

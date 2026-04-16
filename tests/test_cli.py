@@ -492,3 +492,104 @@ def test_cli_auth_revoke_requires_blocklist_path(
     err = capsys.readouterr().err
     assert rc != 0
     assert "SOMA_JWT_BLOCKLIST_PATH" in err
+
+
+# ------------------------------------------------------------------
+# Phase 10 — `soma bundle` subcommands
+# ------------------------------------------------------------------
+def _seed_healthy_bundle(path: Path, entries: int = 2, embed_dim: int = 8) -> None:
+    """Write a minimal MemoryLayer-compatible bundle (stdlib only)."""
+    path.mkdir(parents=True, exist_ok=True)
+    index = {
+        "schema_version": 2,
+        "embed_dim": embed_dim,
+        "embed_type": "text_encoder",
+        "step": entries,
+        "entries": [
+            {
+                "node_id": f"n{i:06d}",
+                "text": f"row {i}",
+                "metadata": {},
+                "timestamp_step": i,
+            }
+            for i in range(entries)
+        ],
+    }
+    (path / "memory_index.json").write_text(json.dumps(index), encoding="utf-8")
+    (path / "memory_embeddings.pt").write_bytes(b"\x00" * 32)
+
+
+def _seed_corrupt_bundle(path: Path) -> None:
+    path.mkdir(parents=True, exist_ok=True)
+    (path / "memory_index.json").write_text("{not-json", encoding="utf-8")
+
+
+def test_parser_includes_bundle_subcommand() -> None:
+    p = build_parser()
+    sub_actions = [a for a in p._actions if a.dest == "cmd"]
+    assert "bundle" in sub_actions[0].choices
+
+
+def test_bundle_list_prints_table(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    _seed_healthy_bundle(tmp_path / "alex", entries=3)
+    _seed_healthy_bundle(tmp_path / "bobbi", entries=10)
+
+    rc = main(["bundle", "list", str(tmp_path)])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "alex" in out
+    assert "bobbi" in out
+    # Entry counts are present.
+    assert "3" in out
+    assert "10" in out
+    # Header row mentions the column names (case-insensitive).
+    assert "PATH" in out.upper()
+    assert "ENTRIES" in out.upper()
+
+
+def test_bundle_list_shows_corrupt_badge(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _seed_healthy_bundle(tmp_path / "good", entries=1)
+    _seed_corrupt_bundle(tmp_path / "bad")
+
+    rc = main(["bundle", "list", str(tmp_path)])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "CORRUPT" in out
+    assert "good" in out
+    assert "bad" in out
+
+
+def test_bundle_list_returns_2_for_missing_root(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    rc = main(["bundle", "list", str(tmp_path / "does-not-exist")])
+    err = capsys.readouterr().err
+    assert rc == 2
+    assert err  # non-empty
+
+
+def test_bundle_list_empty_dir_prints_header_and_returns_0(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    rc = main(["bundle", "list", str(tmp_path)])
+    assert rc == 0
+    out = capsys.readouterr().out
+    # Even when there are no rows, we print the header so operators
+    # know the scan ran.
+    assert "PATH" in out.upper()
+
+
+def test_bundle_list_default_root_is_cwd(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Omitting the root arg uses the current working directory."""
+    _seed_healthy_bundle(tmp_path / "solo", entries=1)
+    monkeypatch.chdir(tmp_path)
+    rc = main(["bundle", "list"])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "solo" in out

@@ -30,6 +30,7 @@ import re
 import sys
 from datetime import timedelta
 from pathlib import Path
+from typing import Any
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
@@ -449,6 +450,115 @@ def _cmd_auth_list_revoked(_: argparse.Namespace) -> int:
     return 0
 
 
+# ------------------------------------------------------------------
+# `soma bundle` — introspection + lifecycle management (Phase 10)
+# ------------------------------------------------------------------
+def _format_bytes(n: int) -> str:
+    """Render a byte count as a short human-readable string.
+
+    Mirrors GNU ``du -h`` style for the WAL column in ``bundle list``.
+    Uses base-1024 because operators are used to seeing MB/GB for WAL
+    file sizes; keeps precision to one decimal for the sub-GB range.
+    """
+    if n <= 0:
+        return "—"
+    units = ("B", "KB", "MB", "GB", "TB")
+    size = float(n)
+    for unit in units:
+        if size < 1024.0 or unit == units[-1]:
+            if unit == "B":
+                return f"{int(size)} {unit}"
+            return f"{size:.1f} {unit}"
+        size /= 1024.0
+    return f"{size:.1f} TB"
+
+
+def _format_rows(
+    infos: list[Any],
+) -> list[tuple[list[str], str | None]]:
+    """Turn a list of ``BundleInfo`` into ``(cells, footnote)`` pairs.
+
+    ``footnote`` is ``None`` for healthy rows and the truncated
+    corrupt reason for broken ones. :func:`_print_table` renders it
+    below the row as a ``  ↳`` continuation so the main grid stays
+    aligned.
+    """
+    rows: list[tuple[list[str], str | None]] = []
+    for info in infos:
+        path_str = str(info.path)
+        if info.corrupt:
+            entries = "CORRUPT"
+            embed_dim = "—"
+            backend = "—"
+        else:
+            entries = f"{info.entries:,}"
+            embed_dim = str(info.embed_dim) if info.embed_dim else "—"
+            backend = info.backend or "—"
+        last_mod = info.last_modified.strftime("%Y-%m-%d %H:%M")
+        wal = _format_bytes(info.wal_bytes)
+        cells = [path_str, entries, embed_dim, backend, last_mod, wal]
+        footnote = info.corrupt_reason if info.corrupt and info.corrupt_reason else None
+        rows.append((cells, footnote))
+    return rows
+
+
+def _print_table(
+    header: list[str],
+    rows: list[tuple[list[str], str | None]],
+) -> None:
+    """Print ``rows`` with ``header`` as aligned columns on stdout.
+
+    Each row is ``(cells, footnote)``; when footnote is non-empty, a
+    ``  ↳ <reason>`` continuation line is printed under the row. This
+    keeps the main grid's alignment tidy even when one bundle has a
+    200-char corrupt reason attached.
+    """
+    widths = [len(h) for h in header]
+    for cells, _ in rows:
+        for i, cell in enumerate(cells):
+            if i < len(widths) and len(cell) > widths[i]:
+                widths[i] = len(cell)
+    fmt_parts = []
+    for i, w in enumerate(widths):
+        # Right-align numeric-ish columns (entries, dim, wal); left-
+        # align the rest. Cheap heuristic: by column index.
+        if i in (1, 2, 5):
+            fmt_parts.append(f"{{:>{w}}}")
+        else:
+            fmt_parts.append(f"{{:<{w}}}")
+    fmt = "  ".join(fmt_parts)
+    print(fmt.format(*header))
+    for cells, footnote in rows:
+        padded = cells + [""] * (len(header) - len(cells))
+        print(fmt.format(*padded[: len(header)]))
+        if footnote:
+            print(f"  ↳ {footnote}")
+
+
+def _cmd_bundle_list(args: argparse.Namespace) -> int:
+    """Scan ``args.root`` up to depth 3 and print a bundle summary table.
+
+    Exits 2 if the root doesn't exist or isn't a directory. An empty
+    root returns 0 after printing just the header — makes ``watch -n 5
+    soma bundle list`` pleasant on a fresh data dir.
+    """
+    from soma.bundle import list_bundles
+
+    root = args.root
+    if not root.exists():
+        print(f"error: {root} does not exist", file=sys.stderr)
+        return 2
+    if not root.is_dir():
+        print(f"error: {root} is not a directory", file=sys.stderr)
+        return 2
+
+    infos = list_bundles(root)
+    header = ["PATH", "ENTRIES", "DIM", "BACKEND", "LAST-MODIFIED", "WAL"]
+    rows = _format_rows(infos)
+    _print_table(header, rows)
+    return 0
+
+
 def _cmd_auth_gc(_: argparse.Namespace) -> int:
     """Drop past-exp entries from the blocklist file.
 
@@ -604,6 +714,31 @@ def build_parser() -> argparse.ArgumentParser:
         help="Rewrite the blocklist dropping entries whose exp is in the past",
     )
     p_auth_gc.set_defaults(func=_cmd_auth_gc)
+
+    # --- `soma bundle` -------------------------------------------------
+    p_bundle = sub.add_parser(
+        "bundle",
+        help="List, inspect, and delete on-disk SOMA bundles",
+        description=(
+            "Manage bundle directories on disk. `list` scans a root "
+            "up to 3 levels deep; `info` shows a single bundle in "
+            "detail; `delete` removes a bundle (with confirmation)."
+        ),
+    )
+    bundle_sub = p_bundle.add_subparsers(dest="bundle_cmd", required=True)
+
+    p_bundle_list = bundle_sub.add_parser(
+        "list",
+        help="Scan a directory and print one row per bundle",
+    )
+    p_bundle_list.add_argument(
+        "root",
+        nargs="?",
+        default=Path("."),
+        type=Path,
+        help="Directory to scan (default: .)",
+    )
+    p_bundle_list.set_defaults(func=_cmd_bundle_list)
 
     return p
 

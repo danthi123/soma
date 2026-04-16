@@ -62,3 +62,30 @@ def test_retriever_empty_memory() -> None:
     retriever = SomaRetriever(memory=m, k=5)
     nodes = retriever.retrieve("anything")
     assert nodes == []
+
+
+def test_retriever_passes_where_to_memory_layer() -> None:
+    """where= on constructor restricts results to entries matching."""
+    torch.manual_seed(0)
+    tokenizer = train_bpe_tokenizer(["alex bobbi fact pref"], vocab_size=64)
+    encoder = TextEncoder(tokenizer, embed_dim=32, max_seq_len=64)
+    m = MemoryLayer(tokenizer=tokenizer, encoder=encoder)
+    m.store("alex fact", metadata={"user": "alex"})
+    m.store("bobbi fact", metadata={"user": "bobbi"})
+    retriever = SomaRetriever(memory=m, k=5, where={"user": "alex"})
+    nodes = retriever.retrieve("fact")
+    assert len(nodes) == 1
+    assert nodes[0].node.metadata.get("user") == "alex"
+
+
+def test_retriever_passes_hybrid_alpha() -> None:
+    torch.manual_seed(0)
+    tokenizer = train_bpe_tokenizer(["portland boston"], vocab_size=64)
+    encoder = TextEncoder(tokenizer, embed_dim=32, max_seq_len=64)
+    m = MemoryLayer(tokenizer=tokenizer, encoder=encoder)
+    m.store("alex lives in portland")
+    m.store("bobbi lives in boston")
+    retriever = SomaRetriever(memory=m, k=1, hybrid_alpha=0.0)
+    nodes = retriever.retrieve("portland")
+    assert len(nodes) == 1
+    assert "portland" in nodes[0].node.text

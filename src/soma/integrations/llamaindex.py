@@ -40,15 +40,37 @@ def _check_llamaindex() -> None:
 if _HAS_LLAMAINDEX:
 
     class SomaRetriever(BaseRetriever):  # type: ignore[misc]
-        """LlamaIndex retriever backed by a SOMA MemoryLayer."""
+        """LlamaIndex retriever backed by a SOMA MemoryLayer.
 
-        def __init__(self, memory: MemoryLayer, k: int = 5) -> None:
+        Pass through to :meth:`MemoryLayer.retrieve`: ``where``,
+        ``hybrid_alpha``, and ``rerank_top_n`` all supported.
+        """
+
+        def __init__(
+            self,
+            memory: MemoryLayer,
+            k: int = 5,
+            *,
+            where: dict[str, Any] | None = None,
+            hybrid_alpha: float | None = None,
+            rerank_top_n: int | None = None,
+        ) -> None:
             super().__init__()
             self._memory = memory
             self._k = k
+            self._where = where
+            self._hybrid_alpha = hybrid_alpha
+            self._rerank_top_n = rerank_top_n
 
         def _retrieve(self, query_bundle: QueryBundle, **kwargs: Any) -> list[NodeWithScore]:  # type: ignore[name-defined,override]
-            hits = self._memory.retrieve(query_bundle.query_str, k=self._k)
+            rkwargs: dict[str, Any] = {}
+            if self._where is not None:
+                rkwargs["where"] = self._where
+            if self._hybrid_alpha is not None:
+                rkwargs["hybrid_alpha"] = self._hybrid_alpha
+            if self._rerank_top_n is not None:
+                rkwargs["rerank_top_n"] = self._rerank_top_n
+            hits = self._memory.retrieve(query_bundle.query_str, k=self._k, **rkwargs)
             return [
                 NodeWithScore(
                     node=TextNode(

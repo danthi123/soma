@@ -62,3 +62,31 @@ def test_retriever_empty_memory() -> None:
     retriever = SomaRetriever(memory=m, k=5)
     docs = retriever.invoke("anything")
     assert docs == []
+
+
+def test_retriever_passes_where_to_memory_layer() -> None:
+    """SomaRetriever with where= should restrict results to the filter."""
+    torch.manual_seed(0)
+    tokenizer = train_bpe_tokenizer(["alex bobbi fact pref"], vocab_size=64)
+    encoder = TextEncoder(tokenizer, embed_dim=32, max_seq_len=64)
+    m = MemoryLayer(tokenizer=tokenizer, encoder=encoder)
+    m.store("alex fact", metadata={"user": "alex"})
+    m.store("bobbi fact", metadata={"user": "bobbi"})
+    retriever = SomaRetriever(memory=m, k=5, where={"user": "alex"})
+    docs = retriever.invoke("fact")
+    assert len(docs) == 1
+    assert docs[0].metadata.get("user") == "alex"
+
+
+def test_retriever_passes_hybrid_alpha() -> None:
+    """hybrid_alpha=0 (pure BM25) routes through SOMA's BM25 index."""
+    torch.manual_seed(0)
+    tokenizer = train_bpe_tokenizer(["portland boston"], vocab_size=64)
+    encoder = TextEncoder(tokenizer, embed_dim=32, max_seq_len=64)
+    m = MemoryLayer(tokenizer=tokenizer, encoder=encoder)
+    m.store("alex lives in portland")
+    m.store("bobbi lives in boston")
+    retriever = SomaRetriever(memory=m, k=1, hybrid_alpha=0.0)
+    docs = retriever.invoke("portland")
+    assert len(docs) == 1
+    assert "portland" in docs[0].page_content

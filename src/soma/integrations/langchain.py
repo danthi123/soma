@@ -50,10 +50,22 @@ if _HAS_LANGCHAIN:
             The memory layer to search.
         k : int
             Number of results to return per query (default 5).
+        where : dict | None
+            Metadata pre-filter (same semantics as
+            :meth:`MemoryLayer.retrieve`'s ``where``). Applied before
+            ranking so selective filters don't exhaust top-k.
+        hybrid_alpha : float | None
+            Optional hybrid BM25+cosine blend weight (0..1 on cosine).
+        rerank_top_n : int | None
+            Optional cross-encoder re-rank over the top-N cosine
+            candidates. Requires :meth:`MemoryLayer.attach_reranker`.
         """
 
         memory: Any  # MemoryLayer — typed Any to satisfy Pydantic v2
         k: int = 5
+        where: dict[str, Any] | None = None
+        hybrid_alpha: float | None = None
+        rerank_top_n: int | None = None
         model_config = {"arbitrary_types_allowed": True}
 
         def _get_relevant_documents(
@@ -62,7 +74,14 @@ if _HAS_LANGCHAIN:
             *,
             run_manager: CallbackManagerForRetrieverRun,  # type: ignore[name-defined]
         ) -> list[Document]:  # type: ignore[name-defined]
-            hits = self.memory.retrieve(query, k=self.k)
+            kwargs: dict[str, Any] = {}
+            if self.where is not None:
+                kwargs["where"] = self.where
+            if self.hybrid_alpha is not None:
+                kwargs["hybrid_alpha"] = self.hybrid_alpha
+            if self.rerank_top_n is not None:
+                kwargs["rerank_top_n"] = self.rerank_top_n
+            hits = self.memory.retrieve(query, k=self.k, **kwargs)
             return [
                 Document(
                     page_content=hit.text,

@@ -192,7 +192,11 @@ def _get_mem(name: str | None = None) -> MemoryLayer:
             mem.reload_if_stale()  # pick up peer-worker WAL appends
             return mem
         path = _path_for(name)
-        if path.exists() and (path / "memory_index.json").exists():
+        # A loadable bundle is either a saved snapshot (memory_index.json)
+        # or a WAL-only bundle (fresh store that crashed before save()).
+        has_snapshot = path.exists() and (path / "memory_index.json").exists()
+        has_wal = path.exists() and (path / "memory_ops.wal.jsonl").exists()
+        if has_snapshot or has_wal:
             mem = MemoryLayer.load(path, embed_fn=_embed_fn())
         else:
             mem = MemoryLayer.with_sbert(EMBED_MODEL)

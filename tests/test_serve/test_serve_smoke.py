@@ -130,3 +130,59 @@ def test_related_unknown_returns_404() -> None:
     client = _client_with_stub_mem()
     r = client.get("/related/definitely-not-a-real-id")
     assert r.status_code == 404
+
+
+def test_rest_store_crash_reload_persists(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    """End-to-end crash-and-reload: REST stores 3 entries, simulated
+    crash clears the in-memory cache, next /retrieve reloads from disk
+    (snapshot + WAL) and finds the entries.
+    """
+    # Point the serve module at a fresh bundle dir so the reload path
+    # picks up the WAL we just wrote.
+    bundle = tmp_path / "crash-bundle"
+    original_path = serve.BUNDLE_PATH
+    original_embed = serve._embed_fn_cache
+    try:
+        serve.BUNDLE_PATH = bundle
+        serve._embed_fn_cache = _stub_embed
+        serve._mem_cache.clear()
+        # Pre-seed the cache with a MemoryLayer that has the WAL wired
+        # to this bundle — mirrors what a live server would do the first
+        # time a request hits this tenant.
+        serve._mem_cache["__default__"] = MemoryLayer(
+            embed_fn=_stub_embed, embed_dim=32, bundle_path=bundle
+        )
+        client = TestClient(serve.app)
+
+        ids: list[str] = []
+        for text in ["crash fact 1", "crash fact 2", "crash fact 3"]:
+            r = client.post("/store", json={"text": text})
+            assert r.status_code == 200, r.text
+            ids.append(r.json()["node_id"])
+
+        # Simulated crash: drop the in-memory cache. The WAL on disk is
+        # still there (durability="sync" is the default).
+        cached = serve._mem_cache["__default__"]
+        cached.close()
+        serve._mem_cache.clear()
+
+        # Next retrieve forces _get_mem() to rehydrate from the bundle
+        # on disk. The WAL replay must reinstate all three entries.
+        r = client.post("/retrieve", json={"query": "crash fact 2", "k": 3})
+        assert r.status_code == 200, r.text
+        hits = r.json()["hits"]
+        hit_ids = {h["node_id"] for h in hits}
+        assert set(ids).issubset(hit_ids), (
+            f"expected all 3 ids {ids} after reload, got {hit_ids}"
+        )
+
+        # /status should now report 3 entries loaded from disk.
+        r = client.get("/status")
+        assert r.status_code == 200
+        assert r.json()["num_entries"] == 3
+    finally:
+        for mem in serve._mem_cache.values():
+            mem.close()
+        serve._mem_cache.clear()
+        serve.BUNDLE_PATH = original_path
+        serve._embed_fn_cache = original_embed

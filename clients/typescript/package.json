@@ -1,0 +1,61 @@
+{
+  "name": "@soma-ai/client",
+  "version": "0.1.0",
+  "description": "TypeScript client for SOMA — local-first agent memory layer.",
+  "license": "MIT",
+  "homepage": "https://github.com/soma-ai/SOMA",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/soma-ai/SOMA.git",
+    "directory": "clients/typescript"
+  },
+  "bugs": {
+    "url": "https://github.com/soma-ai/SOMA/issues"
+  },
+  "keywords": [
+    "soma",
+    "memory",
+    "agent-memory",
+    "vector-db",
+    "rag",
+    "openapi",
+    "typescript",
+    "client"
+  ],
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "generate": "openapi-typescript openapi.json -o src/schema.d.ts",
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "prepublishOnly": "npm run generate && npm run build"
+  },
+  "dependencies": {
+    "openapi-fetch": "^0.13.0"
+  },
+  "devDependencies": {
+    "openapi-typescript": "^7.13.0",
+    "typescript": "^5.4.0",
+    "vitest": "^2.0.0",
+    "msw": "^2.0.0"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  }
+}

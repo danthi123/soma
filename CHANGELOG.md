@@ -4,6 +4,37 @@ All notable changes to SOMA are documented here.
 
 ## [Unreleased] — 2026-04-16
 
+### Added — conversational memory
+
+- **`ConversationalMemory` wrapper** (`src/soma/memory/conversational.py`):
+  opt-in sugar over `MemoryLayer` that adds Mem0/Zep-style LLM-driven
+  fact extraction + ADD/UPDATE/SUPERSEDE/NOOP reconciliation on every
+  turn. Threshold short-circuit (<0.75 ambiguous floor, >=0.92 near-dup)
+  avoids an LLM round-trip on clear-cut cases; only the ambiguous band
+  pays for a second LLM call. Zep-style "invalidate, don't delete"
+  preserves superseded entries for audit (metadata.superseded_by
+  pointer). Rolling session summaries every N turns, raw turns still
+  stored so LoCoMo-style evaluation pipelines stay compatible. See
+  `docs/cookbook.md` §18 and
+  `docs/plans/2026-04-16-phase-2-conversational-memory.md`.
+- **`MemoryLayer.update_metadata(node_id, patch)`**: metadata-only
+  mutation primitive backing SUPERSEDE (old entry flagged, not deleted).
+  WAL-replay compatible via a new `op="update_metadata"` record type
+  that appends the patch under `metadata.patch` and replays by merging
+  into the target entry's metadata. Compaction drops update records
+  whose target is already in the snapshot. Zero impact on existing
+  `store` / `forget` WAL semantics.
+- **`_matches_where` null handling**: `{"field": {"$eq": None}}` now
+  matches entries missing the field (interpreted as "no value here").
+  Makes the default conversational-retrieve filter
+  `where={"superseded_by": {"$eq": None}}` work as expected.
+- **LoCoMo `--conversational` adapter**: `benchmarks/run_locomo.py
+  --conversational` swaps in the new `ConversationalSomaAdapter` so
+  the retrieval report compares raw-turn RAG against the
+  extract+reconcile pipeline on the same conversations, with a
+  "Facts / turns" column surfacing how much structure the LLM pulled
+  out.
+
 ### Added — auth
 
 - **Per-bundle JWT auth** replaces the single shared `SOMA_API_KEY`

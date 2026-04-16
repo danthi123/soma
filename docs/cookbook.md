@@ -330,6 +330,59 @@ A WAL + snapshot layout lets the bundle reload after a crash WITHOUT
 a prior `save()` call — every `store()` / `forget()` is recoverable.
 Multi-worker uvicorn on one bundle is safe; each worker catches the
 others' WAL tail before each retrieve.
+
+## 18. Conversational memory — Mem0/Zep-style extraction + reconcile
+
+`ConversationalMemory` wraps a `MemoryLayer` with LLM-driven fact
+extraction and reconciliation, borrowing Mem0's two-phase pipeline
+(arXiv 2504.19413; +26% LoCoMo QA accuracy over raw RAG at 91% lower
+latency) and Zep's "invalidate, don't delete" SUPERSEDE semantics.
+
+```python
+from soma.llm    import backend_from_env
+from soma.memory import ConversationalMemory, MemoryLayer
+
+mem = MemoryLayer.with_sbert()   # or .load("brain/")
+llm = backend_from_env()         # picks Ollama / OpenAI / Anthropic / HF
+cm  = ConversationalMemory(memory=mem, llm=llm, session_id="alex")
+
+cm.add_message("user", "I just moved to Boston from Portland")
+# -> atomic facts extracted (location) + reconciled against existing
+#    facts. If "User lives in Portland" was already stored, the LLM
+#    decides SUPERSEDE: the Portland fact gets metadata.superseded_by
+#    pointing at the new Boston fact; old fact stays for audit.
+
+for hit in cm.retrieve("where does the user live?"):
+    print(hit.text)   # "User lives in Boston"   (Portland filtered by default)
+
+# Inspect history / roll back
+cm.retrieve("where does the user live?", include_superseded=True)  # both
+
+# Session lifecycle
+cm.get_summary()              # most-recent rolled summary (every 20 turns)
+cm.list_facts()               # live facts only
+cm.supersede(old_id, "new text")  # explicit invalidation
+cm.clear_session()            # wipes turns+facts, keeps summaries
+```
+
+Design notes:
+
+- **Threshold short-circuit.** Extracted facts with top-candidate
+  cosine ≥ 0.92 are treated as duplicates (no LLM call). Facts with
+  top-cosine < 0.75 are ADDed unconditionally (no LLM call either).
+  Only the 0.75–0.92 ambiguous band pays for an LLM round-trip
+  returning `ADD` / `UPDATE` / `SUPERSEDE` / `NOOP`. Thresholds are
+  kwargs — calibrate per embedder.
+- **Raw turns still land.** Every call to `add_message` stores the
+  verbatim turn with `metadata.type="turn"` so LoCoMo-style eval
+  pipelines that expect raw turns keep working unchanged.
+- **Rolling summaries.** Every `summary_every` turns (default 20) the
+  wrapper asks the LLM for a 3–5-sentence recap and stores it with
+  `metadata.type="summary"`.
+- **SUPERSEDE ≠ delete.** Old entries stay in the bundle with
+  `metadata.superseded_by = new_id`. `retrieve()` filters them out by
+  default; pass `include_superseded=True` to see the audit trail.
+
 ---
 
 Missing a recipe you want? Open an issue with the use case — most

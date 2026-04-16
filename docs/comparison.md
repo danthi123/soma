@@ -33,7 +33,9 @@ qualitative claims link to the source product's docs.
 | Working-memory window | ✅ | ❌ | ⚠️ | ✅ | ❌ | ❌ |
 | Episodic-memory store | ✅ | ❌ | ✅ | ✅ | ✅ | ❌ |
 | Plastic-graph substrate (in-place) | ✅⁴ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| Built-in LLM-driven summarization | ❌⁵ | ❌ | ✅ | ✅ | ✅ | ❌ |
+| Built-in LLM-driven summarization | ✅⁸ | ❌ | ✅ | ✅ | ✅ | ❌ |
+| Conversational extract+reconcile | ✅⁸ | ❌ | ✅ | ⚠️ | ✅ | ❌ |
+| Supersede-don't-delete history | ✅⁸ | ❌ | ⚠️ | ⚠️ | ✅ | ❌ |
 | Temporal/recency awareness | ✅ | ⚠️ | ✅ | ✅ | ✅ | ⚠️ |
 | LLM-agnostic (swap models) | ✅ | ✅ | ⚠️⁶ | ⚠️⁶ | ⚠️⁶ | ✅ |
 | Plug-and-play LLM backends | ✅⁷ | ❌ | ✅ | ✅ | ✅ | ❌ |
@@ -47,11 +49,15 @@ qualitative claims link to the source product's docs.
 ⁴ Substrate ships and runs; currently doesn't move retrieval scores
   on synthetic small corpora — see paper-draft §4.1 for the honest
   ablation. Open research direction.
-⁵ Out of scope by design — bring your own LLM, see
-  `docs/llm-backends.md`. Summarization is one prompt away.
 ⁶ Tied to specific LLM providers; check current docs.
 ⁷ Ships 5 backends (Ollama / OpenAI / Anthropic / OpenAI-compatible /
   HuggingFace) with one-line auto-detect; see `docs/llm-backends.md`.
+⁸ `ConversationalMemory` wrapper (Phase 2) adds LLM-driven fact
+  extraction, ADD/UPDATE/SUPERSEDE/NOOP reconcile, and rolling session
+  summaries on top of the raw `MemoryLayer`. Mem0's two-phase pipeline
+  + Zep's invalidate-don't-delete semantics, with raw turns still
+  stored so LoCoMo-style eval pipelines stay compatible. See
+  `docs/cookbook.md` §18.
 
 ## Measured: SOMA vs Chroma at scale
 

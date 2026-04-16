@@ -99,6 +99,53 @@ def test_openapi_spec_advertises_bearer_auth() -> None:
     assert bearer is not None, f"no bearer security scheme in {schemes}"
 
 
+def test_openapi_security_scheme_is_bearer_jwt() -> None:
+    """Phase 4 — advertised scheme must carry bearerFormat=JWT under the
+    named ``bearerAuth`` key so the TS generator produces a typed
+    BearerJWT helper rather than a generic HTTPBasic bit.
+    """
+    spec = _spec()
+    schemes = spec["components"]["securitySchemes"]
+    assert "bearerAuth" in schemes, f"expected 'bearerAuth' key, got {list(schemes)}"
+    bearer = schemes["bearerAuth"]
+    assert bearer["type"] == "http"
+    assert bearer["scheme"] == "bearer"
+    assert bearer["bearerFormat"] == "JWT"
+
+
+def test_protected_routes_reference_security_scheme() -> None:
+    """Each protected operation must list ``bearerAuth`` in its
+    ``security`` block; the system routes must not carry the guard.
+    """
+    spec = _spec()
+    protected = [
+        ("post", "/store"),
+        ("post", "/store_batch"),
+        ("post", "/retrieve"),
+        ("get", "/get/{node_id}"),
+        ("post", "/forget"),
+        ("post", "/consolidate"),
+        ("post", "/save"),
+        ("get", "/recent"),
+        ("get", "/related/{node_id}"),
+        ("get", "/status"),
+        ("post", "/bundles/{name}/store"),
+        ("get", "/bundles/{name}/status"),
+    ]
+    for method, path in protected:
+        op = spec["paths"][path][method]
+        security = op.get("security") or []
+        names = [list(s.keys())[0] for s in security if s]
+        assert "bearerAuth" in names, (
+            f"{method.upper()} {path} missing bearerAuth security requirement; "
+            f"got {security!r}"
+        )
+    # System routes stay public — no security on /health / /version / /metrics.
+    for path in ("/health", "/version"):
+        op = spec["paths"][path]["get"]
+        assert not op.get("security"), f"{path} should not require auth; got {op.get('security')}"
+
+
 def test_error_responses_have_schemas() -> None:
     spec = _spec()
     # Pick a protected route that we registered both 401 and 404 on.

@@ -294,6 +294,53 @@ All notable changes to SOMA are documented here.
   vars, when to prefer the in-proc limiter vs a reverse proxy,
   per-token vs per-subject tradeoff.
 
+### Added — pgvector backend adapter (Phase 29)
+
+- **`PgvectorBackend`** (`src/soma/memory/backends/pgvector.py`,
+  optional `pip install "soma[pgvector]"`): fifth pluggable vector
+  backend, covering the "we already run Postgres, don't give us
+  another database" pitch. Uses `psycopg` v3 + the `pgvector`
+  Python package; schema created idempotently with a
+  `CREATE EXTENSION IF NOT EXISTS vector` prelude.
+- **Schema**: single `soma_vectors` table (name configurable via
+  `table_name` kwarg) with `id TEXT PRIMARY KEY`, `vector vector(dim)`,
+  and `metadata JSONB`. Two indexes ship: IVFFlat on `vector_cosine_ops`
+  for ANN search, GIN on `metadata` for JSONB containment. Cosine
+  similarity surfaces as `1 - (vector <=> %s)` so top-k is
+  `ORDER BY score DESC` in the caller's contract.
+- **`supports_filter_pushdown=True`** via
+  `pgvector_filter.to_pgvector_where`: translates SOMA's internal
+  spec to parameterized WHERE clauses using JSONB ops. `$eq` →
+  `metadata @> %s::jsonb`; comparisons → `(metadata->>'field')::float
+  op %s`; `$in`/`$nin` → `ANY(%s)` arrays. Multi-field dicts joined
+  by `AND`. Unsupported ops raise `FilterPushdownUnsupported` so
+  MemoryLayer falls back to Python pre-filter + `search_subset`.
+  SQL-injection safe by construction (all values pass through
+  psycopg's parameter binding; no string interpolation).
+- **Snapshot via `COPY`**: streams the table out through
+  `cursor.copy(...)` → gzip → bundle. Restore is the inverse.
+  Cheaper than `pg_dump` for the single-table case; cross-DB
+  portable.
+- **Testing strategy mirrors Phase 24 (Qdrant)**: always-on unit
+  tests with mocked cursor cover SQL shape + filter translation;
+  gated integration tests spin up `pgvector/pgvector:pg16` via
+  testcontainers behind `SOMA_PGVECTOR_INTEGRATION=1` +
+  `@pytest.mark.slow_pgvector`. Integration tests skip cleanly
+  when Docker or testcontainers aren't available.
+- **+38 always-on tests** (17 filter + 21 adapter-unit) +17 gated
+  (6 integration + 11 protocol-contract cases per backend). Default
+  `pytest` run stays clean; integration matrix runs only with the
+  env flag set.
+- **Docs**: short stub in `docs/backends.md` (when-to-pick +
+  minimal example + gated-test enablement).
+- **Known footnote**: testcontainers dropped the `[postgresql]`
+  extra in v4.14+; the base package's `from testcontainers.postgres
+  import PostgresContainer` works directly. pyproject simplified
+  accordingly. Also note: `PostgresContainer.get_connection_url()`
+  returns a SQLAlchemy-flavoured `postgresql+psycopg2://...` URL —
+  the integration fixture strips the `+psycopg2` driver suffix
+  because psycopg v3 rejects it.
+
 ### Added — Chroma-as-backend adapter (Phase 27)
 
 - **`ChromaBackend`** (`src/soma/memory/backends/chroma.py`, optional

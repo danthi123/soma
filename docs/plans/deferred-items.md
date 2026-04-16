@@ -43,7 +43,7 @@ Things that came up during the 2026-04-16 gap-closing push (Phases 1-7b) but wer
 
 - **Milvus adapter.** Heavier dep surface (pymilvus + server). Overlaps Qdrant's niche. ~2 d.
 - **Weaviate adapter.** Light client, heavy server. ~2 d.
-- **pgvector adapter.** High demand; filter pushdown over JSONB is its own design pass. ~3 d.
+- ✅ ~~**pgvector adapter.**~~ Shipped in Phase 29 (`9a549e4`, `ff6be31`, `624ab8b`, `ed7ed3c`, `e150827`). `PgvectorBackend` via psycopg v3 + `pgvector>=0.3`; JSONB filter translator ($eq as `@> ::jsonb`, comparisons via `(metadata->>'f')::float`, $in as `ANY(%s)`, multi-field via AND; SQL-injection safe by parameter binding); snapshot via COPY+gzip; always-on unit tests + gated integration via testcontainers (`SOMA_PGVECTOR_INTEGRATION=1`).
 - ✅ ~~**Chroma-as-backend.**~~ Shipped in Phase 27 (`d5d2c08`, `b4738c2`, `0da7d44`, `47041bb`). `ChromaBackend` adapter + `chroma_filter.to_chroma_where` translator ($eq/$ne/$gt/$gte/$lt/$lte/$in/$nin with $and wrapping for multi-field); `pip install "soma[chroma]"`; protocol contract suite row; snapshot/restore via dir copy; Windows sqlite-lock fix in close/restore.
 - ✅ ~~**`backend.search_near_id(node_id, k)`**~~ Shipped in Phase 16 (`4825cd3`..`9437ff6`). Default impl delegates to `get_vectors + search`; Qdrant overrides via `recommend` API; LanceDB via Arrow-native self-join. `MemoryLayer.related()` routed through it.
 - **Async Qdrant client (`AsyncQdrantClient`)** — waits for FastAPI routes to go async. No ETA.

@@ -18,6 +18,16 @@ class SomaAdapter(BaseMemorySystem):
     By default uses sentence-transformers for embeddings (strongest
     baseline; same as Chroma's default). Set ``use_sbert=False`` to fall
     back to SOMA's TextEncoder for fully-offline/tiny footprint runs.
+
+    ``eager_stable_capture`` (default True) pins the pre-Phase-13
+    behaviour where ``consolidate()`` implicitly ran the O(N)
+    stable-capture pass. The plasticity and graph-ablation benchmarks
+    rely on that so their reported ``consolidate`` timing + retrieve
+    latencies stay comparable across commits. New benchmarks that
+    want to measure the lazy path should pass
+    ``eager_stable_capture=False`` — the first retrieve after
+    consolidate will then pay the capture cost once, which surfaces
+    as retrieve p99 rather than consolidate time.
     """
 
     name = "soma"
@@ -33,6 +43,7 @@ class SomaAdapter(BaseMemorySystem):
         graph_rerank_stable_capture: bool = True,
         faiss_index_type: str = "flat",
         faiss_threshold: int = 10_000,
+        eager_stable_capture: bool = True,
     ) -> None:
         self._use_sbert = use_sbert
         self._attach_soma = attach_soma
@@ -42,6 +53,7 @@ class SomaAdapter(BaseMemorySystem):
         self._graph_rerank_stable_capture = graph_rerank_stable_capture
         self._faiss_index_type = faiss_index_type
         self._faiss_threshold = faiss_threshold
+        self._eager_stable_capture = eager_stable_capture
         self._mem: MemoryLayer | None = None
         self._bundle_path: Path | None = None
 
@@ -135,6 +147,15 @@ class SomaAdapter(BaseMemorySystem):
     def consolidate(self) -> None:
         assert self._mem is not None
         self._mem.consolidate()
+        # Phase 13: consolidate() now defers the O(N) stable-capture
+        # pass to the first retrieve. Benchmarks that measure the
+        # "consolidate" wall clock as the total amortized cost of
+        # writing expect the eager pre-Phase-13 behaviour — run the
+        # capture here so the number stays comparable to older
+        # reports. Set ``eager_stable_capture=False`` to pin the new
+        # lazy path instead (capture cost surfaces as retrieve p99).
+        if self._eager_stable_capture:
+            self._mem.stable_capture()
 
     def clear(self) -> None:
         self._mem = None

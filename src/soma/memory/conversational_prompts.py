@@ -53,6 +53,33 @@ Now extract facts from this message:
 )
 
 
+BATCH_EXTRACT_PROMPT = (
+    """You extract atomic facts from a batch of {n} conversation turns.
+
+Return ONLY valid JSON — a list of objects. No prose, no code fences.
+Each object has exactly four keys:
+  - "turn_index": integer 0..{max_idx} — which turn produced this fact.
+  - "category": one of ["identity", "location", "preference", """
+    """"relationship", "goal", "other"]
+  - "text": a single short declarative sentence about the user.
+
+If a turn contains no facts worth remembering (greetings, filler,
+questions with no new info), emit no entry for it. If the entire
+batch is factless, return an empty list: [].
+
+Example:
+  Turn 0 (user): Hey
+  Turn 1 (user): I'm Alex and I live in Boston
+  Output: [{{"turn_index": 1, "category": "identity", """
+    """"text": "User's name is Alex"}}, {{"turn_index": 1, """
+    """"category": "location", "text": "User lives in Boston"}}]
+
+Now extract facts from this batch:
+{turns}
+Output:"""
+)
+
+
 RECONCILE_PROMPT = (
     """You reconcile a new fact against existing stored facts.
 

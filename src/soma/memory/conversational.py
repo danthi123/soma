@@ -40,6 +40,7 @@ if TYPE_CHECKING:
     from soma.memory.api import MemoryHit, MemoryLayer
 
 from soma.memory.conversational_prompts import (
+    BATCH_EXTRACT_PROMPT,
     EXTRACT_PROMPT,
     RECONCILE_PROMPT,
     RESUMMARY_PROMPT,
@@ -97,6 +98,15 @@ class ConversationalMemory:
     with the LLM network call**, not CPU parallelism — local CPU-bound
     backends will not see a win. ``max_workers=1`` is pinned so
     within-session extraction order is preserved.
+
+    ``extraction_mode="batch"`` (Phase 25) accumulates up to
+    ``batch_size`` turns and extracts facts for all of them in one
+    LLM call. Cuts extractor cost ~K× on workloads that tolerate
+    extraction lagging by up to K turns. Not combined with async in
+    this phase — ``batch`` is synchronous-but-aggregated. Partial
+    batches drain on :meth:`flush` / :meth:`close`;
+    :meth:`clear_session` drops the pending buffer without extracting
+    (wipe means wipe).
     """
 
     def __init__(
@@ -112,7 +122,8 @@ class ConversationalMemory:
         summary_every: int = 20,
         resummarize_every: int = 5,
         extract_assistant: bool = False,
-        extraction_mode: Literal["sync", "async"] = "sync",
+        extraction_mode: Literal["sync", "async", "batch"] = "sync",
+        batch_size: int = 8,
     ) -> None:
         """Build a ConversationalMemory wrapper.
 
@@ -159,7 +170,14 @@ class ConversationalMemory:
             means the async win is I/O overlap with the LLM network
             call, not CPU parallelism — local CPU-bound backends will
             not benefit. ``max_workers`` is pinned to 1 so within-
-            session extraction order is preserved.
+            session extraction order is preserved. ``"batch"`` (Phase
+            25) accumulates up to ``batch_size`` turns and extracts
+            facts for the whole group in a single LLM call — cheaper
+            per-turn on workloads that tolerate extraction lagging by
+            up to K turns. Not combined with ``"async"`` yet.
+        :param batch_size: number of turns to accumulate before firing
+            a batched extract call in ``extraction_mode="batch"``.
+            Ignored in ``"sync"`` / ``"async"`` modes. Must be ``>= 1``.
         """
         self._memory = memory
         self._llm = llm
@@ -196,11 +214,23 @@ class ConversationalMemory:
         # matches submission order). The executor thread calls through
         # to the MemoryLayer directly; MemoryLayer is thread-safe per
         # Phase 1's WAL design so cross-thread writes are fine.
-        if extraction_mode not in ("sync", "async"):
+        if extraction_mode not in ("sync", "async", "batch"):
             raise ValueError(
-                f"extraction_mode must be 'sync' or 'async', got {extraction_mode!r}"
+                "extraction_mode must be 'sync', 'async' or 'batch', "
+                f"got {extraction_mode!r}"
             )
-        self._extraction_mode: Literal["sync", "async"] = extraction_mode
+        if extraction_mode == "batch" and batch_size < 1:
+            raise ValueError(
+                f"batch_size must be >= 1 in batch mode, got {batch_size}"
+            )
+        self._extraction_mode: Literal["sync", "async", "batch"] = extraction_mode
+        self._batch_size: int = int(batch_size)
+        # Phase 25: batch-mode accumulator. Each entry is
+        # ``(role, text, turn_id)`` — turn_id is the node_id returned
+        # by the raw-turn store() call, which lets us route extracted
+        # facts back to the right source turn when the batched prompt
+        # returns per-fact ``turn_index`` values.
+        self._pending_batch: list[tuple[str, str, str]] = []
         self._executor: ThreadPoolExecutor | None = None
         # list appended-to by the submitting thread and drained by
         # flush(). Python list.append is atomic under the GIL so a
@@ -321,6 +351,7 @@ class ConversationalMemory:
         category: str = "other",
         extra_meta: dict[str, object] | None = None,
         user_id: str | None = None,
+        source_turn_id: str | None = None,
     ) -> str:
         """Store a new fact entry tagged with this session. Returns node_id.
 
@@ -328,6 +359,12 @@ class ConversationalMemory:
         reconcile path already resolved the effective user_id for the
         current add_message call and thread it through here so the fact
         gets the same owner as the turn that produced it.
+
+        ``source_turn_id`` (Phase 25) is the node_id of the raw turn
+        that produced this fact, letting consumers trace a fact back
+        to its source. Stamped into metadata when set; omitted for
+        backward compatibility when the caller doesn't know (manual
+        :meth:`supersede`, pre-Phase-25 call sites).
         """
         meta: dict[str, object] = {
             "session_id": self._session_id,
@@ -335,12 +372,18 @@ class ConversationalMemory:
             "category": category,
         }
         self._stamp_user_id(meta, user_id)
+        if source_turn_id is not None:
+            meta["source_turn_id"] = source_turn_id
         if extra_meta:
             meta.update(extra_meta)
         return self._memory.store(text, metadata=meta)
 
     def _reconcile(
-        self, fact: ExtractedFact, *, user_id: str | None = None
+        self,
+        fact: ExtractedFact,
+        *,
+        user_id: str | None = None,
+        source_turn_id: str | None = None,
     ) -> str | None:
         """Decide what to do with ``fact`` given the top-k nearest stored entries.
 
@@ -392,7 +435,8 @@ class ConversationalMemory:
         ]
         if not live_candidates:
             return self._add_fact(
-                fact.text, category=fact.category, user_id=user_id
+                fact.text, category=fact.category, user_id=user_id,
+                source_turn_id=source_turn_id,
             )
 
         max_score = max(c.score for c in live_candidates)
@@ -400,11 +444,15 @@ class ConversationalMemory:
             return None
         if max_score < self._ambiguous_threshold:
             return self._add_fact(
-                fact.text, category=fact.category, user_id=user_id
+                fact.text, category=fact.category, user_id=user_id,
+                source_turn_id=source_turn_id,
             )
 
         # Ambiguous range: consult the LLM.
-        return self._reconcile_with_llm(fact, live_candidates, user_id=user_id)
+        return self._reconcile_with_llm(
+            fact, live_candidates, user_id=user_id,
+            source_turn_id=source_turn_id,
+        )
 
     def _reconcile_with_llm(
         self,
@@ -412,6 +460,7 @@ class ConversationalMemory:
         candidates: list[object],  # list[MemoryHit]
         *,
         user_id: str | None = None,
+        source_turn_id: str | None = None,
     ) -> str | None:
         candidate_block = "\n".join(
             f"[id={c.node_id}] (score={c.score:.3f}) {c.text}"  # type: ignore[attr-defined]
@@ -438,14 +487,16 @@ class ConversationalMemory:
                 },
             )
             return self._add_fact(
-                fact.text, category=fact.category, user_id=user_id
+                fact.text, category=fact.category, user_id=user_id,
+                source_turn_id=source_turn_id,
             )
 
         if op == "NOOP":
             return None
         if op == "ADD":
             return self._add_fact(
-                fact.text, category=fact.category, user_id=user_id
+                fact.text, category=fact.category, user_id=user_id,
+                source_turn_id=source_turn_id,
             )
         if op == "UPDATE":
             if not isinstance(target_id, str) or target_id not in self._memory:
@@ -457,7 +508,8 @@ class ConversationalMemory:
                     },
                 )
                 return self._add_fact(
-                    fact.text, category=fact.category, user_id=user_id
+                    fact.text, category=fact.category, user_id=user_id,
+                    source_turn_id=source_turn_id,
                 )
             self._memory.forget(target_id)
             return self._add_fact(
@@ -465,6 +517,7 @@ class ConversationalMemory:
                 category=fact.category,
                 extra_meta={"supersedes": target_id},
                 user_id=user_id,
+                source_turn_id=source_turn_id,
             )
         if op == "SUPERSEDE":
             if not isinstance(target_id, str) or target_id not in self._memory:
@@ -477,13 +530,15 @@ class ConversationalMemory:
                     },
                 )
                 return self._add_fact(
-                    fact.text, category=fact.category, user_id=user_id
+                    fact.text, category=fact.category, user_id=user_id,
+                    source_turn_id=source_turn_id,
                 )
             new_id = self._add_fact(
                 fact.text,
                 category=fact.category,
                 extra_meta={"supersedes": target_id},
                 user_id=user_id,
+                source_turn_id=source_turn_id,
             )
             self._memory.update_metadata(
                 target_id,
@@ -503,7 +558,8 @@ class ConversationalMemory:
             },
         )
         return self._add_fact(
-            fact.text, category=fact.category, user_id=user_id
+            fact.text, category=fact.category, user_id=user_id,
+            source_turn_id=source_turn_id,
         )
 
     # ------------------------------------------------------------------
@@ -551,17 +607,26 @@ class ConversationalMemory:
             }
         )
         self._stamp_user_id(turn_meta, effective_user)
-        self._memory.store(text, metadata=turn_meta)
+        turn_id = self._memory.store(text, metadata=turn_meta)
 
         should_extract = role == "user" or self._extract_assistant
         if should_extract:
-            if self._executor is None:
-                self._run_extract_reconcile(text, user_id=effective_user)
+            if self._extraction_mode == "batch":
+                # Accumulate; fire a single batched extract when we've
+                # hit the threshold. See _run_batch_extract_reconcile.
+                self._pending_batch.append((role, text, turn_id))
+                if len(self._pending_batch) >= self._batch_size:
+                    self._flush_batch(user_id=effective_user)
+            elif self._executor is None:
+                self._run_extract_reconcile(
+                    text, user_id=effective_user, turn_id=turn_id,
+                )
             else:
                 fut = self._executor.submit(
                     self._run_extract_reconcile,
                     text,
                     user_id=effective_user,
+                    turn_id=turn_id,
                 )
                 self._pending_futures.append(fut)
 
@@ -573,7 +638,11 @@ class ConversationalMemory:
             self._roll_summary(user_id=effective_user)
 
     def _run_extract_reconcile(
-        self, text: str, *, user_id: str | None = None
+        self,
+        text: str,
+        *,
+        user_id: str | None = None,
+        turn_id: str | None = None,
     ) -> None:
         """Extract atomic facts from ``text`` and reconcile each.
 
@@ -583,10 +652,155 @@ class ConversationalMemory:
         ``self._extractor_llm.generate`` and the reconcile writes to
         ``self._memory`` are safe to call from a worker thread — the
         MemoryLayer has per-Phase-1 WAL-backed thread safety.
+
+        ``turn_id`` is the node_id of the raw turn that produced
+        ``text``; stamped into each extracted fact's metadata as
+        ``source_turn_id`` so consumers can trace a fact back to its
+        originating turn (Phase 25).
         """
         facts = self._extract_facts(text)
         for f in facts:
-            self._reconcile(f, user_id=user_id)
+            self._reconcile(f, user_id=user_id, source_turn_id=turn_id)
+
+    # ------------------------------------------------------------------
+    # Internals — batched extraction (Phase 25)
+    # ------------------------------------------------------------------
+    def _flush_batch(self, *, user_id: str | None = None) -> None:
+        """Drain the pending batch through :meth:`_run_batch_extract_reconcile`.
+
+        The pending list is swapped out **before** the LLM call so that
+        if the extractor raises, the poison batch doesn't stay in the
+        buffer to re-fire on every future flush. Exceptions surface
+        synchronously on the caller that triggered the flush.
+        """
+        if not self._pending_batch:
+            return
+        batch = self._pending_batch
+        self._pending_batch = []
+        self._run_batch_extract_reconcile(batch, user_id=user_id)
+
+    def _run_batch_extract_reconcile(
+        self,
+        batch: list[tuple[str, str, str]],
+        *,
+        user_id: str | None = None,
+    ) -> None:
+        """Extract facts from a batch of turns with a single LLM call.
+
+        ``batch`` is a list of ``(role, text, turn_id)`` tuples in
+        submission order. The batched prompt lists each turn with a
+        0-based index; the LLM reply is parsed for per-fact
+        ``turn_index`` keys that map back to the corresponding
+        ``turn_id``. Facts with an out-of-range or missing
+        ``turn_index`` fall back to the last turn in the batch
+        (conservative: keep the fact, attributed to the most recent
+        source, logged at WARNING).
+        """
+        facts = self._extract_batch_facts(batch)
+        for fact, source_turn_id in facts:
+            self._reconcile(
+                fact, user_id=user_id, source_turn_id=source_turn_id
+            )
+
+    def _extract_batch_facts(
+        self, batch: list[tuple[str, str, str]]
+    ) -> list[tuple[ExtractedFact, str]]:
+        """Call the LLM with :data:`BATCH_EXTRACT_PROMPT` and route per turn.
+
+        Returns a list of ``(fact, source_turn_id)`` pairs. Safe-parse
+        semantics mirror :meth:`_extract_facts`: any parse failure
+        logs at WARNING and yields an empty list so one broken batched
+        reply doesn't blow up the caller.
+        """
+        if not batch:
+            return []
+        turn_lines = "\n".join(
+            f"Turn {i} ({role}): {text}"
+            for i, (role, text, _tid) in enumerate(batch)
+        )
+        prompt = BATCH_EXTRACT_PROMPT.format(
+            n=len(batch), max_idx=len(batch) - 1, turns=turn_lines,
+        )
+        raw = self._extractor_llm.generate(prompt, max_tokens=1024)
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError:
+            logger.warning(
+                "extract: batched LLM returned non-JSON; "
+                "dropping this batch's facts",
+                extra={
+                    "event": "batch_extract_parse_failure",
+                    "session_id": self._session_id,
+                    "reply_prefix": raw[:80],
+                },
+            )
+            return []
+
+        if not isinstance(parsed, list):
+            logger.warning(
+                "extract: batched LLM returned non-list JSON; "
+                "dropping this batch's facts",
+                extra={
+                    "event": "batch_extract_shape_failure",
+                    "session_id": self._session_id,
+                    "got_type": type(parsed).__name__,
+                },
+            )
+            return []
+
+        results: list[tuple[ExtractedFact, str]] = []
+        for entry in parsed:
+            if not isinstance(entry, dict):
+                continue
+            try:
+                raw_cat = entry["category"]
+                raw_text = entry["text"]
+            except KeyError:
+                logger.warning(
+                    "extract: batched fact missing category/text keys; skipping",
+                    extra={
+                        "event": "batch_extract_missing_keys",
+                        "session_id": self._session_id,
+                        "entry_keys": sorted(entry.keys()),
+                    },
+                )
+                continue
+            if not isinstance(raw_text, str) or not raw_text.strip():
+                continue
+            cat = raw_cat if raw_cat in _CATEGORIES else "other"
+            fact = ExtractedFact(category=cat, text=raw_text.strip())
+
+            raw_idx = entry.get("turn_index")
+            if isinstance(raw_idx, int) and 0 <= raw_idx < len(batch):
+                source_turn_id = batch[raw_idx][2]
+            else:
+                # Task 1 baseline: drop facts with missing/invalid
+                # turn_index. Task 2 refines this to a last-turn
+                # fallback so a quirky model doesn't silently eat
+                # facts every batch.
+                logger.warning(
+                    "extract: batched fact missing/invalid turn_index "
+                    "(%r); dropping",
+                    raw_idx,
+                    extra={
+                        "event": "batch_extract_missing_turn_index",
+                        "session_id": self._session_id,
+                        "batch_size": len(batch),
+                    },
+                )
+                continue
+            results.append((fact, source_turn_id))
+
+        if not results and parsed:
+            logger.warning(
+                "extract: all %d parsed batched entries were dropped",
+                len(parsed),
+                extra={
+                    "event": "batch_extract_all_dropped",
+                    "session_id": self._session_id,
+                },
+            )
+        return results
 
     def _roll_summary(self, *, user_id: str | None = None) -> None:
         """Summarize recent raw turns, store as a ``type=summary`` entry.
@@ -770,9 +984,19 @@ class ConversationalMemory:
         are drained **before** the wipe so facts in flight at the time
         of the call land + are then deleted rather than leaking in
         after the clear.
+
+        In batch-extraction mode (Phase 25) the pending batch is
+        **dropped** without extracting — "wipe means wipe". The user
+        is asking to forget recent turns, so firing the batched
+        extractor against them first would write facts we're then
+        obligated to delete.
         """
+        if self._extraction_mode == "batch":
+            # Drop pending; don't extract what the user is wiping.
+            self._pending_batch = []
         # Drain pending async extractions first so late-arriving facts
-        # don't resurrect a just-cleared session. Sync mode is a no-op.
+        # don't resurrect a just-cleared session. Sync / batch modes
+        # are no-ops for the async-drain branch inside flush().
         self.flush()
         to_delete: list[str] = []
         for nid in list(self._memory._ids):
@@ -811,7 +1035,14 @@ class ConversationalMemory:
         ``flush()`` in try/except. Futures that have not completed
         within ``timeout`` (seconds; ``None`` = wait indefinitely) are
         left in ``self._pending_futures`` for a later :meth:`flush`.
+
+        In batch mode (Phase 25) this drains any partial pending batch
+        through a single batched extract call. Exceptions surface
+        synchronously like the triggering path in :meth:`add_message`.
         """
+        if self._extraction_mode == "batch":
+            # Sync path — drain partial batch if any.
+            self._flush_batch(user_id=self._user_id)
         if self._executor is not None and self._pending_futures:
             done, not_done = concurrent.futures.wait(
                 self._pending_futures, timeout=timeout,
@@ -835,12 +1066,17 @@ class ConversationalMemory:
         the executor has been torn down. In sync mode :meth:`close`
         still calls :meth:`MemoryLayer.flush` via :meth:`flush` so the
         durability hand-off works the same either way.
+
+        In batch mode (Phase 25) :meth:`flush` drains the partial
+        pending batch so no turns' facts are silently dropped on
+        orderly shutdown.
         """
         if self._executor is None:
-            # Sync mode (or already-closed async): still pass through
-            # to the MemoryLayer so callers get the durability hand-off
-            # whether or not they ever turned async extraction on.
-            self._memory.flush()
+            # Sync / batch mode (or already-closed async): route via
+            # self.flush() so the batch-mode partial-drain runs and so
+            # callers get the MemoryLayer durability hand-off whether
+            # or not they ever turned async/batch on.
+            self.flush()
             return
         try:
             self.flush()

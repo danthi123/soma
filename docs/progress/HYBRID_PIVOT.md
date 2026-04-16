@@ -115,11 +115,18 @@ architecture plumbing is sound. Full numbers:
   2 gain-pinned nodes); diagnosis in session context. Recovery path
   not yet designed.
 
-## What's in flight right now (2026-04-15)
+## Completed (2026-04-15 evening)
 
-Accelerated wikitext-103 bootstrap in
-`artifacts/bootstrap-2026-04-14-accel-wt103/`: int4 quantization,
-batch size 8, `soma_max_tokens=16`, 10K steps, cosine LR +
-grad-accum + save-best from 687474d. ETA ~2.75 hours over 80K
-windows. Results pending; this doc will be amended when the run
-completes.
+Accelerated wikitext-103 bootstrap completed: best loss 3.118 at
+step 6000 (details: `reports/bootstrap-2026-04-15-accel-wt103.md`).
+Joint SOMA+verbalizer training also completed — tied with frozen
+baseline, confirming the projector-prior was the bottleneck.
+
+The project has now pivoted to **agent-memory-layer positioning** as
+of commit `06a9ce9`. The pivot rationale and Stage 2-4 roadmap live
+in `docs/plans/2026-04-15-memory-layer-pivot.md`. The product-facing
+story is in `docs/positioning.md`.
+
+Stage 2 (MemoryLayer API) landed: `soma.memory.MemoryLayer` with
+store/retrieve/persist/reload, 16 unit tests passing, two demo
+scripts (`demo_memory_layer.py`, `demo_chat_persistent.py`).

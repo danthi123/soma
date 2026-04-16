@@ -70,6 +70,183 @@ class ExtractedFact:
     text: str
 
 
+@dataclass(frozen=True)
+class ForgetPreview:
+    """Read-only summary of what a :meth:`ConversationalMemory.forget` call
+    would delete, returned under ``dry_run=True``.
+
+    Phase 34 foundation for the GDPR-forgetting track. Callers inspect
+    this dataclass to confirm the target set before the Phase 35 wiring
+    flips ``dry_run=False`` on and actually deletes.
+
+    - :attr:`raw_turns` — node ids of ``type="turn"`` entries matched
+      by the forget criteria.
+    - :attr:`derived_facts` — node ids of ``type="fact"`` entries whose
+      ``metadata["source_turn_id"]`` points at one of :attr:`raw_turns`,
+      PLUS any fact matched directly via a non-text criterion
+      (``subject=``, ``user_id=``).
+    - :attr:`summaries` — node ids of ``type="summary"`` entries whose
+      ``[summarized_turn_start, summarized_turn_end]`` range overlaps
+      the ``turn_index`` of any matched raw turn. Phase 36 wires the
+      cascade that rewrites these instead of blindly dropping them;
+      Phase 34 only surfaces them.
+    - :attr:`total_vectors` — simple sum across the three id lists; the
+      count callers audit against their GDPR deletion SLA.
+    """
+
+    raw_turns: list[str]
+    derived_facts: list[str]
+    summaries: list[str]
+    total_vectors: int
+
+    def is_empty(self) -> bool:
+        """True when no entries matched — safe to surface as a no-op."""
+        return not (self.raw_turns or self.derived_facts or self.summaries)
+
+
+# ----------------------------------------------------------------------
+# Phase 34: forget() inventory helpers. Pure functions of a MemoryLayer
+# so they can be unit-tested + reused when Phase 35 wires the deletion
+# path (same matcher logic, different terminal action).
+# ----------------------------------------------------------------------
+def _raw_turns_matching(
+    memory: MemoryLayer,
+    *,
+    session_id: str,
+    text_matches: str | None,
+    user_id: str | None,
+    case_sensitive: bool,
+) -> list[str]:
+    """Return node ids of ``type="turn"`` entries matching the criteria.
+
+    Text matching uses a simple ``in`` substring test; callers who need
+    word-boundary semantics should pre-tokenize. When ``text_matches``
+    is None the text check is skipped, so a pure ``user_id=`` forget
+    returns every turn owned by that user. When both are None the
+    caller's contract is violated and the public :meth:`forget` has
+    already raised — the helper trusts it.
+    """
+    needle = text_matches
+    if needle is not None and not case_sensitive:
+        needle = needle.casefold()
+    out: list[str] = []
+    for nid in memory._ids:
+        hit = memory.get(nid)
+        if hit is None:
+            continue
+        meta = hit.metadata
+        if meta.get("session_id") != session_id:
+            continue
+        if meta.get("type") != "turn":
+            continue
+        if user_id is not None and meta.get("user_id") != user_id:
+            continue
+        if needle is not None:
+            haystack = hit.text if case_sensitive else hit.text.casefold()
+            if needle not in haystack:
+                continue
+        out.append(nid)
+    return out
+
+
+def _facts_matching(
+    memory: MemoryLayer,
+    *,
+    session_id: str,
+    turn_ids: list[str],
+    subject: str | None,
+    user_id: str | None,
+    require_turn_link: bool,
+) -> list[str]:
+    """Return node ids of ``type="fact"`` entries matching the criteria.
+
+    - ``require_turn_link=True`` (text-driven forget) only returns
+      facts whose ``metadata["source_turn_id"]`` points at one of
+      ``turn_ids``. Pre-Phase-25 facts without a source pointer are
+      skipped — we can't prove they came from a matched turn.
+    - ``require_turn_link=False`` (subject / user_id only) enumerates
+      every fact and filters on ``subject`` / ``user_id`` directly.
+      ``turn_ids`` still contributes: any fact whose source turn made
+      the match set rides along even if its own ``subject`` /
+      ``user_id`` doesn't match (user_id stays filtered; subject is
+      additive).
+    """
+    turn_id_set = set(turn_ids)
+    out: list[str] = []
+    for nid in memory._ids:
+        hit = memory.get(nid)
+        if hit is None:
+            continue
+        meta = hit.metadata
+        if meta.get("session_id") != session_id:
+            continue
+        if meta.get("type") != "fact":
+            continue
+        if user_id is not None and meta.get("user_id") != user_id:
+            continue
+        if subject is not None and meta.get("subject") != subject:
+            continue
+        if require_turn_link and meta.get("source_turn_id") not in turn_id_set:
+            continue
+        out.append(nid)
+    return out
+
+
+def _summaries_overlapping_turns(
+    memory: MemoryLayer,
+    *,
+    session_id: str,
+    turn_ids: list[str],
+    user_id: str | None,
+) -> list[str]:
+    """Return summary node ids whose turn-range overlaps any matched turn.
+
+    Each summary's metadata carries ``summarized_turn_start`` and
+    ``summarized_turn_end`` (both inclusive, both ``turn_index``
+    values from :attr:`ConversationalMemory._turn_counter` at the time
+    of the summary write). A summary overlaps when any matched turn's
+    ``turn_index`` falls in ``[start, end]``.
+
+    When ``turn_ids`` is empty we return no summaries — there's
+    nothing to overlap. Callers matching purely by ``subject=`` /
+    ``user_id=`` therefore get ``summaries=[]``, which Phase 36 will
+    re-evaluate when the subject/user dimensions learn to cascade.
+    """
+    if not turn_ids:
+        return []
+    # Pull matched turns' turn_index values once.
+    matched_indices: set[int] = set()
+    for tid in turn_ids:
+        hit = memory.get(tid)
+        if hit is None:
+            continue
+        ti = hit.metadata.get("turn_index")
+        if isinstance(ti, int):
+            matched_indices.add(ti)
+    if not matched_indices:
+        return []
+    out: list[str] = []
+    for nid in memory._ids:
+        hit = memory.get(nid)
+        if hit is None:
+            continue
+        meta = hit.metadata
+        if meta.get("session_id") != session_id:
+            continue
+        if meta.get("type") != "summary":
+            continue
+        if user_id is not None and meta.get("user_id") != user_id:
+            continue
+        start = meta.get("summarized_turn_start")
+        end = meta.get("summarized_turn_end")
+        if not isinstance(start, int) or not isinstance(end, int):
+            continue
+        # Inclusive overlap: any matched turn_index inside [start, end].
+        if any(start <= ti <= end for ti in matched_indices):
+            out.append(nid)
+    return out
+
+
 class ConversationalMemory:
     """Mem0/Zep-style conversational wrapper over :class:`MemoryLayer`.
 
@@ -1021,6 +1198,94 @@ class ConversationalMemory:
             if self._memory.forget(nid):
                 removed += 1
         return removed
+
+    # ------------------------------------------------------------------
+    # Phase 34: forget() inventory API (dry-run only)
+    # ------------------------------------------------------------------
+    def forget(
+        self,
+        *,
+        text_matches: str | None = None,
+        subject: str | None = None,
+        user_id: str | None = None,
+        case_sensitive: bool = False,
+        dry_run: bool = True,
+    ) -> ForgetPreview:
+        """Return what a deletion under these criteria would touch.
+
+        Phase 34 ships the read-only inventory path only — no writes,
+        no LLM calls, no vector-store mutations. Phase 35 wires the
+        ``dry_run=False`` branch and flips the default.
+
+        Matcher modes (at least one required; combinations are AND-
+        intersected):
+
+        - ``text_matches``: substring search over raw turn text. Case-
+          insensitive by default; pass ``case_sensitive=True`` for an
+          exact match. Note: a short pattern matches eagerly — e.g.
+          ``"al"`` hits "alice", "alan", "all". Callers who need word-
+          boundary semantics should pre-tokenize.
+        - ``subject``: equality on each fact's ``metadata["subject"]``
+          field. Facts stored without that key never match.
+        - ``user_id``: equality on each entry's ``metadata["user_id"]``
+          (the Phase 12 multi-user scope). Works across turns, facts,
+          and summaries.
+
+        Returns a :class:`ForgetPreview` with the matched turn ids,
+        the facts whose ``source_turn_id`` points into that set (plus
+        facts matched directly by ``subject``/``user_id``), and the
+        summaries whose ``[summarized_turn_start,
+        summarized_turn_end]`` range overlaps any matched turn.
+
+        Raises:
+            ValueError: when no criterion is passed (zero-criteria
+                ``forget()`` would implicitly match everything; refuse
+                so callers can't wipe a bundle by omission).
+            NotImplementedError: when ``dry_run=False`` — Phase 35
+                wires the deletion path.
+        """
+        if text_matches is None and subject is None and user_id is None:
+            raise ValueError(
+                "forget() requires at least one criterion "
+                "(text_matches=, subject=, or user_id=)"
+            )
+        if not dry_run:
+            raise NotImplementedError(
+                "forget(dry_run=False) is wired in Phase 35; "
+                "call with dry_run=True to preview the target set."
+            )
+
+        raw_turns = _raw_turns_matching(
+            self._memory,
+            session_id=self._session_id,
+            text_matches=text_matches,
+            user_id=user_id,
+            case_sensitive=case_sensitive,
+        )
+        derived_facts = _facts_matching(
+            self._memory,
+            session_id=self._session_id,
+            turn_ids=raw_turns,
+            subject=subject,
+            user_id=user_id,
+            # Only require a source_turn_id link when text_matches was
+            # the driver; subject/user_id queries target facts directly
+            # without needing a turn back-pointer.
+            require_turn_link=(text_matches is not None),
+        )
+        summaries = _summaries_overlapping_turns(
+            self._memory,
+            session_id=self._session_id,
+            turn_ids=raw_turns,
+            user_id=user_id,
+        )
+        total = len(raw_turns) + len(derived_facts) + len(summaries)
+        return ForgetPreview(
+            raw_turns=raw_turns,
+            derived_facts=derived_facts,
+            summaries=summaries,
+            total_vectors=total,
+        )
 
     def flush(self, timeout: float | None = None) -> None:
         """Drain pending async extractions and hand off for durability.

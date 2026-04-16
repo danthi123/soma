@@ -132,6 +132,111 @@ def test_related_unknown_returns_404() -> None:
     assert r.status_code == 404
 
 
+# ------------------------------------------------------------------
+# Phase 19 — POST /snapshot
+# ------------------------------------------------------------------
+def test_snapshot_writes_bundle_to_path(
+    tmp_path, monkeypatch,  # type: ignore[no-untyped-def]
+) -> None:
+    """POST /snapshot with {path} writes a loadable bundle + reports entries."""
+    # chdir so the cwd-containment check accepts our tmp_path target.
+    monkeypatch.chdir(tmp_path)
+    client = _client_with_stub_mem()
+    client.post("/store", json={"text": "first"})
+    client.post("/store", json={"text": "second"})
+
+    r = client.post("/snapshot", json={"path": "out/bundle"})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["saved"] is True
+    assert body["entries"] == 2
+    saved_path = tmp_path / "out" / "bundle"
+    assert saved_path.exists()
+    assert (saved_path / "memory_index.json").exists()
+    # Response.path is absolute and points at the real target.
+    from pathlib import Path
+
+    assert Path(body["path"]).resolve() == saved_path.resolve()
+
+
+def test_snapshot_rejects_path_escaping_cwd(
+    tmp_path, monkeypatch,  # type: ignore[no-untyped-def]
+) -> None:
+    """A relative path with ``..`` that escapes cwd is a 400, not a write."""
+    (tmp_path / "inside").mkdir()
+    monkeypatch.chdir(tmp_path / "inside")
+    client = _client_with_stub_mem()
+    client.post("/store", json={"text": "x"})
+
+    # ../outside escapes the cwd the server was started in.
+    r = client.post("/snapshot", json={"path": "../outside"})
+    assert r.status_code == 400, r.text
+    assert "escapes" in r.json()["detail"].lower() or "cwd" in r.json()["detail"].lower()
+    # Nothing was written outside.
+    assert not (tmp_path / "outside").exists()
+
+
+def test_snapshot_requires_write_perm_when_auth_on(
+    tmp_path, monkeypatch,  # type: ignore[no-untyped-def]
+) -> None:
+    """With JWT auth configured, a read-only token is 403 on /snapshot.
+
+    Patches the JWT_SECRET module-level global directly (instead of
+    reloading the module) so other tests in the file keep seeing the
+    open-mode server — no state leak at teardown.
+    """
+    from datetime import timedelta
+
+    from soma.auth import issue_token
+
+    secret = "snapshot-perm-test-secret"
+    monkeypatch.setattr(serve, "JWT_SECRET", secret)
+    monkeypatch.setattr(serve, "JWT_ALG", "HS256")
+    monkeypatch.setattr(serve, "_JWT_PUBLIC_KEY_PEM", None)
+    monkeypatch.setattr(serve, "API_KEY", "")
+    monkeypatch.chdir(tmp_path)
+    client = _client_with_stub_mem()
+
+    # Read-only token: /snapshot requires write -> 403.
+    read_token = issue_token(
+        sub="reader",
+        bundles={"alex": ["read"]},
+        expires_in=timedelta(minutes=5),
+        secret=secret,
+    )
+    r = client.post(
+        "/snapshot",
+        headers={"Authorization": f"Bearer {read_token}"},
+        json={"path": "snap1"},
+    )
+    assert r.status_code == 403, r.text
+
+    # Write token on same bundle: 200.
+    write_token = issue_token(
+        sub="writer",
+        bundles={"__default__": ["read", "write"]},
+        expires_in=timedelta(minutes=5),
+        secret=secret,
+    )
+    r = client.post(
+        "/snapshot",
+        headers={"Authorization": f"Bearer {write_token}"},
+        json={"path": "snap2"},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["saved"] is True
+
+
+def test_snapshot_empty_path_is_400(
+    tmp_path, monkeypatch,  # type: ignore[no-untyped-def]
+) -> None:
+    """Empty-string path is rejected before any filesystem work happens."""
+    monkeypatch.chdir(tmp_path)
+    client = _client_with_stub_mem()
+    r = client.post("/snapshot", json={"path": ""})
+    assert r.status_code == 400
+
+
 def test_rest_store_crash_reload_persists(tmp_path) -> None:  # type: ignore[no-untyped-def]
     """End-to-end crash-and-reload: REST stores 3 entries, simulated
     crash clears the in-memory cache, next /retrieve reloads from disk

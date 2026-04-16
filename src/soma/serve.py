@@ -560,6 +560,24 @@ class SaveResponse(BaseModel):
     saved_to: str = Field(..., description="Absolute bundle path written to disk.")
 
 
+class SnapshotRequest(BaseModel):
+    path: str = Field(
+        ...,
+        description=(
+            "Filesystem path (relative to the server cwd, or absolute under "
+            "cwd) where the bundle should be written. Paths that escape the "
+            "server's cwd are rejected with a 400."
+        ),
+        examples=["data/snapshots/session-42"],
+    )
+
+
+class SnapshotResponse(BaseModel):
+    saved: bool = Field(..., description="Always True when the HTTP status is 200.")
+    path: str = Field(..., description="Absolute path the bundle was written to.")
+    entries: int = Field(..., description="Number of memory entries in the saved bundle.")
+
+
 class StatusResponse(BaseModel):
     num_entries: int = Field(..., description="Total memories in this bundle.")
     bundle_path: str = Field(..., description="On-disk bundle directory.")
@@ -577,6 +595,45 @@ class HealthResponse(BaseModel):
 
 class VersionResponse(BaseModel):
     version: str = Field(..., description="Installed soma package version.")
+
+
+def _resolve_snapshot_path(raw: str) -> Path:
+    """Resolve ``raw`` to an absolute path guaranteed to sit under cwd.
+
+    Safety belt for ``POST /snapshot``: the client supplies the target
+    path, and we refuse absolute paths or ``..`` traversal that would
+    let the client write outside the server's working directory. This
+    does NOT replace OS-level filesystem permissions — it's the
+    in-process equivalent of "no surprise writes" for the common
+    operator story where the server runs inside a data directory.
+    """
+    if not raw or not raw.strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="path must be a non-empty string",
+        )
+    cwd = Path.cwd().resolve()
+    candidate = Path(raw)
+    # ``resolve(strict=False)`` follows ``..`` segments and symlinks on
+    # the prefix that exists, which is exactly the containment check we
+    # want. An absolute path that already resolves inside cwd is fine
+    # (``/tmp/mount/cwd/snap`` works if cwd is under /tmp/mount/cwd).
+    resolved = (
+        candidate.resolve()
+        if candidate.is_absolute()
+        else (cwd / candidate).resolve()
+    )
+    try:
+        resolved.relative_to(cwd)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"path {raw!r} escapes the server cwd; only paths under "
+                f"{cwd} are allowed"
+            ),
+        ) from exc
+    return resolved
 
 
 def _hit(h: Any) -> HitResponse:
@@ -756,6 +813,33 @@ def save() -> SaveResponse:
     return SaveResponse(saved_to=str(BUNDLE_PATH))
 
 
+@app.post(
+    "/snapshot",
+    response_model=SnapshotResponse,
+    operation_id="snapshot",
+    tags=["default"],
+    responses=ERROR_RESPONSES,
+    dependencies=[Depends(require_auth(None, "write"))],
+)
+def snapshot(req: SnapshotRequest) -> SnapshotResponse:
+    """Write a one-shot MemoryLayer bundle to the client-supplied path.
+
+    Use case: an ephemeral session that wants to persist at shutdown
+    without reconfiguring the server-default ``SOMA_BUNDLE_PATH``. The
+    target path is validated to stay under the server's cwd (see
+    :func:`_resolve_snapshot_path`).
+    """
+    target = _resolve_snapshot_path(req.path)
+    mem = _get_mem()
+    target.mkdir(parents=True, exist_ok=True)
+    mem.save(target)
+    return SnapshotResponse(
+        saved=True,
+        path=str(target),
+        entries=len(mem),
+    )
+
+
 @app.get(
     "/recent",
     response_model=RetrieveResponse,
@@ -908,6 +992,28 @@ def save_bundle(name: str) -> SaveResponse:
     path.mkdir(parents=True, exist_ok=True)
     mem.save(path)
     return SaveResponse(saved_to=str(path))
+
+
+@app.post(
+    "/bundles/{name}/snapshot",
+    response_model=SnapshotResponse,
+    operation_id="bundles_snapshot",
+    tags=["bundles"],
+    responses=ERROR_RESPONSES,
+    dependencies=[Depends(require_auth("name", "write"))],
+)
+def snapshot_bundle(name: str, req: SnapshotRequest) -> SnapshotResponse:
+    """Per-tenant variant of :func:`snapshot` — saves the named bundle
+    to the caller-supplied path (same cwd-containment check)."""
+    target = _resolve_snapshot_path(req.path)
+    mem = _get_mem(name)
+    target.mkdir(parents=True, exist_ok=True)
+    mem.save(target)
+    return SnapshotResponse(
+        saved=True,
+        path=str(target),
+        entries=len(mem),
+    )
 
 
 @app.get(

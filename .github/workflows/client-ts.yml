@@ -1,0 +1,111 @@
+name: client-ts
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    paths:
+      - 'src/soma/serve.py'
+      - 'clients/typescript/**'
+      - '.github/workflows/client-ts.yml'
+
+jobs:
+  build-publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          check-latest: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install SOMA (serve extra only — stub embedder skips sbert)
+        run: pip install -e ".[serve]"
+
+      - name: Launch uvicorn with stub embedder
+        run: |
+          SOMA_EMBED_MODEL=stub nohup python -m uvicorn soma.serve:app \
+            --host 127.0.0.1 --port 8420 > uvicorn.log 2>&1 &
+          echo $! > uvicorn.pid
+          for i in {1..30}; do
+            if curl -sf http://127.0.0.1:8420/health >/dev/null; then
+              echo "health ok after $i tries"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo '::error::uvicorn did not come up in 30s'
+          cat uvicorn.log
+          exit 1
+
+      - name: Snapshot /openapi.json
+        run: |
+          curl -sf http://127.0.0.1:8420/openapi.json \
+            | python -m json.tool \
+            > clients/typescript/openapi.json
+
+      - name: Verify bearerAuth security scheme is present
+        run: |
+          python - <<'PY'
+          import json, sys
+          spec = json.load(open("clients/typescript/openapi.json"))
+          schemes = spec.get("components", {}).get("securitySchemes", {})
+          ba = schemes.get("bearerAuth", {})
+          if ba.get("type") != "http" or ba.get("scheme") != "bearer":
+              print("::error::bearerAuth scheme missing or wrong shape:", ba)
+              sys.exit(1)
+          protected = [p for p, ops in spec["paths"].items()
+                       if any("security" in op for op in ops.values() if isinstance(op, dict))]
+          if not protected:
+              print("::error::no paths advertise security: [{bearerAuth: []}]")
+              sys.exit(1)
+          print(f"OK — bearerAuth advertised on {len(protected)} paths")
+          PY
+
+      - name: Spec drift check (PRs only)
+        if: github.event_name == 'pull_request'
+        run: git diff --exit-code -- clients/typescript/openapi.json
+
+      - name: npm ci
+        working-directory: clients/typescript
+        run: npm ci
+
+      - name: Regenerate schema.d.ts
+        working-directory: clients/typescript
+        run: npm run generate
+
+      - name: Typecheck
+        working-directory: clients/typescript
+        run: npm run typecheck
+
+      - name: Test
+        working-directory: clients/typescript
+        run: npm test
+
+      - name: Build (tsc -> dist/)
+        working-directory: clients/typescript
+        run: npm run build
+
+      - name: Stop uvicorn
+        if: always()
+        run: |
+          if [ -f uvicorn.pid ]; then
+            kill "$(cat uvicorn.pid)" 2>/dev/null || true
+          fi
+
+      - name: Publish on tag push
+        if: startsWith(github.ref, 'refs/tags/v')
+        working-directory: clients/typescript
+        run: npm publish --access public --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

@@ -393,6 +393,91 @@ def test_cli_auth_rotate_secret_prints_high_entropy_secret(
     assert len(decoded) >= 32
 
 
+# ------------------------------------------------------------------
+# Phase 23 — soma auth refresh
+# ------------------------------------------------------------------
+def test_cli_auth_refresh_round_trip(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from datetime import timedelta
+
+    from soma.auth import issue_token, verify_token
+
+    token = issue_token(
+        sub="alex",
+        bundles={"alex": ["read", "write"]},
+        expires_in=timedelta(hours=1),
+        secret=_TEST_SECRET,
+    )
+    monkeypatch.setenv("SOMA_JWT_SECRET", _TEST_SECRET)
+    rc = main(["auth", "refresh", "--token", token])
+    assert rc == 0
+    new_token = capsys.readouterr().out.strip()
+    assert new_token
+    assert new_token != token
+    # Fresh token verifies + carries the same claims + fresh jti.
+    old_p = verify_token(token, secret=_TEST_SECRET)
+    new_p = verify_token(new_token, secret=_TEST_SECRET)
+    assert new_p.sub == old_p.sub == "alex"
+    assert new_p.bundles == old_p.bundles
+    assert new_p.jti != old_p.jti
+
+
+def test_cli_auth_refresh_rejects_expired(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from datetime import timedelta
+
+    from soma.auth import issue_token
+
+    token = issue_token(
+        sub="a",
+        bundles={},
+        expires_in=timedelta(minutes=-10),
+        secret=_TEST_SECRET,
+    )
+    monkeypatch.setenv("SOMA_JWT_SECRET", _TEST_SECRET)
+    rc = main(["auth", "refresh", "--token", token])
+    err = capsys.readouterr().err
+    assert rc == 2
+    assert err  # non-empty error message
+
+
+def test_cli_auth_refresh_requires_secret(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.delenv("SOMA_JWT_SECRET", raising=False)
+    monkeypatch.delenv("SOMA_JWT_PRIVATE_KEY_PATH", raising=False)
+    rc = main(["auth", "refresh", "--token", "dummy.token.here"])
+    err = capsys.readouterr().err
+    assert rc == 2
+    assert "SOMA_JWT_SECRET" in err
+
+
+def test_cli_auth_refresh_honors_expires_override(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from datetime import timedelta
+
+    import jwt
+
+    from soma.auth import issue_token
+
+    token = issue_token(
+        sub="a",
+        bundles={},
+        expires_in=timedelta(days=30),
+        secret=_TEST_SECRET,
+    )
+    monkeypatch.setenv("SOMA_JWT_SECRET", _TEST_SECRET)
+    rc = main(["auth", "refresh", "--token", token, "--expires", "60m"])
+    assert rc == 0
+    new_token = capsys.readouterr().out.strip()
+    claims = jwt.decode(new_token, _TEST_SECRET, algorithms=["HS256"])
+    window = int(claims["exp"]) - int(claims["iat"])
+    assert abs(window - 3600) <= 2
+
+
 def test_cli_auth_issue_supports_multiple_bundles(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

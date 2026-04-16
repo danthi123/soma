@@ -404,6 +404,69 @@ def _cmd_auth_rotate_secret(_: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_auth_refresh(args: argparse.Namespace) -> int:
+    """Exchange a valid JWT for a fresh one with the same claims.
+
+    Mirrors the server-side ``POST /auth/refresh`` for operator/CI use.
+    HS256 reuses ``SOMA_JWT_SECRET`` for verify + sign; RS256 needs
+    both ``SOMA_JWT_PUBLIC_KEY_PATH`` (verify) and
+    ``SOMA_JWT_PRIVATE_KEY_PATH`` (sign).
+
+    Prints the fresh token on stdout — same one-line shape as
+    ``soma auth issue`` so a shell pipeline can substitute refresh for
+    the first issuance when needed.
+    """
+    from soma.auth import parse_ttl_spec, refresh_token
+
+    alg = os.environ.get("SOMA_JWT_ALG", "HS256")
+    secret = os.environ.get("SOMA_JWT_SECRET", "")
+    public_key_path = os.environ.get("SOMA_JWT_PUBLIC_KEY_PATH", "")
+    private_key_path = os.environ.get("SOMA_JWT_PRIVATE_KEY_PATH", "")
+
+    refresh_kwargs: dict[str, object] = {"alg": alg}
+    if alg == "HS256":
+        if not secret:
+            print(
+                "error: SOMA_JWT_SECRET is required to refresh HS256 tokens.",
+                file=sys.stderr,
+            )
+            return 2
+        refresh_kwargs["secret"] = secret
+    elif alg == "RS256":
+        if not public_key_path or not private_key_path:
+            print(
+                "error: RS256 refresh needs both SOMA_JWT_PUBLIC_KEY_PATH "
+                "and SOMA_JWT_PRIVATE_KEY_PATH.",
+                file=sys.stderr,
+            )
+            return 2
+        try:
+            refresh_kwargs["public_key_pem"] = Path(public_key_path).read_bytes()
+            refresh_kwargs["private_key_pem"] = Path(private_key_path).read_bytes()
+        except OSError as exc:
+            print(f"error: cannot read key file: {exc}", file=sys.stderr)
+            return 2
+    else:
+        print(f"error: unsupported SOMA_JWT_ALG={alg!r}", file=sys.stderr)
+        return 2
+
+    if args.expires:
+        try:
+            refresh_kwargs["new_expires_in"] = parse_ttl_spec(args.expires)
+        except ValueError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 2
+
+    try:
+        new_token = refresh_token(args.token, **refresh_kwargs)  # type: ignore[arg-type]
+    except Exception as exc:  # noqa: BLE001 — CLI surface
+        print(f"error: refresh failed: {exc}", file=sys.stderr)
+        return 2
+
+    print(new_token)
+    return 0
+
+
 # ------------------------------------------------------------------
 # `soma auth revoke` / `list-revoked` / `gc` — blocklist operations
 # ------------------------------------------------------------------
@@ -889,6 +952,29 @@ def build_parser() -> argparse.ArgumentParser:
         help="Generate a fresh HS256 shared secret (stdout)",
     )
     p_auth_rotate.set_defaults(func=_cmd_auth_rotate_secret)
+
+    p_auth_refresh = auth_sub.add_parser(
+        "refresh",
+        help="Exchange a valid JWT for a fresh one with the same claims",
+        description=(
+            "Mirrors the POST /auth/refresh server endpoint. Verifies the "
+            "token (HS256 via SOMA_JWT_SECRET, RS256 via the PUBLIC+PRIVATE "
+            "key pair) and emits a new token with a fresh jti/exp on "
+            "stdout. The old token is NOT auto-revoked; call `soma auth "
+            "revoke` separately if rotation is needed."
+        ),
+    )
+    p_auth_refresh.add_argument("--token", required=True, help="JWT string to refresh")
+    p_auth_refresh.add_argument(
+        "--expires",
+        default=None,
+        metavar="SPEC",
+        help=(
+            "Override the new token TTL (30d | 24h | 60m). Default reuses "
+            "the original token's exp-iat window."
+        ),
+    )
+    p_auth_refresh.set_defaults(func=_cmd_auth_refresh)
 
     # --- revocation subcommands (require SOMA_JWT_BLOCKLIST_PATH) ---
     p_auth_revoke = auth_sub.add_parser(

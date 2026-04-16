@@ -70,6 +70,11 @@ class ConversationalMemory:
     - :meth:`list_facts` / :meth:`get_summary` — introspection.
     - :meth:`supersede` / :meth:`clear_session` — lifecycle helpers.
     - :meth:`flush` — durability hand-off (sync mode: no-op).
+
+    The ``extractor_llm`` kwarg lets callers pin a stronger model for
+    the two structured-JSON steps (extract + reconcile) while leaving
+    free-form chat + summary on a smaller model. When unset, the
+    main ``llm`` is used for everything (backward compat).
     """
 
     def __init__(
@@ -77,14 +82,41 @@ class ConversationalMemory:
         *,
         memory: MemoryLayer,
         llm: LLMBackend,
+        extractor_llm: LLMBackend | None = None,
         session_id: str | None = None,
         near_dup_threshold: float = 0.92,
         ambiguous_threshold: float = 0.75,
         summary_every: int = 20,
         extract_assistant: bool = False,
     ) -> None:
+        """Build a ConversationalMemory wrapper.
+
+        :param memory: underlying :class:`MemoryLayer`.
+        :param llm: backend used for the rolling summary, and as the
+            fallback for extract/reconcile when ``extractor_llm`` is not
+            set. Small local chat models are fine here.
+        :param extractor_llm: optional separate backend for the two
+            structured-JSON steps (fact extraction + reconcile). Use a
+            stronger JSON-reliable model (e.g. a 7B+ instruct) when
+            ``llm`` is a tiny (3B-ish) chat model that struggles to emit
+            strict JSON. When ``None`` (default), ``llm`` is used for
+            all three prompt types.
+        :param session_id: scope id; defaults to ``"default"``.
+        :param near_dup_threshold: cosine cutoff above which a new fact
+            is treated as a near-duplicate (no LLM call).
+        :param ambiguous_threshold: cosine cutoff below which a new
+            fact is ADDed without asking the LLM.
+        :param summary_every: roll a summary every N turns (set very
+            large to disable).
+        :param extract_assistant: if True, also extract facts from
+            ``role="assistant"`` turns; defaults to user-only.
+        """
         self._memory = memory
         self._llm = llm
+        # Fall back to the main llm when no dedicated extractor is set.
+        # Storing the resolved backend (rather than keeping an Optional)
+        # means every call site stays free of None-checks.
+        self._extractor_llm = extractor_llm or llm
         # session_id default="default" so simple callers don't fight the
         # API. Multi-session callers pass an explicit id.
         self._session_id: str = session_id or "default"
@@ -114,7 +146,7 @@ class ConversationalMemory:
         ``"car_preference"`` still round-trips as a usable fact.
         """
         prompt = EXTRACT_PROMPT.format(message=message)
-        raw = self._llm.generate(prompt, max_tokens=512)
+        raw = self._extractor_llm.generate(prompt, max_tokens=512)
         try:
             parsed = json.loads(raw)
         except json.JSONDecodeError:
@@ -258,7 +290,7 @@ class ConversationalMemory:
         prompt = RECONCILE_PROMPT.format(
             new_fact=fact.text, candidates=candidate_block
         )
-        raw = self._llm.generate(prompt, max_tokens=256)
+        raw = self._extractor_llm.generate(prompt, max_tokens=256)
         try:
             parsed = json.loads(raw)
             if not isinstance(parsed, dict):
@@ -417,7 +449,7 @@ class ConversationalMemory:
         prompt = RECONCILE_PROMPT.format(
             new_fact=fact.text, candidates=candidate_block
         )
-        raw = self._llm.generate(prompt, max_tokens=256)
+        raw = self._extractor_llm.generate(prompt, max_tokens=256)
         try:
             parsed = json.loads(raw)
             if not isinstance(parsed, dict):

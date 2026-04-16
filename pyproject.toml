@@ -169,6 +169,15 @@ otel = [
     "opentelemetry-sdk>=1.30",
     "opentelemetry-exporter-otlp>=1.30",
 ]
+bench = [
+    # Everything the benchmark harnesses need: dev (pytest + ruff +
+    # mypy), metrics (prometheus), ann (faiss-cpu), sbert
+    # (sentence-transformers), plus chromadb as a direct competitor
+    # in run_scale_vs_chroma + run_backend_matrix. Keeps CI install
+    # lines short: `pip install -e ".[bench]"`.
+    "soma[dev,metrics,ann,sbert]",
+    "chromadb>=0.5",
+]
 
 [project.scripts]
 soma = "soma.cli:main"

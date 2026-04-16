@@ -226,6 +226,9 @@ def _resolve_backend(backend_name: str, *, dry_run: bool) -> LLMBackend:
 def _chat(
     bundle_path: Path, *, backend_name: str, k: int, dry_run: bool
 ) -> None:
+    from soma.cli import _chat_reply
+    from soma.llm.rag import RAGAnswer
+
     print(f"Loading memory bundle from {bundle_path} ...")
     mem = MemoryLayer.load(bundle_path)
     print(f"  Loaded {len(mem)} chunks.\n")
@@ -234,6 +237,7 @@ def _chat(
     print(f"  LLM backend: {backend.name}\n")
 
     session = RAGSession(memory=mem, llm=backend, k=k)
+    streaming = hasattr(backend, "stream_generate")
     print("Type a question, or 'quit' to exit. Ctrl-C also works.\n")
     try:
         while True:
@@ -242,8 +246,21 @@ def _chat(
                 continue
             if question.lower() in {"quit", "exit", "q"}:
                 break
-            answer = session.ask(question)
-            print(f"Assistant: {answer.text}\n")
+            if streaming:
+                hits = session._retrieve(question)
+                prompt = session._build_prompt(question, hits)
+                print("Assistant: ", end="", flush=True)
+                try:
+                    text = _chat_reply(
+                        backend, prompt, max_tokens=session.max_tokens
+                    )
+                except KeyboardInterrupt:
+                    continue
+                answer = RAGAnswer(text=text, hits=hits, backend_name=backend.name)
+                print()
+            else:
+                answer = session.ask(question)
+                print(f"Assistant: {answer.text}\n")
             if answer.hits:
                 print("  Sources:")
                 for line in answer.cite_lines():

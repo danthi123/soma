@@ -33,14 +33,9 @@ jobs:
           check-latest: true
 
       - name: Install SOMA + bench extras
-        # dev + metrics come from the plan; ann + sbert are load-bearing
-        # for the benchmark harnesses (faiss-cpu + sentence-transformers).
-        # chromadb is not a declared SOMA extra — the benchmark harness
-        # pulls it directly, so install it here.
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[dev,metrics,ann,sbert]"
-          pip install chromadb
+          pip install -e ".[bench]"
 
       - name: Run retrieval bench
         run: |

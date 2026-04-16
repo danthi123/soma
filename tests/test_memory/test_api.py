@@ -203,3 +203,44 @@ def test_memory_hit_fields(embedder) -> None:
     assert hit.metadata == {"k": "v"}
     assert isinstance(hit.timestamp_step, int)
     assert hit.score == pytest.approx(1.0, abs=1e-5)  # self-retrieval → cosine 1.0
+
+
+# ------------------------------------------------------------------
+# Custom embed_fn path
+# ------------------------------------------------------------------
+def _hash_embed(text: str) -> torch.Tensor:
+    """Deterministic hash-based embedder for testing."""
+    h = hash(text) & 0xFFFFFFFF
+    torch.manual_seed(h)
+    return torch.randn(16)
+
+
+def test_custom_embed_fn_store_retrieve() -> None:
+    mem = MemoryLayer(embed_fn=_hash_embed, embed_dim=16)
+    mem.store("alpha")
+    mem.store("beta")
+    hits = mem.retrieve("alpha", k=1)
+    assert len(hits) == 1
+    assert hits[0].text in ("alpha", "beta")
+
+
+def test_custom_embed_fn_save_load(tmp_path: Path) -> None:
+    mem = MemoryLayer(embed_fn=_hash_embed, embed_dim=16)
+    mem.store("fact one")
+    nid = mem.store("fact two")
+    mem.save(tmp_path / "custom-bundle")
+    assert not (tmp_path / "custom-bundle" / "tokenizer.json").exists()
+    restored = MemoryLayer.load(
+        tmp_path / "custom-bundle", embed_fn=_hash_embed,
+    )
+    assert len(restored) == 2
+    assert restored.get(nid) is not None
+    assert restored.get(nid).text == "fact two"  # type: ignore[union-attr]
+
+
+def test_custom_embed_fn_load_without_fn_raises(tmp_path: Path) -> None:
+    mem = MemoryLayer(embed_fn=_hash_embed, embed_dim=16)
+    mem.store("data")
+    mem.save(tmp_path / "b")
+    with pytest.raises(ValueError, match="embed_fn"):
+        MemoryLayer.load(tmp_path / "b")

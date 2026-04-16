@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -26,6 +27,8 @@ import torch
 from torch.nn import functional as F  # noqa: N812
 
 from soma.io.text_encoder import TextEncoder, load_tokenizer
+
+EmbedFn = Callable[[str], torch.Tensor]
 
 
 @dataclass(frozen=True)
@@ -65,18 +68,32 @@ class MemoryLayer:
     def __init__(
         self,
         *,
-        tokenizer: Any,
-        encoder: TextEncoder,
+        tokenizer: Any = None,
+        encoder: TextEncoder | None = None,
+        embed_fn: EmbedFn | None = None,
+        embed_dim: int | None = None,
         device: torch.device | str | None = None,
     ) -> None:
+        if embed_fn is None and encoder is None:
+            raise ValueError(
+                "MemoryLayer needs either (tokenizer + encoder) or embed_fn"
+            )
         self._tokenizer = tokenizer
         self._encoder = encoder
-        # Embedding device follows the encoder unless the caller overrides.
+        self._custom_embed_fn = embed_fn
         if device is not None:
             self._device = torch.device(device)
-        else:
+        elif encoder is not None:
             self._device = encoder.embedding.weight.device
-        self._embed_dim: int = int(encoder.embed_dim)
+        else:
+            self._device = torch.device("cpu")
+        if embed_fn is not None:
+            if embed_dim is None:
+                raise ValueError("embed_dim required when using embed_fn")
+            self._embed_dim: int = embed_dim
+        else:
+            assert encoder is not None
+            self._embed_dim = int(encoder.embed_dim)
 
         # Parallel storage. Order is preserved across save/load so
         # ``get_recent`` stays stable.
@@ -179,17 +196,19 @@ class MemoryLayer:
         """Write a self-contained memory bundle to ``path`` (a directory)."""
         out = Path(path)
         out.mkdir(parents=True, exist_ok=True)
-        self._encoder.save_tokenizer(out / "tokenizer.json")
-        torch.save(self._encoder.state_dict(), out / "encoder.pt")
+        has_encoder = self._encoder is not None
+        if has_encoder:
+            self._encoder.save_tokenizer(out / "tokenizer.json")
+            torch.save(self._encoder.state_dict(), out / "encoder.pt")
         if self._embeddings_list:
             stacked = torch.stack(self._embeddings_list, dim=0).detach().cpu()
         else:
             stacked = torch.empty((0, self._embed_dim))
         torch.save(stacked, out / "memory_embeddings.pt")
-        index = {
+        index: dict[str, Any] = {
             "schema_version": 1,
             "embed_dim": self._embed_dim,
-            "max_seq_len": int(self._encoder.max_seq_len),
+            "embed_type": "text_encoder" if has_encoder else "custom",
             "step": self._step,
             "entries": [
                 {
@@ -199,50 +218,77 @@ class MemoryLayer:
                     "timestamp_step": ts,
                 }
                 for nid, txt, md, ts in zip(
-                    self._ids, self._texts, self._metadatas, self._timestamps, strict=True
+                    self._ids, self._texts, self._metadatas, self._timestamps,
+                    strict=True,
                 )
             ],
         }
-        (out / "memory_index.json").write_text(json.dumps(index, indent=2), encoding="utf-8")
+        if has_encoder:
+            index["max_seq_len"] = int(self._encoder.max_seq_len)
+        (out / "memory_index.json").write_text(
+            json.dumps(index, indent=2), encoding="utf-8",
+        )
 
     @classmethod
     def load(
         cls,
         path: str | Path,
         *,
+        embed_fn: EmbedFn | None = None,
         device: torch.device | str | None = None,
     ) -> MemoryLayer:
-        """Rehydrate a MemoryLayer from a ``save()``-produced directory."""
+        """Rehydrate a MemoryLayer from a ``save()``-produced directory.
+
+        Bundles saved with the TextEncoder path include ``tokenizer.json``
+        and ``encoder.pt``; those are reloaded automatically. Bundles saved
+        with a custom ``embed_fn`` only store embeddings + index — pass the
+        same ``embed_fn`` at load time so new stores can be embedded.
+        """
         src = Path(path)
         index_path = src / "memory_index.json"
-        tokenizer_path = src / "tokenizer.json"
-        encoder_path = src / "encoder.pt"
         embeddings_path = src / "memory_embeddings.pt"
-        for required in (index_path, tokenizer_path, encoder_path, embeddings_path):
+        for required in (index_path, embeddings_path):
             if not required.exists():
                 raise FileNotFoundError(f"MemoryLayer bundle missing {required.name}")
 
         index = json.loads(index_path.read_text(encoding="utf-8"))
         if index.get("schema_version") != 1:
             raise ValueError(
-                f"Unsupported MemoryLayer schema_version {index.get('schema_version')!r}"
+                f"Unsupported MemoryLayer schema version {index.get('schema_version')!r}"
             )
 
-        tokenizer = load_tokenizer(tokenizer_path)
-        encoder = TextEncoder(
-            tokenizer,
-            embed_dim=int(index["embed_dim"]),
-            max_seq_len=int(index["max_seq_len"]),
-            device=device,
-        )
-        encoder_state = torch.load(encoder_path, map_location=device or "cpu", weights_only=True)
-        encoder.load_state_dict(encoder_state)
+        embed_type = index.get("embed_type", "text_encoder")
+        embed_dim = int(index["embed_dim"])
 
-        instance = cls(tokenizer=tokenizer, encoder=encoder, device=device)
+        if embed_type == "text_encoder":
+            tokenizer_path = src / "tokenizer.json"
+            encoder_path = src / "encoder.pt"
+            for f in (tokenizer_path, encoder_path):
+                if not f.exists():
+                    raise FileNotFoundError(f"MemoryLayer bundle missing {f.name}")
+            tokenizer = load_tokenizer(tokenizer_path)
+            encoder = TextEncoder(
+                tokenizer,
+                embed_dim=embed_dim,
+                max_seq_len=int(index.get("max_seq_len", 512)),
+                device=device,
+            )
+            encoder_state = torch.load(
+                encoder_path, map_location=device or "cpu", weights_only=True,
+            )
+            encoder.load_state_dict(encoder_state)
+            instance = cls(tokenizer=tokenizer, encoder=encoder, device=device)
+        else:
+            if embed_fn is None:
+                raise ValueError(
+                    "This bundle was saved with a custom embed_fn; pass the "
+                    "same embed_fn to load()."
+                )
+            instance = cls(
+                embed_fn=embed_fn, embed_dim=embed_dim, device=device,
+            )
         instance._step = int(index.get("step", 0))
-        embeddings = torch.load(
-            embeddings_path, map_location=device or "cpu", weights_only=True
-        )
+        embeddings = torch.load(embeddings_path, map_location=device or "cpu", weights_only=True)
         target_device = instance._device
         for entry, vec in zip(index["entries"], embeddings, strict=True):
             instance._ids.append(str(entry["node_id"]))
@@ -256,7 +302,11 @@ class MemoryLayer:
     # Internals
     # ------------------------------------------------------------------
     def _embed(self, text: str) -> torch.Tensor:
-        """Mean-pool token embeddings into a single (embed_dim,) vector."""
+        """Embed ``text`` into a (embed_dim,) vector."""
+        if self._custom_embed_fn is not None:
+            vec = self._custom_embed_fn(text)
+            return vec.detach().to(self._device)
+        assert self._encoder is not None
         with torch.no_grad():
             stacked = self._encoder.encode_batch(text)  # (T, embed_dim)
         if stacked.numel() == 0:

@@ -8,9 +8,13 @@ name: helm-release
 # Both must succeed — fail-fast so the two channels never drift.
 
 on:
-  push:
-    tags:
-      - 'chart-v*'
+  # Tag-push trigger disabled: the downstream publish steps still target
+  # ghcr.io (OCI) + GitHub Pages via helm/chart-releaser-action, neither
+  # of which works on Gitea. Re-enable after reworking to Gitea's OCI
+  # package registry when we're ready to cut a chart tag.
+  # push:
+  #   tags:
+  #     - 'chart-v*'
   workflow_dispatch:
     inputs:
       dry_run:

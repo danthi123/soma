@@ -78,8 +78,12 @@ jobs:
             --golden  benchmarks/golden/scale_vs_chroma.json \
             --current /tmp/bench/backend_matrix.json \
             --golden  benchmarks/golden/backend_matrix.json \
-            --tolerance-latency 0.20 \
+            --tolerance-latency 0.50 \
             --tolerance-recall  0.05 | tee /tmp/bench/diff.md
+        # ±50% latency is loose on purpose: goldens were captured on a
+        # Windows 3090 host but the Gitea runner is CPU-only Intel on
+        # Unraid. Tighten back to 0.20 after re-capturing goldens on
+        # the runner (or after making latency info-only).
 
       - name: Upload bench artefacts
         if: always()

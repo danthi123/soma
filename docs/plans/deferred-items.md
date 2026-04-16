@@ -17,7 +17,7 @@ Things that came up during the 2026-04-16 gap-closing push (Phases 1-7b) but wer
 
 ## Tier 2 — conversational memory
 
-- **Async extraction mode** (`extraction_mode="async"` with `ThreadPoolExecutor`, `flush()` drains). Phase 2 Stage 2.5. ~1 day. Source: `docs/plans/2026-04-16-phase-2-conversational-memory.md`.
+- ✅ ~~**Async extraction mode**~~ Shipped in Phase 22 (`2271102`, `77beda7`). `extraction_mode="async"` with a `ThreadPoolExecutor(max_workers=1)`; `flush(timeout)` drains; `close()` + context-manager protocol; `clear_session()` flushes first. Cookbook §18.1 covers the low-latency-chat recipe and the GIL caveat.
 - **Batch extraction mode** (accumulate K turns, one LLM call). Phase 2 Stage 3. ~1 day.
 - ✅ ~~**`extractor_llm=` kwarg**~~ Shipped in Phase 11 (`34320b4`, `9ca76e1`).
 - ✅ ~~**Summary re-summarization from raw turns**~~ Shipped in Phase 17 (`5124d4c`, `325029f`). New `resummarize_every` kwarg (default 5); every Mth summary re-derives from raw turns to prevent compounding drift. Cookbook §18 covers tuning.
@@ -33,7 +33,7 @@ Things that came up during the 2026-04-16 gap-closing push (Phases 1-7b) but wer
 
 ## Tier 2 — auth
 
-- **Refresh-token endpoint.** Punted as OAuth-flow complexity. Source: Phase 4 plan §6. ~1 d if we build it.
+- ✅ ~~**Refresh-token endpoint.**~~ Shipped in Phase 23 (`26cfa5f`, `2aaf86b`, `dc347a5`). `soma.auth.refresh_token(...)` helper + `POST /auth/refresh` + `soma auth refresh --token <jwt>` CLI. Mints a fresh `jti`/`exp` with the same `sub`/`bundles`/`aud`; `SOMA_JWT_REFRESH_TTL` overrides the default window; old token NOT auto-revoked (pinned in tests).
 - **Per-token rate limiting.** Punted to reverse proxy. A lightweight in-proc limiter would be ~1 d.
 - ✅ ~~**Hashed-token store.**~~ Shipped in Phase 18 (`69d8e1a`, `632ea15`). Opt-in via `FileBlocklist(path, hashed=True)` or `SOMA_JWT_BLOCKLIST_HASHED=1` env. Dual-schema reader accepts legacy + new records so operators can flip without migration.
 - ✅ ~~**Redis-backed revocation blocklist.**~~ Shipped in Phase 20 (`14e912d`, `bb88d62`, `d7d8773`). `RedisBlocklist` alongside `FileBlocklist`; `SOMA_JWT_BLOCKLIST_REDIS_URL` env dispatch; `soma[redis-revocation]` extra; hashed-mode interop verified cross-backend.
@@ -48,7 +48,7 @@ Things that came up during the 2026-04-16 gap-closing push (Phases 1-7b) but wer
 - ✅ ~~**`backend.search_near_id(node_id, k)`**~~ Shipped in Phase 16 (`4825cd3`..`9437ff6`). Default impl delegates to `get_vectors + search`; Qdrant overrides via `recommend` API; LanceDB via Arrow-native self-join. `MemoryLayer.related()` routed through it.
 - **Async Qdrant client (`AsyncQdrantClient`)** — waits for FastAPI routes to go async. No ETA.
 - **Per-bundle vs shared Qdrant collection.** Per-bundle is v1; shared collection with bundle_name tag scales to 1000+ bundles. Decision deferred to demand.
-- **Snapshot version-compat tests** across Qdrant versions — today the adapter writes `qdrant_version` in `backend.json` but we don't test cross-version restore. ~1 d.
+- ✅ ~~**Snapshot version-compat tests** across Qdrant versions~~ Shipped in Phase 24 (`45c099c`, `3b5d703`, `74dcfc3`). testcontainers-driven 3×3 matrix across `1.11.3` / `1.12.4` / `1.13.5`; gated by `SOMA_QDRANT_VERSION_MATRIX=1` + `slow_qdrant` marker + `soma[qdrant-test]` extra; docs section in `docs/backends.md`. Weekly Gitea Actions workflow deferred until the runner has Docker available.
 
 ## Tier 2 — TypeScript client
 

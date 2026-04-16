@@ -15,7 +15,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      id-token: write
     steps:
       - uses: actions/checkout@v4
 
@@ -106,6 +105,9 @@ jobs:
       - name: Publish on tag push
         if: startsWith(github.ref, 'refs/tags/v')
         working-directory: clients/typescript
-        run: npm publish --access public --provenance
+        # --provenance requires GitHub OIDC and does not work on Gitea.
+        # Publish with NPM_TOKEN only; package signature stays on npmjs
+        # side but the signed-provenance badge is not emitted.
+        run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

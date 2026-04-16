@@ -139,7 +139,7 @@ All notable changes to SOMA are documented here.
   from live harness runs against `main` at `d54621e`. Three JSONs
   (scale_vs_chroma, retrieval, backend_matrix) + README documenting
   provenance and regeneration steps.
-- **GitHub Actions workflow** (`.github/workflows/bench-regression.yml`):
+- **Gitea Actions workflow** (`.gitea/workflows/bench-regression.yml`):
   triggers on PRs touching `src/soma/memory/**`, `src/soma/io/**`,
   `benchmarks/**`, or the workflow itself; nightly cron at 08:00
   UTC; manual dispatch. Non-blocking on PRs (posts comment on
@@ -150,6 +150,109 @@ All notable changes to SOMA are documented here.
   + `chromadb` — a dedicated `[bench]` extra in `pyproject.toml`
   would tidy that. Parked since it didn't block anything and would
   have conflicted with Phase 20's concurrent `pyproject.toml` edit.
+
+### Added — async extraction mode (Phase 22)
+
+- **`ConversationalMemory(extraction_mode="async")`**: `add_message`
+  returns as soon as the raw turn is persisted; LLM extraction +
+  reconcile runs on a `ThreadPoolExecutor(max_workers=1)` owned by
+  the instance. Unlocks low-latency chat paths where the caller
+  doesn't need facts ready synchronously. Default stays `"sync"` —
+  existing behaviour unchanged.
+- **`flush(timeout=None)`** drains all pending futures and re-raises
+  any exceptions from the executor thread. **`close()`** flushes
+  then shuts the executor down (idempotent). Context-manager
+  protocol (`__enter__` / `__exit__`) wired to `close()`.
+- **`clear_session()` now flushes first** so no late facts land
+  after a wipe. Summary rollovers stay synchronous (they read
+  accumulated memory state, which may lag behind in async mode —
+  documented tradeoff).
+- **`max_workers=1`** preserves monotonic extraction order within a
+  session. Tests pin start/done interleaving (no out-of-order
+  completion). Python GIL means the win is I/O overlap with the
+  LLM call, not CPU parallelism — called out in the recipe.
+- **Docs**: new §18.1 in `docs/cookbook.md` covers when to reach
+  for it (low-latency chat), the context-manager idiom, and the
+  flush-exception surfacing semantics.
+- **+8 tests** in `tests/test_memory/test_conversational_async_extraction.py`
+  covering fast return, flush drain, context-manager close,
+  in-order extraction, clear_session flush-first, exception
+  surfacing, default-sync unchanged, double-close safety.
+
+### Added — refresh-token endpoint (Phase 23)
+
+- **`soma.auth.refresh_token(current_token, ...)`**: verifies the
+  presented token end-to-end (signature, exp, revocation, audience)
+  and mints a fresh one with the same `sub` / `bundles` / `aud` but
+  a new `jti` and `exp`. Default new-TTL reuses the original
+  `exp − iat` window; override via `new_expires_in=`. Raises the
+  same exceptions as `verify_token` on bad inputs.
+- **`POST /auth/refresh`** endpoint in `src/soma/serve.py`. Reads
+  the current bearer, calls `refresh_token`, returns `{"token": ...,
+  "exp": <unix>}`. `SOMA_JWT_REFRESH_TTL` (`30d`/`24h`/`60m`)
+  overrides the default window; `SOMA_JWT_MAX_TTL` caps it. All
+  failure modes return 401 with `WWW-Authenticate: Bearer` and
+  route through `record_auth_failure()` so the existing counter
+  reasons (`expired_token` / `revoked_token` / `invalid_token`)
+  keep their semantics.
+- **Old token NOT auto-revoked** — deliberate; rotation is a
+  separate operator choice via `POST /auth/revoke`. Pinned in a
+  test so this stays explicit.
+- **`soma auth refresh --token <jwt> [--expires 60m]`** CLI verb
+  mirrors the endpoint. HS256 reuses `SOMA_JWT_SECRET`; RS256 needs
+  both the public and private key paths (verification-only
+  deployments can't sign a new token and get a clear error).
+- **`soma.auth.parse_ttl_spec`** helper extracted so the CLI,
+  server, and refresh_token all parse `30d|24h|60m` the same way.
+- **+21 tests** — 10 auth-core (round-trip, expired, revoked, aud,
+  default TTL, no-auto-revoke), 7 serve (happy path, 401 paths,
+  TTL env, aud preservation), 4 CLI (round-trip, expired, missing
+  secret, --expires override).
+
+### Added — Qdrant cross-version snapshot tests (Phase 24)
+
+- **`tests/test_memory/test_qdrant_version_compat.py`**:
+  testcontainers-driven matrix spinning up Qdrant `1.11.3`, `1.12.4`,
+  `1.13.5`, taking a snapshot against one version and restoring into
+  another (3×3 = 9 cross-version cases + 3 smoke = 12 total).
+  Validates that `backend.json` + snapshot-recover round-trip stays
+  consistent across supported versions; retrieval on the target
+  returns the expected top-1 id with a deterministic hash embed.
+- **Gated by `SOMA_QDRANT_VERSION_MATRIX=1`** and the
+  `slow_qdrant` pytest marker so the default `pytest` run stays
+  unchanged (the matrix takes 6–10 minutes and needs Docker).
+  Module-level skip fires cleanly when `testcontainers` /
+  `qdrant-client` / `requests` are missing or the gate is unset.
+- **`pip install soma[qdrant-test]`** — new optional extra pulls
+  `testcontainers>=4`. `slow_qdrant` marker registered under
+  `[tool.pytest.ini_options].markers`.
+- **Docs**: new "Cross-version snapshot testing" section in
+  `docs/backends.md` documenting the rationale, matrix scope, 1.11+
+  version floor, and how to run it locally.
+- **CI workflow intentionally deferred** — test infrastructure is
+  in place; wiring a weekly Gitea Actions job can follow once the
+  Unraid runner has Docker-in-Docker (or we stand up a dedicated
+  runner with Docker available).
+
+### Changed — Gitea Actions migration
+
+- **Moved `.github/workflows/*` → `.gitea/workflows/*`**
+  (`bench-regression.yml`, `client-ts.yml`, `helm.yml`,
+  `helm-release.yml`). SOMA repos are hosted on Gitea; keeping the
+  workflows in the Gitea-native location avoids ambiguity and lets
+  Gitea Actions pick them up directly.
+- **`bench-regression.yml`**: latency tolerance widened to ±50%
+  temporarily. Goldens were captured on a Windows 3090 host but the
+  Gitea runner is CPU-only Intel on Unraid — tighten back after
+  re-capturing goldens on the runner.
+- **`client-ts.yml`**: dropped `npm publish --provenance` (GitHub
+  OIDC only) in favour of the existing `NPM_TOKEN` secret. Package
+  still publishes to npmjs.org on tag push; signed-provenance badge
+  is no longer emitted.
+- **`helm-release.yml`**: tag-push trigger disabled. Downstream
+  publish steps still target `ghcr.io` + GitHub Pages via
+  `helm/chart-releaser-action`; re-enable after reworking to
+  Gitea's OCI package registry when we cut the first chart tag.
 
 ### Added — backend perf (Phase 16)
 

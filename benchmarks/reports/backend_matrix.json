@@ -1,0 +1,35 @@
+[
+  {
+    "backend": "InProcFlat",
+    "n": 1000,
+    "store_total_s": 0.006282000000283006,
+    "retrieve_p50_ms": 0.7460000001628941,
+    "retrieve_p95_ms": 1.1170999996920727,
+    "disk_mb": 0.0,
+    "recall_at_10": 1.0,
+    "notes": "",
+    "extras": {}
+  },
+  {
+    "backend": "InProcHNSW",
+    "n": 1000,
+    "store_total_s": 0.005655699999806529,
+    "retrieve_p50_ms": 0.2678499995454331,
+    "retrieve_p95_ms": 0.3385400003026007,
+    "disk_mb": 0.0,
+    "recall_at_10": 0.9740000000000001,
+    "notes": "",
+    "extras": {}
+  },
+  {
+    "backend": "QdrantLocal",
+    "n": 1000,
+    "store_total_s": 10.730736599999545,
+    "retrieve_p50_ms": 1.5319999997700506,
+    "retrieve_p95_ms": 2.0712199992431124,
+    "disk_mb": 3.9535932540893555,
+    "recall_at_10": 1.0,
+    "notes": "",
+    "extras": {}
+  }
+]

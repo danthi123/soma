@@ -32,6 +32,7 @@ exactly like pre-revocation Phase 4.
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import json
 import os
 import time
@@ -137,10 +138,20 @@ class FileBlocklist:
     set when the file has advanced; writes go through ``portalocker``
     so peer processes on the same host can share the store without
     stepping on each other.
+
+    ``hashed`` (default ``False``) switches the on-disk representation
+    from plaintext ``jti`` to ``sha256(jti).hexdigest()``. Hashed stores
+    are safe to exfiltrate — they leak *that* a jti is revoked, not
+    *which* jti — at the cost of being unable to reverse-map the file
+    back to the original tokens. Both schemas are always accepted on
+    read (``jti_key`` from hashed writes, ``jti`` from legacy writes),
+    so a half-migrated file keeps working; only the write path is
+    mode-specific.
     """
 
-    def __init__(self, path: Path) -> None:
+    def __init__(self, path: Path, hashed: bool = False) -> None:
         self._path = Path(path)
+        self._hashed = bool(hashed)
         self._cache: set[str] = set()
         # Sentinel: negative mtime forces the first is_revoked call to
         # populate the cache. time.time()-based cadence starts at 0 so
@@ -148,6 +159,17 @@ class FileBlocklist:
         self._mtime: float = -1.0
         self._last_poll: float = 0.0
         self._reload()
+
+    @property
+    def hashed(self) -> bool:
+        """Whether this instance writes sha256(jti) instead of plaintext."""
+        return self._hashed
+
+    def _key(self, jti: str) -> str:
+        """Lookup/store key for ``jti`` under the configured mode."""
+        if self._hashed:
+            return hashlib.sha256(jti.encode("utf-8")).hexdigest()
+        return jti
 
     # ------------------------------------------------------------------
     # BlocklistBackend surface
@@ -161,7 +183,13 @@ class FileBlocklist:
         still catching peer appends within one poll window.
         """
         self._maybe_refresh()
-        return jti in self._cache
+        # Hashed-mode readers also honour legacy plaintext records that
+        # may have survived from a pre-Phase-18 file: check both the
+        # hashed key *and* the raw jti. Plain mode only stores raw jti,
+        # so the second check is redundant but cheap.
+        if self._key(jti) in self._cache:
+            return True
+        return bool(self._hashed and jti in self._cache)
 
     def add(self, record: RevocationRecord) -> None:
         """Append a revocation. Serialises with other writers on host.
@@ -178,15 +206,19 @@ class FileBlocklist:
         reason = record.reason
         if len(reason) > _REASON_MAX_LEN:
             reason = reason[:_REASON_MAX_LEN]
-        payload = json.dumps(
-            {
-                "jti": record.jti,
-                "revoked_at": int(record.revoked_at),
-                "reason": reason,
-                "exp": int(record.exp),
-            },
-            ensure_ascii=False,
-        )
+        # Schema: hashed mode writes {"jti_key": sha256(...)}; legacy /
+        # plaintext mode writes {"jti": ...} with byte-identical layout
+        # to pre-Phase-18 so existing files stay stable on upgrade.
+        record_payload: dict[str, object] = {
+            "revoked_at": int(record.revoked_at),
+            "reason": reason,
+            "exp": int(record.exp),
+        }
+        if self._hashed:
+            record_payload["jti_key"] = self._key(record.jti)
+        else:
+            record_payload["jti"] = record.jti
+        payload = json.dumps(record_payload, ensure_ascii=False)
 
         self._path.parent.mkdir(parents=True, exist_ok=True)
         lock_path = self._path.with_name(f".{self._path.name}.lock")
@@ -210,7 +242,7 @@ class FileBlocklist:
         # the revoke. Filter out exp-past entries symmetrically with
         # the disk load so the fast path behaves like the reload path.
         if int(record.exp) > int(time.time()):
-            self._cache.add(record.jti)
+            self._cache.add(self._key(record.jti))
         with contextlib.suppress(OSError):
             self._mtime = self._path.stat().st_mtime
         self._last_poll = time.time()
@@ -308,10 +340,13 @@ class FileBlocklist:
                         # a crash. Drop silently; the surviving entries
                         # remain authoritative.
                         continue
-                    jti = rec.get("jti")
+                    # Accept both the new jti_key (hashed writes) and
+                    # the legacy jti (plaintext writes). A half-migrated
+                    # file mixing both schemas still loads cleanly.
+                    key = rec.get("jti_key") or rec.get("jti")
                     exp = int(rec.get("exp", 0))
-                    if isinstance(jti, str) and exp > now:
-                        new_cache.add(jti)
+                    if isinstance(key, str) and exp > now:
+                        new_cache.add(key)
         except OSError:
             # Race with a concurrent writer — next poll tick retries.
             return

@@ -11,6 +11,7 @@ Tests are hermetic (``tmp_path`` per test, env isolated via
 
 from __future__ import annotations
 
+import hashlib
 import json
 import multiprocessing as mp
 import time
@@ -198,6 +199,93 @@ def test_file_blocklist_reason_capped_at_256_chars(tmp_path: Path) -> None:
     raw = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
     assert raw[0]["jti"] == "jti-long-reason"
     assert len(raw[0]["reason"]) <= 256
+
+
+# ------------------------------------------------------------------
+# Phase 18 — optional sha256(jti) hashing at rest
+# ------------------------------------------------------------------
+def test_hashed_blocklist_stores_sha256_only(tmp_path: Path) -> None:
+    """hashed=True writes sha256(jti) on disk, not the raw jti."""
+    path = tmp_path / "bl.jsonl"
+    bl = FileBlocklist(path, hashed=True)
+    bl.add(_fresh_record("my-secret-jti-12345", reason="leaked"))
+
+    raw = path.read_text(encoding="utf-8")
+    assert "my-secret-jti-12345" not in raw
+    expected_hex = hashlib.sha256(b"my-secret-jti-12345").hexdigest()
+    assert expected_hex in raw
+    # The record uses the new jti_key field, not the legacy jti.
+    record = json.loads(raw.splitlines()[0])
+    assert record["jti_key"] == expected_hex
+    assert "jti" not in record
+
+
+def test_hashed_blocklist_contains_works(tmp_path: Path) -> None:
+    """add + is_revoked round-trip works in hashed mode."""
+    path = tmp_path / "bl.jsonl"
+    bl = FileBlocklist(path, hashed=True)
+    bl.add(_fresh_record("abc"))
+    assert bl.is_revoked("abc") is True
+    assert bl.is_revoked("xyz") is False
+
+    # A fresh reader on the same path (also hashed) re-hydrates cleanly.
+    bl2 = FileBlocklist(path, hashed=True)
+    assert bl2.is_revoked("abc") is True
+
+
+def test_plain_blocklist_default_bytes_unchanged(tmp_path: Path) -> None:
+    """Default (hashed=False) writes byte-identical to pre-Phase-18.
+
+    Pins the existing on-disk schema: a {"jti": ..., "revoked_at": ...,
+    "reason": ..., "exp": ...} record, no jti_key field.
+    """
+    path = tmp_path / "bl.jsonl"
+    bl = FileBlocklist(path)  # hashed default False
+    bl.add(_fresh_record("plain-jti-123", reason="pre-18"))
+
+    record = json.loads(path.read_text(encoding="utf-8").splitlines()[0])
+    assert record["jti"] == "plain-jti-123"
+    assert "jti_key" not in record
+    # Fields present: the four pre-Phase-18 keys, nothing else.
+    assert set(record.keys()) == {"jti", "revoked_at", "reason", "exp"}
+
+
+def test_blocklist_load_accepts_legacy_jti_records(tmp_path: Path) -> None:
+    """A handwritten legacy {"jti": ...} record loads even when hashed=True.
+
+    Existing on-disk files from pre-Phase-18 must keep working after an
+    operator flips the env flag — the reader tolerates mixed schemas.
+    """
+    path = tmp_path / "bl.jsonl"
+    now = int(time.time())
+    legacy = {"jti": "legacy-jti", "revoked_at": now, "reason": "", "exp": now + 600}
+    path.write_text(json.dumps(legacy) + "\n", encoding="utf-8")
+
+    # Instantiate in hashed mode; legacy record should still register.
+    bl = FileBlocklist(path, hashed=True)
+    assert bl.is_revoked("legacy-jti") is True
+
+
+def test_gc_expired_preserves_hashed_mode(tmp_path: Path) -> None:
+    """gc on a hashed store rewrites only jti_key records; no raw jti leak."""
+    path = tmp_path / "bl.jsonl"
+    bl = FileBlocklist(path, hashed=True)
+    bl.add(_fresh_record("live-jti", exp_offset=3600))
+    bl.add(_fresh_record("dead-jti", exp_offset=-3600))
+
+    removed = bl.gc_expired()
+    assert removed == 1
+
+    lines = [
+        json.loads(line)
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    assert len(lines) == 1
+    # Surviving record still uses jti_key (hashed schema preserved).
+    assert "jti_key" in lines[0]
+    assert "jti" not in lines[0]
+    assert lines[0]["jti_key"] == hashlib.sha256(b"live-jti").hexdigest()
 
 
 def test_file_blocklist_mtime_poll_picks_up_external_writes(tmp_path: Path) -> None:

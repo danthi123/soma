@@ -78,6 +78,9 @@ llamaindex = [
     "llama-index-core>=0.10.0",
 ]
 
+[project.scripts]
+soma = "soma.cli:main"
+
 [tool.setuptools.packages.find]
 where = ["src"]
 

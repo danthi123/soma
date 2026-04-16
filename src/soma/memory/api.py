@@ -113,9 +113,7 @@ class MemoryLayer:
         # "hnsw" (approximate, IndexHNSWFlat — much faster at large N at
         # the cost of imperfect recall).
         if faiss_index_type not in ("flat", "hnsw"):
-            raise ValueError(
-                f"faiss_index_type must be 'flat' or 'hnsw', got {faiss_index_type!r}"
-            )
+            raise ValueError(f"faiss_index_type must be 'flat' or 'hnsw', got {faiss_index_type!r}")
         self._faiss_threshold: int = faiss_threshold
         self._faiss_index_type: str = faiss_index_type
         self._faiss_hnsw_m: int = int(faiss_hnsw_m)
@@ -334,7 +332,8 @@ class MemoryLayer:
                 self._soma.step(inputs, targets=targets, eval_mode=False)
             output_acts = self._soma._current_output_activations()
             pooled = SomaAggregator.collapse(
-                output_acts, soma_output_dim=soma_output_dim,
+                output_acts,
+                soma_output_dim=soma_output_dim,
             )
             self._soma_activations[entry_idx] = pooled.detach().cpu()
             processed += 1
@@ -379,7 +378,8 @@ class MemoryLayer:
                 self._soma.step(inputs, targets=targets, eval_mode=True)
             output_acts = self._soma._current_output_activations()
             pooled = SomaAggregator.collapse(
-                output_acts, soma_output_dim=soma_output_dim,
+                output_acts,
+                soma_output_dim=soma_output_dim,
             )
             self._soma_activations[entry_idx] = pooled.detach().cpu()
 
@@ -535,7 +535,9 @@ class MemoryLayer:
         from soma.training.verbalizer_bootstrap import text_to_state
 
         candidates = self._rank_linear(
-            query_vec, k=min(k * oversample, len(self._ids)), exclude_idx=None,
+            query_vec,
+            k=min(k * oversample, len(self._ids)),
+            exclude_idx=None,
         )
         if not candidates:
             return []
@@ -565,16 +567,18 @@ class MemoryLayer:
                 blended = (1.0 - alpha) * hit.score + alpha * graph_score
             else:
                 blended = hit.score
-            scored.append((
-                blended,
-                MemoryHit(
-                    node_id=hit.node_id,
-                    text=hit.text,
-                    score=blended,
-                    metadata=hit.metadata,
-                    timestamp_step=hit.timestamp_step,
-                ),
-            ))
+            scored.append(
+                (
+                    blended,
+                    MemoryHit(
+                        node_id=hit.node_id,
+                        text=hit.text,
+                        score=blended,
+                        metadata=hit.metadata,
+                        timestamp_step=hit.timestamp_step,
+                    ),
+                )
+            )
         scored.sort(key=lambda x: x[0], reverse=True)
         return [hit for _, hit in scored[:k]]
 
@@ -647,13 +651,7 @@ class MemoryLayer:
         import numpy as np
 
         faiss = _import_faiss()
-        matrix = (
-            torch.stack(self._embeddings_list, dim=0)
-            .detach()
-            .cpu()
-            .numpy()
-            .astype(np.float32)
-        )
+        matrix = torch.stack(self._embeddings_list, dim=0).detach().cpu().numpy().astype(np.float32)
         faiss.normalize_L2(matrix)
         if self._faiss_index_type == "hnsw":
             index = faiss.IndexHNSWFlat(
@@ -685,6 +683,5 @@ def _import_faiss() -> Any:
         return faiss
     except ImportError as exc:
         raise ImportError(
-            "FAISS backend requires faiss-cpu or faiss-gpu. "
-            "Install with: pip install faiss-cpu"
+            "FAISS backend requires faiss-cpu or faiss-gpu. Install with: pip install faiss-cpu"
         ) from exc

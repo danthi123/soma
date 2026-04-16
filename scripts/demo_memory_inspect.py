@@ -62,7 +62,7 @@ def cmd_stats(mem: MemoryLayer, bundle: Path) -> None:
     print(f"  disk: {_bundle_disk_kb(bundle):.1f} KB")
     if not len(mem):
         return
-    keys = Counter()
+    keys: Counter[str] = Counter()
     for meta in mem._metadatas:
         for k in meta:
             keys[k] += 1
@@ -87,7 +87,7 @@ def cmd_recent(mem: MemoryLayer, n: int) -> None:
         print(f"        meta: {meta_str}")
 
 
-def _meta_matches(meta: dict, where: list[tuple[str, str]]) -> bool:
+def _meta_matches(meta: dict[str, object], where: list[tuple[str, str]]) -> bool:
     for k, v in where:
         actual = meta.get(k)
         if actual is None or str(actual) != v:

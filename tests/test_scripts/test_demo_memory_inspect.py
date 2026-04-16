@@ -26,9 +26,7 @@ def _stub_embed(text: str) -> torch.Tensor:
     """Tiny deterministic embed for tests — hash → 8-d vector."""
     h = hash(text)
     return torch.tensor(
-        [
-            (h >> i) & 0xF for i in range(0, 32, 4)
-        ],
+        [(h >> i) & 0xF for i in range(0, 32, 4)],
         dtype=torch.float32,
     )
 

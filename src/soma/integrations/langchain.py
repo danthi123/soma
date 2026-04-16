@@ -30,6 +30,7 @@ try:
 except ImportError:
     _HAS_LANGCHAIN = False
 
+
 def _check_langchain() -> None:
     if not _HAS_LANGCHAIN:
         raise ImportError(

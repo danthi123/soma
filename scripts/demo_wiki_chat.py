@@ -43,11 +43,16 @@ import sys
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
+from soma.llm import (
+    DryRunBackend,
+    LLMBackend,
+    RAGSession,
+    backend_from_env,
+)
 from soma.memory import MemoryLayer
 
 MAX_CHUNK_CHARS = 1000  # ~250 tokens; above this, split with overlap
@@ -210,89 +215,25 @@ def _ingest(
     return file_count, chunk_count
 
 
-def _format_context(hits: list[Any]) -> str:
-    lines = []
-    for i, h in enumerate(hits, 1):
-        path = h.metadata.get("path", "?")
-        heading = h.metadata.get("heading") or "(top)"
-        lines.append(f"[{i}] {path} (heading: {heading})\n    {h.text}")
-    return "\n\n".join(lines)
-
-
-def _build_prompt(question: str, hits: list[Any]) -> str:
-    if not hits:
-        return (
-            f"User asked a question but no context was retrieved. "
-            f"Reply honestly that you don't know.\n\n"
-            f"Question: {question}\nAnswer:"
-        )
-    ctx = _format_context(hits)
-    return (
-        "You are a helpful assistant answering questions from a personal wiki. "
-        "Use only the context below; if the context doesn't contain the answer, "
-        "say so rather than guessing. Cite sources inline with [1], [2], etc.\n\n"
-        f"Context:\n{ctx}\n\n"
-        f"Question: {question}\n"
-        "Answer (cite sources like [1]):"
-    )
-
-
-def _generate_llm(
-    prompt: str, *, chat_head: Any, max_new_tokens: int = 200
-) -> str:
-    import torch
-
-    hf_tokenizer = chat_head.tokenizer
-    inputs = hf_tokenizer(prompt, return_tensors="pt")
-    device = chat_head.model.get_input_embeddings().weight.device
-    input_ids = inputs["input_ids"].to(device)
-    with torch.no_grad():
-        out = chat_head.model.generate(
-            input_ids,
-            max_new_tokens=max_new_tokens,
-            do_sample=False,
-        )
-    new_ids = out[0][input_ids.shape[1] :]
-    return hf_tokenizer.decode(new_ids, skip_special_tokens=True).strip()
-
-
-def _dry_run_reply(hits: list[Any]) -> str:
-    if not hits:
-        return "[dry-run] No retrieval hits — nothing to ground a reply on."
-    top = hits[0]
-    return (
-        f"[dry-run] Top hit: {top.metadata.get('path', '?')} "
-        f"(heading: {top.metadata.get('heading') or '(top)'}, "
-        f"score={top.score:.3f})\n"
-        f"  {top.text[:240]}{'...' if len(top.text) > 240 else ''}"
-    )
+def _resolve_backend(backend_name: str, *, dry_run: bool) -> LLMBackend:
+    if dry_run or backend_name == "dry-run":
+        return DryRunBackend()
+    if backend_name == "auto":
+        return backend_from_env()
+    return backend_from_env(prefer=backend_name)
 
 
 def _chat(
-    bundle_path: Path, *, tier: str, k: int, dry_run: bool
+    bundle_path: Path, *, backend_name: str, k: int, dry_run: bool
 ) -> None:
     print(f"Loading memory bundle from {bundle_path} ...")
     mem = MemoryLayer.load(bundle_path)
     print(f"  Loaded {len(mem)} chunks.\n")
 
-    chat_head = None
-    if not dry_run:
-        from soma.deploy.chat_head_factory import build_chat_head
-        from soma.deploy.cli import resolve_device_dtype_tier
+    backend = _resolve_backend(backend_name, dry_run=dry_run)
+    print(f"  LLM backend: {backend.name}\n")
 
-        ns = argparse.Namespace(
-            tier=tier,
-            llm_name=None,
-            device=None,
-            dtype=None,
-            quantization="none",
-        )
-        device, dtype, _llm_name, resolved_tier = resolve_device_dtype_tier(ns)
-        chat_head = build_chat_head(
-            tier=resolved_tier, device=device, dtype=dtype
-        )
-        print(f"  LLM ready: tier={resolved_tier}, device={device}, dtype={dtype}\n")
-
+    session = RAGSession(memory=mem, llm=backend, k=k)
     print("Type a question, or 'quit' to exit. Ctrl-C also works.\n")
     try:
         while True:
@@ -301,22 +242,12 @@ def _chat(
                 continue
             if question.lower() in {"quit", "exit", "q"}:
                 break
-            hits = mem.retrieve(question, k=k)
-            if dry_run:
-                print(f"Assistant: {_dry_run_reply(hits)}\n")
-                continue
-            prompt = _build_prompt(question, hits)
-            assert chat_head is not None
-            reply = _generate_llm(prompt, chat_head=chat_head)
-            print(f"Assistant: {reply}\n")
-            if hits:
+            answer = session.ask(question)
+            print(f"Assistant: {answer.text}\n")
+            if answer.hits:
                 print("  Sources:")
-                for i, h in enumerate(hits, 1):
-                    print(
-                        f"    [{i}] {h.metadata.get('path', '?')} "
-                        f"(heading: {h.metadata.get('heading') or '(top)'}, "
-                        f"score={h.score:.3f})"
-                    )
+                for line in answer.cite_lines():
+                    print(f"    {line}")
                 print()
     except (EOFError, KeyboardInterrupt):
         print("\nExiting.")
@@ -334,10 +265,15 @@ def main() -> None:
     p.add_argument("--index", action="store_true", help="Ingest wiki into bundle")
     p.add_argument("--chat", action="store_true", help="Start chat REPL against bundle")
     p.add_argument(
-        "--tier",
+        "--backend",
         type=str,
         default="auto",
-        help="Deploy tier for the LLM (default: auto). Ignored with --dry-run.",
+        choices=("auto", "ollama", "openai", "anthropic", "openai-compat", "hf", "dry-run"),
+        help=(
+            "LLM backend (default: auto — picks ollama if running, else "
+            "OpenAI/Anthropic if API key is set, else local HF model). "
+            "Ignored with --dry-run."
+        ),
     )
     p.add_argument("--k", type=int, default=5, help="Retrieval depth per query")
     p.add_argument(
@@ -367,7 +303,7 @@ def main() -> None:
         if not args.bundle.exists():
             p.error(f"--chat needs an existing bundle; {args.bundle} not found")
         print(f"=== Chat against {args.bundle} ===\n")
-        _chat(args.bundle, tier=args.tier, k=args.k, dry_run=args.dry_run)
+        _chat(args.bundle, backend_name=args.backend, k=args.k, dry_run=args.dry_run)
 
 
 if __name__ == "__main__":

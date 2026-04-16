@@ -212,7 +212,10 @@ def test_consolidate_is_incremental_after_first_pass(embedder) -> None:
 
     tokenizer, encoder = embedder
     config = SOMAConfig(
-        vocab_size=256, text_embed_dim=32, sensor_output_dim=32, max_input_tokens=64,
+        vocab_size=256,
+        text_embed_dim=32,
+        sensor_output_dim=32,
+        max_input_tokens=64,
     )
     soma = SOMA(config)
     mem = MemoryLayer(tokenizer=tokenizer, encoder=encoder)
@@ -258,7 +261,10 @@ def test_consolidate_cursor_resets_on_attach_soma(embedder) -> None:
     assert mem._consolidation_cursor == 0
 
     config = SOMAConfig(
-        vocab_size=256, text_embed_dim=32, sensor_output_dim=32, max_input_tokens=64,
+        vocab_size=256,
+        text_embed_dim=32,
+        sensor_output_dim=32,
+        max_input_tokens=64,
     )
     soma = SOMA(config)
     mem.attach_soma(soma, tokenizer, encoder)
@@ -276,11 +282,16 @@ def test_auto_consolidate_fires_at_threshold(embedder) -> None:
 
     tokenizer, encoder = embedder
     config = SOMAConfig(
-        vocab_size=256, text_embed_dim=32, sensor_output_dim=32, max_input_tokens=64,
+        vocab_size=256,
+        text_embed_dim=32,
+        sensor_output_dim=32,
+        max_input_tokens=64,
     )
     soma = SOMA(config)
     mem = MemoryLayer(
-        tokenizer=tokenizer, encoder=encoder, auto_consolidate_every=3,
+        tokenizer=tokenizer,
+        encoder=encoder,
+        auto_consolidate_every=3,
     )
     mem.attach_soma(soma, tokenizer, encoder)
     mem.store("fact one")
@@ -334,11 +345,16 @@ def test_graph_rerank_skipped_when_alpha_is_zero(embedder) -> None:
 
     tokenizer, encoder = embedder
     config = SOMAConfig(
-        vocab_size=256, text_embed_dim=32, sensor_output_dim=32, max_input_tokens=64,
+        vocab_size=256,
+        text_embed_dim=32,
+        sensor_output_dim=32,
+        max_input_tokens=64,
     )
     soma = SOMA(config)
     mem = MemoryLayer(
-        tokenizer=tokenizer, encoder=encoder, graph_rerank_alpha=0.0,
+        tokenizer=tokenizer,
+        encoder=encoder,
+        graph_rerank_alpha=0.0,
     )
     mem.store("the cat sat on the mat")
     mem.store("the dog chased the ball")
@@ -361,9 +377,7 @@ def test_graph_rerank_skipped_when_alpha_is_zero(embedder) -> None:
     finally:
         vb.text_to_state = real_text_to_state
 
-    assert call_count == 0, (
-        f"Expected no text_to_state calls when alpha=0, got {call_count}"
-    )
+    assert call_count == 0, f"Expected no text_to_state calls when alpha=0, got {call_count}"
 
 
 def test_graph_rerank_threads_query_text_into_activation(embedder) -> None:
@@ -381,14 +395,19 @@ def test_graph_rerank_threads_query_text_into_activation(embedder) -> None:
 
     tokenizer, encoder = embedder
     config = SOMAConfig(
-        vocab_size=256, text_embed_dim=32, sensor_output_dim=32, max_input_tokens=64,
+        vocab_size=256,
+        text_embed_dim=32,
+        sensor_output_dim=32,
+        max_input_tokens=64,
     )
     soma = SOMA(config)
     # The re-rank path is gated on graph_rerank_alpha > 0. We want to
     # verify the query text reaches text_to_state when re-rank is
     # actually active.
     mem = MemoryLayer(
-        tokenizer=tokenizer, encoder=encoder, graph_rerank_alpha=0.3,
+        tokenizer=tokenizer,
+        encoder=encoder,
+        graph_rerank_alpha=0.3,
     )
     mem.store("the cat sat on the mat")
     mem.store("the dog chased the ball")
@@ -421,7 +440,9 @@ def test_faiss_index_type_invalid_raises(embedder) -> None:
     tokenizer, encoder = embedder
     with pytest.raises(ValueError, match="faiss_index_type"):
         MemoryLayer(
-            tokenizer=tokenizer, encoder=encoder, faiss_index_type="banana",
+            tokenizer=tokenizer,
+            encoder=encoder,
+            faiss_index_type="banana",
         )
 
 
@@ -473,7 +494,9 @@ def test_faiss_hnsw_preserves_recall_vs_flat() -> None:
 
     flat_mem = MemoryLayer(embed_fn=embed, embed_dim=64, faiss_threshold=10)
     hnsw_mem = MemoryLayer(
-        embed_fn=embed, embed_dim=64, faiss_threshold=10,
+        embed_fn=embed,
+        embed_dim=64,
+        faiss_threshold=10,
         faiss_index_type="hnsw",
     )
 

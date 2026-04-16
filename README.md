@@ -147,6 +147,18 @@ HNSW preserves identical Recall@3 on the labeled benchmark and runs **1.18–1.2
 
 At enterprise scale (100K entries, pre-computed embeddings), SOMA ingests the entire corpus in **0.4 seconds vs Chroma's 23.6 minutes** — SOMA's store is essentially a tensor-append while Chroma pays ~14 ms per insert for SQLite + HNSW metadata. See `benchmarks/reports/scale_enterprise_100k.md`.
 
+## CLI
+
+```bash
+pip install -e .
+soma index --wiki path/to/docs --bundle my-brain/
+soma chat  --bundle my-brain/                  # auto-picks LLM backend
+soma stats --bundle my-brain/
+soma serve --port 8420                          # REST API
+```
+
+`soma chat` auto-detects a backend: Ollama if running, OpenAI/Anthropic if `OPENAI_API_KEY`/`ANTHROPIC_API_KEY` is set, otherwise local HuggingFace. Override with `--backend ollama|openai|anthropic|openai-compat|hf|dry-run`. See [`docs/llm-backends.md`](docs/llm-backends.md).
+
 ## Demos
 
 ```bash

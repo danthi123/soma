@@ -39,7 +39,9 @@ def _truncate(s: str, n: int = 100) -> str:
     return s if len(s) <= n else s[: n - 1] + "…"
 
 
-def _print_entry(label: str, node_id: str, text: str, meta: dict, score: float | None) -> None:
+def _print_entry(
+    label: str, node_id: str, text: str, meta: dict[str, object], score: float | None
+) -> None:
     score_str = f"  score={score:.4f}" if score is not None else ""
     print(f"{label}{score_str}  id={node_id[:8]}…")
     print(f"  {_truncate(text, 200)}")

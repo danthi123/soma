@@ -280,6 +280,59 @@ Qdrant requires integer (or uuid-string) point ids; SOMA uses
 payload field so rehydration via `scroll` works after reopening a
 collection.
 
+### Cross-version snapshot testing
+
+`QdrantBackend` stamps the `qdrant-client` library version into the
+bundle's `backend.json` when snapshotting. For HTTP deploys, the
+durable format on the wire is Qdrant's own server-side snapshot —
+that's what an operator would use to migrate a collection between
+Qdrant versions (e.g., bumping the server from 1.11 to 1.13 during a
+rolling upgrade). A silent snapshot-format regression here would
+corrupt a production collection on restore.
+
+Phase 24 added an optional test matrix that pins that contract:
+
+```
+tests/test_memory/test_qdrant_version_compat.py
+```
+
+The matrix spins real Qdrant containers at versions **1.11.3**,
+**1.12.4**, and **1.13.5** via `testcontainers-python`, then:
+
+- **3 smoke tests** — round-trip `add` + `search` through
+  `QdrantBackend(mode="http")` pointed at each container version.
+- **9 cross-version tests** — every (src, tgt) pair: create a native
+  Qdrant snapshot on the src container, upload+recover it on a fresh
+  tgt container, and assert that `QdrantBackend.search` still
+  returns the expected top-1 id with score > 0.99.
+
+The matrix is pinned to Qdrant **1.11+** — the REST endpoint layout
+for `recover-from-snapshot` was reworked between 1.10 and 1.11, so
+restoring a 1.10-era snapshot into 1.11+ is not a supported path and
+would need adapter-side version dispatch we haven't written.
+
+#### Running locally
+
+The matrix is gated behind an environment flag AND the
+`slow_qdrant` pytest marker so default runs stay fast:
+
+```bash
+pip install -e ".[qdrant,qdrant-test]"
+SOMA_QDRANT_VERSION_MATRIX=1 \
+    pytest tests/test_memory/test_qdrant_version_compat.py -q
+```
+
+Requires a working Docker daemon (Docker Desktop on Windows/macOS,
+`dockerd` on Linux). Total wall-clock: ~6–10 min for all 12 tests.
+Default runs (without the env flag or without `testcontainers`
+installed) skip the file cleanly at collection time.
+
+If you add a new Qdrant version to the matrix, bump
+`_QDRANT_VERSIONS` in `tests/test_memory/test_qdrant_version_compat.py`
+and re-run locally. A follow-up will wire a weekly CI job once the
+host target (GitHub Actions vs a self-hosted Gitea runner) is
+decided.
+
 ## Writing a new backend
 
 Implement the `VectorBackend` protocol. The runtime-checkable

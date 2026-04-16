@@ -271,6 +271,7 @@ def _build_soma(
     initial_integrator_count: int = 8,
     initial_associator_count: int = 16,
     seed: int = 1234,
+    device: str | None = None,
 ) -> Any:
     """Construct a SOMA configured for the C1 study.
 
@@ -297,7 +298,7 @@ def _build_soma(
         initial_associator_count=initial_associator_count,
         seed=seed,
     )
-    soma = SOMA(config)
+    soma = SOMA(config, device=device)
     n_int = len(soma.graph.nodes_by_type(NodeType.INTEGRATOR))
     if initial_integrator_count > 0 and n_int == 0:
         raise RuntimeError(
@@ -320,6 +321,7 @@ def run_soma(
     initial_integrator_count: int = 8,
     initial_associator_count: int = 16,
     method_label: str | None = None,
+    device: str | None = None,
 ) -> HarnessResult:
     """Run the SOMA-attached harness for one consolidation-N value.
 
@@ -362,6 +364,7 @@ def run_soma(
         embed_dim,
         initial_integrator_count=initial_integrator_count,
         initial_associator_count=initial_associator_count,
+        device=device,
     )
     # Independent BPE tokenizer for the SOMA side. Trained on the
     # corpus so the entity tokens are in vocabulary; otherwise they'd
@@ -369,6 +372,8 @@ def run_soma(
     # vectors for every snippet.
     soma_tokenizer = train_bpe_tokenizer([s.text for s in gt.snippets], vocab_size=512)
     soma_encoder = TextEncoder(soma_tokenizer, embed_dim=embed_dim, max_seq_len=128)
+    if device is not None:
+        soma_encoder = soma_encoder.to(device)
     mem.attach_soma(soma, soma_tokenizer, soma_encoder)
 
     snippet_ids: list[str] = [mem.store(s.text) for s in gt.snippets]

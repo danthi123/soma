@@ -36,12 +36,12 @@ DEFAULT_ALPHA: float = 0.3
 # Reduced-corpus sweep used when ``--corpus-size`` is passed. Lets the
 # orchestrator finish the full N={0, 10, 100, 1000} sweep in a single
 # session by shrinking N_snippets — the structural invariants (10
-# transitive + 10 triangle triples) are preserved at any size ≥ 60.
+# transitive + 10 triangle triples) are preserved at any size >= 60.
 
 
-def _stub_embed(text: str, dim: int = 128) -> torch.Tensor:
+def _stub_embed(text: str, dim: int = 128, *, device: str = "cpu") -> torch.Tensor:
     """Hash-bucket bag-of-words. Deterministic, fast, no model download."""
-    vec = torch.zeros(dim)
+    vec = torch.zeros(dim, device=device)
     for tok in text.split():
         h = int(hashlib.sha256(tok.encode("utf-8")).hexdigest(), 16)
         vec[h % dim] += 1.0
@@ -51,15 +51,28 @@ def _stub_embed(text: str, dim: int = 128) -> torch.Tensor:
     return vec
 
 
-def _make_sbert_embedder(model_name: str = "all-MiniLM-L6-v2"):
-    """Return ``(embed_fn, embed_dim)`` for sentence-transformers."""
+def _make_sbert_embedder(
+    model_name: str = "all-MiniLM-L6-v2",
+    *,
+    device: str = "cpu",
+):
+    """Return ``(embed_fn, embed_dim)`` for sentence-transformers.
+
+    ``device`` is forwarded to ``SentenceTransformer`` (model-load GPU
+    residency) and to ``model.encode`` (forward-pass device). Embed
+    tensors are returned on ``device`` so downstream MemoryLayer +
+    SOMA ops don't incur implicit CPU↔GPU copies.
+    """
     from sentence_transformers import SentenceTransformer
 
-    model = SentenceTransformer(model_name)
+    model = SentenceTransformer(model_name, device=device)
     dim = int(model.get_sentence_embedding_dimension())
 
     def embed(text: str) -> torch.Tensor:
-        return torch.tensor(model.encode(text, convert_to_numpy=True))
+        return torch.tensor(
+            model.encode(text, convert_to_numpy=True, device=device),
+            device=device,
+        )
 
     return embed, dim
 
@@ -99,10 +112,10 @@ def _gate_call(
     Returns ``(verdict, rationale)`` where verdict is one of
     ``"PASS"``, ``"FAIL"``, ``"AMBIGUOUS"``.
 
-    Primary criterion: R@5(transitive, SOMA at N=100) - baseline ≥ 0.05.
+    Primary criterion: R@5(transitive, SOMA at N=100) - baseline >= 0.05.
     If N=100 wasn't reached in the sweep, fall back to the best-N point
-    we have; still flag FAIL if that best point is ≤ baseline (per the
-    plan's "gap ≤1 point" wording, a NEGATIVE gap is squarely in the
+    we have; still flag FAIL if that best point is <= baseline (per the
+    plan's "gap <=1 point" wording, a NEGATIVE gap is squarely in the
     fail regime).
     """
     reference = soma_r5_at_n100 if soma_r5_at_n100 is not None else soma_r5_best
@@ -117,17 +130,17 @@ def _gate_call(
         return (
             "PASS",
             f"SOMA-blended R@5 at {label} beats pure-vector by {delta:+.3f} "
-            "(≥0.05 threshold from the C1 plan). Graph carries signal — "
+            "(>=0.05 threshold from the C1 plan). Graph carries signal — "
             "proceed to C2 with the LoCoMo retrieval benchmark.",
         )
     if delta <= 0.01:
         return (
             "FAIL",
             f"SOMA-blended R@5 at {label} is within {delta:+.3f} of pure-vector "
-            "(≤0.01 threshold from the C1 plan; negative = SOMA actively hurts). "
+            "(<=0.01 threshold from the C1 plan; negative = SOMA actively hurts). "
             "Recommend C1b failure analysis — specifically the blend-formula "
-            "ablation since the substrate IS moving (non-zero Spearman ρ(edge, "
-            "cooc)) but the readout isn't harvesting it — before sinking time "
+            "ablation since the substrate IS moving (non-zero Spearman "
+            "rho(edge,cooc)) but the readout isn't harvesting it — before sinking time "
             "into C2.",
         )
     return (
@@ -186,7 +199,28 @@ def main() -> None:
         type=Path,
         default=Path("research/graph_memory/reports/c1_synthetic_signal.json"),
     )
+    p.add_argument(
+        "--device",
+        type=str,
+        default=None,
+        help="Compute device ('cuda', 'cpu'). Default: auto — 'cuda' if "
+        "torch.cuda.is_available() else 'cpu'. Forces sbert + SOMA + "
+        "stub-embed onto the same device so there's no hidden CPU↔GPU "
+        "copy each step.",
+    )
     args = p.parse_args()
+
+    # --- Device preflight -----------------------------------------------
+    device = args.device or ("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"device={device}", end="")
+    if device.startswith("cuda"):
+        if not torch.cuda.is_available():
+            raise RuntimeError(
+                f"Requested device={device} but torch.cuda.is_available() is "
+                "False. Check CUDA install + driver."
+            )
+        print(f"  name={torch.cuda.get_device_name(0)}", end="")
+    print()
 
     # --- Corpus ----------------------------------------------------------
     if args.quick:
@@ -203,10 +237,11 @@ def main() -> None:
 
     # --- Embedder --------------------------------------------------------
     if args.embedder == "sbert":
-        print("loading sbert (all-MiniLM-L6-v2)…")
-        embed_fn, embed_dim = _make_sbert_embedder()
+        print(f"loading sbert (all-MiniLM-L6-v2) on {device}…")
+        embed_fn, embed_dim = _make_sbert_embedder(device=device)
     else:
-        embed_fn = _stub_embed
+        def embed_fn(text: str) -> torch.Tensor:
+            return _stub_embed(text, device=device)
         embed_dim = 128
 
     print(f"embedder={args.embedder}  embed_dim={embed_dim}  alpha={args.alpha}")
@@ -238,6 +273,7 @@ def main() -> None:
             k=5,
             graph_rerank_alpha=args.alpha,
             method_label=f"soma-{args.embedder}-a{args.alpha:.2f}",
+            device=device,
         )
         for cls, m in result.metrics.items():
             print(f"  {cls:12s}  {_format_metric(m)}")
@@ -344,7 +380,7 @@ def main() -> None:
         "## Honest interpretation",
         "",
         "The C1 plan's gate is `R@5(transitive, SOMA at N=100) - "
-        "R@5(transitive, pure-vector) ≥ 0.05`. ",
+        "R@5(transitive, pure-vector) >= 0.05`. ",
         f"Measured delta at N=100: `{(soma_r5_n100 - baseline_r5_trans):+.4f}`"
         if soma_r5_n100 is not None
         else "Measured delta at N=100: not available.",

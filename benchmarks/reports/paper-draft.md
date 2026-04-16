@@ -36,7 +36,8 @@ Seeds are fixed; the scripts run on a laptop without a GPU.
 
 | What | Script | Report |
 | --- | --- | --- |
-| SOMA vs Chroma | `benchmarks/run_retrieval.py` | `benchmarks/reports/retrieval.md` |
+| SOMA vs Chroma (50 facts, labeled) | `benchmarks/run_retrieval.py` | `benchmarks/reports/retrieval.md` |
+| SOMA vs Chroma (1K/5K/20K efficiency) | `benchmarks/run_scale_vs_chroma.py` | `benchmarks/reports/scale_vs_chroma.md` |
 | Graph re-rank sweep | `benchmarks/run_graph_ablation.py` | `benchmarks/reports/graph_ablation.md` + `graph_ablation_shuffled.md` |
 | Plasticity at scale | `benchmarks/run_plasticity_scale.py` | `benchmarks/reports/plasticity_scale.md` |
 | Longitudinal drift | `benchmarks/run_longitudinal_drift.py` | `benchmarks/reports/longitudinal_drift.md` |
@@ -52,21 +53,54 @@ comparisons so the delta isolates storage/indexing mechanics.
 
 ## 3. Headline results
 
-**SOMA matches Chroma on retrieval quality while being 22.6× smaller on disk and 1.3× faster to retrieve.**
+**SOMA matches Chroma on retrieval quality with a durable 3× store-speed advantage and a disk advantage that ranges from 22.6× (small N) to 1.4× (20K), while retrieve latency converges as Chroma's HNSW takes over at scale.**
 
-From `retrieval.md`, 50 facts, Recall@3 across 26 labeled queries:
+### 3.1 Quality (50-fact labeled benchmark)
+
+From `retrieval.md`:
 
 | System | Recall@3 | MRR@3 | NDCG@3 | Store (ms/op) | Retrieve (ms) | Disk (KB) |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
 | SOMA | 0.923 | 0.891 | 0.885 | 9.46 | 5.98 | 85.1 |
 | Chroma | 0.923 | 0.891 | 0.885 | 26.88 | 7.53 | 1920.7 |
 
-- Quality: **identical** (both cosine-over-sbert).
-- Disk: **22.6× smaller** (SOMA stores a single `memory_embeddings.pt`
-  tensor; Chroma's HNSW + SQLite bundle carries substantial overhead).
-- Retrieve latency: **1.3× faster** on a linear-backend at 50 entries;
-  SOMA's FAISS path auto-activates at 10K+ entries.
-- Store latency: **2.8× faster** per op (9.5 ms vs 26.9 ms).
+Both systems use the same sbert embedder, so quality is identical
+by construction (both reduce to cosine over the same 384-d
+vectors). At this size SOMA is 22.6× smaller and 1.3× faster on
+retrieve — but those single-point numbers don't generalize, see §3.2.
+
+### 3.2 Efficiency at scale (1K / 5K / 20K)
+
+From `scale_vs_chroma.md` (no quality measurement, just bytes and
+latency on the same sbert embedder):
+
+| N | System | Store (ms/op) | Retrieve (ms) | Disk (MB) |
+| ---: | --- | ---: | ---: | ---: |
+| 1000 | SOMA | 8.82 | 10.79 | 1.6 |
+| 1000 | Chroma | 27.21 | 10.67 | 4.3 |
+| 5000 | SOMA | 8.38 | 15.62 | 8.2 |
+| 5000 | Chroma | 25.02 | 12.45 | 12.9 |
+| 20000 | SOMA | 8.36 | 14.25 | 32.7 |
+| 20000 | Chroma | 27.03 | 12.39 | 45.2 |
+
+The honest scale story:
+
+- **Store: SOMA stays 3× faster across all N** (~8.4 ms vs ~27 ms
+  per op). Chroma's metadata layer pays a fixed cost per write that
+  doesn't go away.
+- **Disk: SOMA wins by 1.4–22× depending on N.** At small N
+  Chroma's HNSW/SQLite overhead dominates (22× advantage at 50);
+  at 20K both systems approach the floor of "raw embedding × N"
+  and the gap narrows to 1.4×. SOMA still wins absolute bytes at
+  every N tested.
+- **Retrieve: comparable at scale.** SOMA's linear cosine wins on
+  small stores (no HNSW build cost); Chroma's HNSW catches up and
+  slightly leads at 5K–20K (~10–20%). SOMA's FAISS path activates
+  at the 10K threshold but the test boundary doesn't yet show a
+  clean cross-back. This is a known follow-up: SOMA's FAISS index
+  type defaults to `IndexFlatIP` (exact), not the approximate
+  `IndexHNSWFlat`; switching the at-scale backend should close
+  the gap.
 
 ## 4. Experiments
 

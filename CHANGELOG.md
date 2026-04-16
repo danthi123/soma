@@ -4,6 +4,32 @@ All notable changes to SOMA are documented here.
 
 ## [Unreleased] — 2026-04-16
 
+### Added — API + perf
+
+- `MemoryLayer.store_batch(texts, metadatas=)` — bulk ingest that calls
+  the embedder once instead of per-text and invalidates the FAISS
+  index once at the end.
+- O(1) id lookups: added `_id_to_idx` cache so `get` / `related` /
+  `forget` / `in` are constant-time instead of O(N) scans of `_ids`.
+
+### Removed — dead weight
+
+- All pre-pivot scripts under `scripts/` (training loop, autonomous
+  tick, bootstrap verbalizer, diagnostics). 34 files gone; the
+  memory-layer demos + `migrate_chroma` importer are all that remains.
+- All pre-pivot reports (`reports/` dir removed; the live numbers now
+  live under `benchmarks/reports/`).
+- `docs/progress/{BUILD_COMPLETE,CHECKPOINT,FIRST_REAL_CORPUS_RUN,DEFERRED}.md`
+  (kept `HYBRID_PIVOT.md` as the historical framing CLAUDE.md links).
+- `docs/plans/2026-04-{12,13,14}-*` (12 pre-pivot design docs).
+- `docs/{AUTONOMOUS_LOOP,UI_GUIDE,loop_tick_prompt,deployment}.md`.
+- 15 pre-pivot test modules under `tests/test_scripts/`.
+
+### Added — LICENSE
+
+- `LICENSE` file (MIT) checked in at repo root — pyproject already
+  declared MIT but the file was missing.
+
 ### Added — recall boosters
 
 - **Hybrid search** via `mem.retrieve(query, k, hybrid_alpha=...)` — blends

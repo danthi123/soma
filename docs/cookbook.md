@@ -11,10 +11,14 @@ from soma.llm    import OllamaBackend, RAGSession
 from soma.memory import MemoryLayer
 
 mem = MemoryLayer.with_sbert()
+paras: list[str] = []
+metas: list[dict] = []
 for md in Path("wiki/").rglob("*.md"):
     for para in md.read_text(encoding="utf-8").split("\n\n"):
         if para.strip():
-            mem.store(para.strip(), metadata={"path": str(md)})
+            paras.append(para.strip())
+            metas.append({"path": str(md)})
+mem.store_batch(paras, metadatas=metas)  # one embed call per batch, not per para
 mem.save("brain/")
 
 chat = RAGSession(memory=mem, llm=OllamaBackend(model="llama3.2"))

@@ -629,3 +629,50 @@ def test_faiss_invalidated_on_forget() -> None:
     assert mem._faiss_index is not None
     mem.forget(ids[0])
     assert mem._faiss_index is None
+
+
+def test_store_batch_matches_store(embedder) -> None:
+    tokenizer, encoder = embedder
+    texts = ["alpha one", "beta two", "gamma three"]
+    mem = MemoryLayer(tokenizer=tokenizer, encoder=encoder)
+    ids = mem.store_batch(texts, metadatas=[{"i": i} for i in range(3)])
+    assert len(ids) == 3
+    assert len(set(ids)) == 3
+    assert len(mem) == 3
+    for nid, txt, i in zip(ids, texts, range(3), strict=True):
+        hit = mem.get(nid)
+        assert hit is not None
+        assert hit.text == txt
+        assert hit.metadata == {"i": i}
+
+
+def test_store_batch_empty_returns_empty(embedder) -> None:
+    tokenizer, encoder = embedder
+    mem = MemoryLayer(tokenizer=tokenizer, encoder=encoder)
+    assert mem.store_batch([]) == []
+    assert len(mem) == 0
+
+
+def test_store_batch_metadatas_length_mismatch_raises(embedder) -> None:
+    tokenizer, encoder = embedder
+    mem = MemoryLayer(tokenizer=tokenizer, encoder=encoder)
+    with pytest.raises(ValueError, match="length"):
+        mem.store_batch(["a", "b", "c"], metadatas=[{"x": 1}])
+
+
+def test_forget_keeps_id_lookup_consistent(embedder) -> None:
+    """Removing a middle entry must not corrupt get()/related() for later ids."""
+    tokenizer, encoder = embedder
+    mem = MemoryLayer(tokenizer=tokenizer, encoder=encoder)
+    a = mem.store("alpha")
+    b = mem.store("beta")
+    c = mem.store("gamma")
+    mem.forget(b)
+    # a and c must still be retrievable at the right text.
+    hit_a = mem.get(a)
+    hit_c = mem.get(c)
+    assert hit_a is not None and hit_a.text == "alpha"
+    assert hit_c is not None and hit_c.text == "gamma"
+    # related() must still work (uses _id_to_idx internally).
+    related = mem.related(a, k=5)
+    assert {h.node_id for h in related} == {c}

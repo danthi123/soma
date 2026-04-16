@@ -180,6 +180,7 @@ class MemoryLayer:
         # Parallel storage. Order is preserved across save/load so
         # ``get_recent`` stays stable.
         self._ids: list[str] = []
+        self._id_to_idx: dict[str, int] = {}
         self._texts: list[str] = []
         self._metadatas: list[dict[str, Any]] = []
         self._timestamps: list[int] = []
@@ -269,6 +270,7 @@ class MemoryLayer:
             raise ValueError("MemoryLayer.store rejects empty text")
         node_id = uuid.uuid4().hex
         embedding = self._embed(text)
+        self._id_to_idx[node_id] = len(self._ids)
         self._ids.append(node_id)
         self._texts.append(text)
         self._metadatas.append(dict(metadata) if metadata else {})
@@ -286,6 +288,54 @@ class MemoryLayer:
             self.consolidate()
             self._stores_since_consolidation = 0
         return node_id
+
+    def store_batch(
+        self,
+        texts: list[str],
+        *,
+        metadatas: list[dict[str, Any]] | None = None,
+    ) -> list[str]:
+        """Add many entries in one shot. Returns a list of node_ids in input order.
+
+        When the encoder exposes ``encode_batch_many`` (sbert does), we call
+        it once for the whole batch instead of N round-trips; this is the
+        main reason to prefer ``store_batch`` over a loop of ``store``. The
+        FAISS index is invalidated once at the end rather than per-entry.
+        """
+        if not texts:
+            return []
+        if metadatas is not None and len(metadatas) != len(texts):
+            raise ValueError(
+                f"metadatas length {len(metadatas)} != texts length {len(texts)}"
+            )
+        for t in texts:
+            if not t or not t.strip():
+                raise ValueError("MemoryLayer.store_batch rejects empty text")
+        embeddings = self._embed_batch(texts)
+        node_ids: list[str] = []
+        for i, text in enumerate(texts):
+            nid = uuid.uuid4().hex
+            self._id_to_idx[nid] = len(self._ids)
+            self._ids.append(nid)
+            self._texts.append(text)
+            self._metadatas.append(
+                dict(metadatas[i]) if metadatas is not None else {}
+            )
+            self._timestamps.append(self._step)
+            self._embeddings_list.append(embeddings[i])
+            self._soma_activations.append(None)
+            self._step += 1
+            node_ids.append(nid)
+        self._faiss_index = None
+        self._stores_since_consolidation += len(texts)
+        if (
+            self._auto_consolidate_every > 0
+            and self._soma is not None
+            and self._stores_since_consolidation >= self._auto_consolidate_every
+        ):
+            self.consolidate()
+            self._stores_since_consolidation = 0
+        return node_ids
 
     def retrieve(
         self,
@@ -377,9 +427,9 @@ class MemoryLayer:
 
     def related(self, node_id: str, k: int = 5) -> list[MemoryHit]:
         """Return up to k entries most similar to the entry at ``node_id``."""
-        if node_id not in self._ids:
+        idx = self._id_to_idx.get(node_id)
+        if idx is None:
             raise KeyError(f"node_id {node_id!r} not found in MemoryLayer")
-        idx = self._ids.index(node_id)
         q_vec = self._embeddings_list[idx]
         return self._rank(q_vec, k=k, exclude_idx=idx)
 
@@ -538,9 +588,9 @@ class MemoryLayer:
 
     def get(self, node_id: str) -> MemoryHit | None:
         """Fetch an entry by id; ``None`` if unknown. Score is self-cosine (1.0)."""
-        if node_id not in self._ids:
+        idx = self._id_to_idx.get(node_id)
+        if idx is None:
             return None
-        idx = self._ids.index(node_id)
         return MemoryHit(
             node_id=node_id,
             text=self._texts[idx],
@@ -559,15 +609,17 @@ class MemoryLayer:
 
     def forget(self, node_id: str) -> bool:
         """Remove an entry. Returns True if removed, False if unknown."""
-        if node_id not in self._ids:
+        idx = self._id_to_idx.pop(node_id, None)
+        if idx is None:
             return False
-        idx = self._ids.index(node_id)
         self._ids.pop(idx)
         self._texts.pop(idx)
         self._metadatas.pop(idx)
         self._timestamps.pop(idx)
         self._embeddings_list.pop(idx)
         self._soma_activations.pop(idx)
+        for later_id in self._ids[idx:]:
+            self._id_to_idx[later_id] -= 1
         self._faiss_index = None  # invalidate
         return True
 
@@ -665,7 +717,7 @@ class MemoryLayer:
         return len(self._ids)
 
     def __contains__(self, node_id: str) -> bool:
-        return node_id in self._ids
+        return node_id in self._id_to_idx
 
     # ------------------------------------------------------------------
     # Persistence
@@ -777,7 +829,9 @@ class MemoryLayer:
         embeddings = torch.load(embeddings_path, map_location=device or "cpu", weights_only=True)
         target_device = instance._device
         for entry, vec in zip(index["entries"], embeddings, strict=True):
-            instance._ids.append(str(entry["node_id"]))
+            nid = str(entry["node_id"])
+            instance._id_to_idx[nid] = len(instance._ids)
+            instance._ids.append(nid)
             instance._texts.append(str(entry["text"]))
             instance._metadatas.append(dict(entry.get("metadata", {})))
             instance._timestamps.append(int(entry.get("timestamp_step", 0)))
@@ -800,6 +854,15 @@ class MemoryLayer:
             return torch.zeros(self._embed_dim, device=self._device)
         pooled = stacked.mean(dim=0)
         return pooled.detach().to(self._device)
+
+    def _embed_batch(self, texts: list[str]) -> list[torch.Tensor]:
+        """Embed a list of texts, using a fused path if the backend has one."""
+        fn = self._custom_embed_fn
+        batch_fn = getattr(fn, "encode_many", None) if fn is not None else None
+        if batch_fn is not None:
+            stacked = batch_fn(texts)  # (N, embed_dim) tensor
+            return [row.detach().to(self._device) for row in stacked]
+        return [self._embed(t) for t in texts]
 
     def _retrieve_with_rerank(
         self,
@@ -832,7 +895,7 @@ class MemoryLayer:
         alpha = self._graph_rerank_alpha
         scored: list[tuple[float, MemoryHit]] = []
         for hit in candidates:
-            idx = self._ids.index(hit.node_id)
+            idx = self._id_to_idx[hit.node_id]
             stored_act = self._soma_activations[idx]
             if stored_act is not None and q_act is not None:
                 graph_score = float(

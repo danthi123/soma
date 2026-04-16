@@ -190,8 +190,7 @@ class MemoryLayer:
         self._embeddings_list.append(embedding)
         self._soma_activations.append(None)
         self._step += 1
-        self._faiss_index = None  # invalidate; rebuilt lazily
-        self._maybe_build_faiss()
+        self._faiss_index = None  # invalidate; rebuilt on next retrieve
         self._stores_since_consolidation += 1
         if (
             self._auto_consolidate_every > 0
@@ -215,6 +214,7 @@ class MemoryLayer:
             raise ValueError(f"k must be positive, got {k}")
         if not self._ids:
             return []
+        self._maybe_build_faiss()
         q_vec = self._embed(query)
         has_graph_signal = (
             self._soma is not None

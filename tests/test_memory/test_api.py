@@ -336,6 +336,7 @@ def test_faiss_activates_at_threshold() -> None:
         mem.store(f"fact {i}")
     assert mem._faiss_index is None
     mem.store("fact 4")
+    mem.retrieve("trigger rebuild", k=1)
     assert mem._faiss_index is not None
 
 
@@ -355,6 +356,7 @@ def test_faiss_retrieve_matches_linear() -> None:
 def test_faiss_invalidated_on_forget() -> None:
     mem = MemoryLayer(embed_fn=_hash_embed, embed_dim=16, faiss_threshold=3)
     ids = [mem.store(f"fact {i}") for i in range(5)]
+    mem.retrieve("trigger rebuild", k=1)
     assert mem._faiss_index is not None
     mem.forget(ids[0])
     assert mem._faiss_index is None

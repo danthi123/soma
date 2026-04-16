@@ -1,0 +1,94 @@
+[
+  {
+    "system": "soma",
+    "num_entries": 50,
+    "store_total_s": 0.45042889999967883,
+    "store_avg_ms": 9.008577999993577,
+    "retrieve_avg_ms": 5.271257692339322,
+    "retrieve_p99_ms": 6.22529999964172,
+    "recall_at_k": 0.9230769230769231,
+    "mrr_at_k": 0.8910256410256411,
+    "ndcg_at_k": 0.8846153846153846,
+    "disk_bytes": 86876,
+    "metadata": {},
+    "arm": "sbert"
+  },
+  {
+    "system": "chroma",
+    "num_entries": 50,
+    "store_total_s": 1.1398118000006434,
+    "store_avg_ms": 22.79623600001287,
+    "retrieve_avg_ms": 7.0624346153636,
+    "retrieve_p99_ms": 7.996800000000803,
+    "recall_at_k": 0.9230769230769231,
+    "mrr_at_k": 0.8910256410256411,
+    "ndcg_at_k": 0.8846153846153846,
+    "disk_bytes": 1966820,
+    "metadata": {},
+    "arm": "sbert"
+  },
+  {
+    "system": "soma-te-flat",
+    "num_entries": 50,
+    "store_total_s": 0.008476200000586687,
+    "store_avg_ms": 0.16952400001173373,
+    "retrieve_avg_ms": 0.2075884615526145,
+    "retrieve_p99_ms": 0.2859999995052931,
+    "recall_at_k": 0.3076923076923077,
+    "mrr_at_k": 0.24358974358974358,
+    "ndcg_at_k": 0.26007151950549673,
+    "disk_bytes": 39979,
+    "metadata": {
+      "consolidate_time_s": 6.800000028306386e-05
+    },
+    "arm": "te_graph_ablation"
+  },
+  {
+    "system": "soma-te-graph",
+    "num_entries": 50,
+    "store_total_s": 0.01063109999995504,
+    "store_avg_ms": 0.2126219999991008,
+    "retrieve_avg_ms": 91.57306538456676,
+    "retrieve_p99_ms": 141.86329999938607,
+    "recall_at_k": 0.23076923076923078,
+    "mrr_at_k": 0.19230769230769232,
+    "ndcg_at_k": 0.20237921181318905,
+    "disk_bytes": 39979,
+    "metadata": {
+      "consolidate_time_s": 33.915828999999576
+    },
+    "arm": "te_graph_ablation"
+  },
+  {
+    "system": "soma-sbert-flat",
+    "num_entries": 50,
+    "store_total_s": 0.2357265999999072,
+    "store_avg_ms": 4.714531999998144,
+    "retrieve_avg_ms": 5.050476923140825,
+    "retrieve_p99_ms": 6.437400000322668,
+    "recall_at_k": 0.9230769230769231,
+    "mrr_at_k": 0.8910256410256411,
+    "ndcg_at_k": 0.8846153846153846,
+    "disk_bytes": 86876,
+    "metadata": {
+      "consolidate_time_s": 1.6399999367422424e-05
+    },
+    "arm": "sbert_graph_ablation"
+  },
+  {
+    "system": "soma-sbert-graph",
+    "num_entries": 50,
+    "store_total_s": 0.2706023999999161,
+    "store_avg_ms": 5.412047999998322,
+    "retrieve_avg_ms": 103.00664230768373,
+    "retrieve_p99_ms": 139.2667000000074,
+    "recall_at_k": 0.9230769230769231,
+    "mrr_at_k": 0.8910256410256411,
+    "ndcg_at_k": 0.8846153846153846,
+    "disk_bytes": 86876,
+    "metadata": {
+      "consolidate_time_s": 34.32049069999994
+    },
+    "arm": "sbert_graph_ablation"
+  }
+]

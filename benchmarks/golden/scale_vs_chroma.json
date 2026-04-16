@@ -1,0 +1,65 @@
+[
+  {
+    "system": "soma-flat",
+    "n": 1000,
+    "store_avg_ms": 5.17026690000057,
+    "retrieve_avg_ms": 5.965003999972396,
+    "disk_kb": 1664.3408203125
+  },
+  {
+    "system": "soma-hnsw",
+    "n": 1000,
+    "store_avg_ms": 5.39178179999999,
+    "retrieve_avg_ms": 6.014634000021033,
+    "disk_kb": 1664.3408203125
+  },
+  {
+    "system": "chroma",
+    "n": 1000,
+    "store_avg_ms": 21.789277999999285,
+    "retrieve_avg_ms": 9.421415999986493,
+    "disk_kb": 4395.87890625
+  },
+  {
+    "system": "soma-flat",
+    "n": 5000,
+    "store_avg_ms": 5.442778780000117,
+    "retrieve_avg_ms": 8.13564400006726,
+    "disk_kb": 8321.3515625
+  },
+  {
+    "system": "soma-hnsw",
+    "n": 5000,
+    "store_avg_ms": 5.3427520799999915,
+    "retrieve_avg_ms": 7.834237999977631,
+    "disk_kb": 8321.3515625
+  },
+  {
+    "system": "chroma",
+    "n": 5000,
+    "store_avg_ms": 34.61151988000001,
+    "retrieve_avg_ms": 15.488688000023103,
+    "disk_kb": 13172.65625
+  },
+  {
+    "system": "soma-flat",
+    "n": 20000,
+    "store_avg_ms": 10.254534934999992,
+    "retrieve_avg_ms": 8.04738400007409,
+    "disk_kb": 33338.287109375
+  },
+  {
+    "system": "soma-hnsw",
+    "n": 20000,
+    "store_avg_ms": 9.172597214999996,
+    "retrieve_avg_ms": 7.4549320000369335,
+    "disk_kb": 33338.287109375
+  },
+  {
+    "system": "chroma",
+    "n": 20000,
+    "store_avg_ms": 25.35011277499998,
+    "retrieve_avg_ms": 11.516350000019884,
+    "disk_kb": 46297.576171875
+  }
+]

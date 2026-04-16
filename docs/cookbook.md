@@ -568,6 +568,46 @@ with `bundle`, `backend`, `latency_ms`, `n_hits`, `hybrid_alpha`,
 `rerank_top_n`, and `cache_miss`. Schema is stable —
 `tests/test_memory/test_retrieve_log_line.py` pins it.
 
+## 21. Stream tokens live in `soma chat`
+
+`soma chat` streams the LLM reply token-by-token automatically whenever
+the resolved backend supports it — `OpenAIBackend`, `OllamaBackend`,
+`AnthropicBackend`, and any `OpenAICompatibleBackend` (LM Studio, vLLM,
+LiteLLM, llama.cpp's built-in server) all ship streaming adapters out
+of the box. Backends without it (dry-run, local HuggingFace) fall back
+to the existing blocking `generate()` path with no visible change.
+
+Detection is a single `hasattr(backend, "stream_generate")` check at
+REPL start, so adding streaming to a custom backend is a one-method
+add:
+
+```python
+from collections.abc import Iterator
+
+class MyBackend:
+    name = "my-llm"
+
+    def generate(self, prompt: str, *, max_tokens: int = 256) -> str:
+        return self._client.complete(prompt, max_tokens=max_tokens)
+
+    # Optional — implement only if your transport supports streaming.
+    def stream_generate(
+        self, prompt: str, *, max_tokens: int = 256
+    ) -> Iterator[str]:
+        for chunk in self._client.stream(prompt, max_tokens=max_tokens):
+            if chunk.text:
+                yield chunk.text
+```
+
+Notes:
+
+- The REPL accumulates the full reply from the stream and stores it as
+  one assistant turn — token-by-token memory extraction is a non-goal.
+- Ctrl-C during a stream drops the partial turn and returns you to the
+  prompt with the terminal left in a usable state.
+- The `/chat` REST endpoint stays one-shot for now; SSE / WebSocket
+  streaming there is a separate phase.
+
 ---
 
 Missing a recipe you want? Open an issue with the use case — most

@@ -1,6 +1,6 @@
 """Prompt templates for :class:`soma.memory.conversational.ConversationalMemory`.
 
-Three string templates:
+Four string templates:
 
 - :data:`EXTRACT_PROMPT` — turns a user message into a JSON list of
   atomic facts. Closed-vocab category, JSON-only output, empty-list
@@ -9,6 +9,9 @@ Three string templates:
   candidates, decide one of ADD / UPDATE / SUPERSEDE / NOOP.
 - :data:`SUMMARY_PROMPT` — roll N recent turns into a short paragraph,
   with an explicit "do not invent" clause to curb drift.
+- :data:`RESUMMARY_PROMPT` — every Mth summary, re-derive from raw
+  turns only (no previous-summary dependency) to break the chained-
+  summarization drift loop. See Phase 17 plan.
 
 Interpolation uses :meth:`str.format` — no templating engine. Callers
 pass keyword arguments (``message``, ``new_fact`` + ``candidates``,
@@ -83,6 +86,19 @@ Stay faithful to the turns — do not invent details, do not speculate,
 do not add framing the speakers did not express.
 
 Conversation turns:
+{turns}
+
+Summary:"""
+
+
+RESUMMARY_PROMPT = """Summarise the following conversation turns into \
+a short, factual summary (3-5 sentences). Focus on stable information \
+about the participants (names, locations, preferences, goals) and \
+on decisions / commitments that were made. Ignore small-talk unless \
+it reveals stable facts. Do not reference any prior summary — this \
+summary is being re-derived from the raw turns below.
+
+Turns:
 {turns}
 
 Summary:"""

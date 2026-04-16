@@ -38,6 +38,7 @@ if TYPE_CHECKING:
 from soma.memory.conversational_prompts import (
     EXTRACT_PROMPT,
     RECONCILE_PROMPT,
+    RESUMMARY_PROMPT,
     SUMMARY_PROMPT,
 )
 
@@ -94,6 +95,7 @@ class ConversationalMemory:
         near_dup_threshold: float = 0.92,
         ambiguous_threshold: float = 0.75,
         summary_every: int = 20,
+        resummarize_every: int = 5,
         extract_assistant: bool = False,
     ) -> None:
         """Build a ConversationalMemory wrapper.
@@ -122,6 +124,12 @@ class ConversationalMemory:
             fact is ADDed without asking the LLM.
         :param summary_every: roll a summary every N turns (set very
             large to disable).
+        :param resummarize_every: every Mth rolled summary is re-derived
+            from the raw turns only (bypassing the previous summary)
+            to break the chained-summarization drift loop. Default 5.
+            Set to ``0`` to disable re-summarization entirely and keep
+            the pre-Phase-17 behaviour where every summary chains off
+            the previous one.
         :param extract_assistant: if True, also extract facts from
             ``role="assistant"`` turns; defaults to user-only.
         """
@@ -146,6 +154,11 @@ class ConversationalMemory:
         self._near_dup_threshold: float = float(near_dup_threshold)
         self._ambiguous_threshold: float = float(ambiguous_threshold)
         self._summary_every: int = int(summary_every)
+        # Phase 17: every Mth summary is re-derived from raw turns (no
+        # previous-summary dependency) so chained summaries can't
+        # compound drift over long sessions. 0 disables.
+        self._resummarize_every: int = int(resummarize_every)
+        self._summaries_generated: int = 0
         self._extract_assistant: bool = bool(extract_assistant)
         self._turn_counter: int = 0
 
@@ -504,12 +517,19 @@ class ConversationalMemory:
             self._roll_summary(user_id=effective_user)
 
     def _roll_summary(self, *, user_id: str | None = None) -> None:
-        """Summarize the last ``summary_every`` raw turns, store as a
-        ``type=summary`` entry.
+        """Summarize recent raw turns, store as a ``type=summary`` entry.
 
         The turns block is formatted as ``role: text`` lines in order.
         The resulting summary is stored with ``metadata.type=summary``
         so :meth:`get_summary` and :meth:`retrieve` can find it.
+
+        Phase 17: every ``resummarize_every``-th summary is re-derived
+        from the raw turns of the last ``resummarize_every ×
+        summary_every`` turns using :data:`RESUMMARY_PROMPT`, bypassing
+        the previous-summary input. This breaks the chained-
+        summarization drift loop. ``resummarize_every=0`` disables the
+        re-summary cadence and every summary falls through to the
+        standard :data:`SUMMARY_PROMPT`.
 
         ``user_id`` scopes both the turns considered for the summary
         (so multi-tenant bundles don't leak across users) and the
@@ -518,14 +538,38 @@ class ConversationalMemory:
         recent_turns = self._session_entries(
             type_filter="turn", user_id=user_id
         )
-        # Last N turns, by insertion order.
-        tail = recent_turns[-self._summary_every :]
+        if not recent_turns:
+            return
+
+        # Decide re-summary vs. standard. The upcoming summary's
+        # 1-indexed position is ``_summaries_generated + 1`` — re-
+        # summary fires at M, 2M, 3M, … so the first resummary is the
+        # Mth summary written, and the Nth chained summaries remain
+        # 1..M-1, M+1..2M-1, etc.
+        upcoming_number = self._summaries_generated + 1
+        use_resummary = (
+            self._resummarize_every > 0
+            and upcoming_number % self._resummarize_every == 0
+        )
+
+        if use_resummary:
+            # Re-derive from the last M × summary_every raw turns (cap
+            # at what's available so short sessions still degrade
+            # gracefully onto however many turns exist).
+            window = self._resummarize_every * self._summary_every
+            tail = recent_turns[-window:]
+            prompt_template = RESUMMARY_PROMPT
+        else:
+            tail = recent_turns[-self._summary_every :]
+            prompt_template = SUMMARY_PROMPT
+
         if not tail:
             return
+
         turns_block = "\n".join(
             f"{h.metadata.get('role', '?')}: {h.text}" for h in tail
         )
-        prompt = SUMMARY_PROMPT.format(turns=turns_block)
+        prompt = prompt_template.format(turns=turns_block)
         summary_text = self._llm.generate(prompt, max_tokens=512).strip()
         if not summary_text:
             return
@@ -534,9 +578,13 @@ class ConversationalMemory:
             "type": "summary",
             "summarized_turn_start": tail[0].metadata.get("turn_index"),
             "summarized_turn_end": tail[-1].metadata.get("turn_index"),
+            "resummary": use_resummary,
         }
         self._stamp_user_id(summary_meta, user_id)
         self._memory.store(summary_text, metadata=summary_meta)
+        # Count only after a successful write so a no-op generate()
+        # (empty string) doesn't advance the cadence.
+        self._summaries_generated += 1
 
     def retrieve(
         self,

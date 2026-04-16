@@ -78,6 +78,75 @@ All notable changes to SOMA are documented here.
 - **README feature comparison**: Pluggable-vector-backends row now
   reads *yes (InProc + Qdrant + LanceDB)*.
 
+### Added — conversational-memory ergonomics (Phase 11)
+
+- **`extractor_llm=` kwarg on `ConversationalMemory`**: lets users
+  pin a stronger model for the structured-output steps (fact
+  extraction + reconcile ADD/UPDATE/SUPERSEDE/NOOP) while keeping
+  chat + summary on a smaller model. Targets 3B-local users
+  (local-first positioning) whose chat LLM can't reliably produce
+  strict JSON. Defaults to `None` — falls back to `self._llm` with
+  `self._extractor_llm = extractor_llm or llm` so call sites stay
+  free of None-checks. Summary stays on `self._llm` because
+  free-form prose handles small-model variance fine.
+  (`src/soma/memory/conversational.py`, 8 new tests.)
+- **`ConversationalSomaAdapter.__init__` forwards `extractor_llm`**
+  so benchmarks can pin a stronger extractor without changing the
+  harness protocol.
+
+### Added — multi-user scoping (Phase 12)
+
+- **`user_id=` on `ConversationalMemory`**: constructor-level default
+  user + per-call override. Every turn / fact / summary write stamps
+  `metadata["user_id"]` when set. Unblocks multi-tenant deploys
+  (shared bundle, isolated per-user state) without a new endpoint
+  — REST callers pass `user_id` in the metadata field.
+- **`retrieve()` scopes by default**: when constructed with
+  `user_id="alice"`, retrieval filters to alice's scope. Pass
+  `user_id=None` explicitly to unscope for admin drill-downs.
+  New bonus `where=` kwarg on `retrieve()` composes with the
+  internal user/session/superseded filter via dict merge
+  (caller keys win).
+- **Safety invariants**: `supersede()` verifies the target fact's
+  `user_id` matches before mutating — raises `PermissionError` on
+  cross-user supersede attempts. `clear_session()` filters by the
+  active user_id when set. Reconcile's candidate search scopes
+  to the same user so Alice's new fact can't silently merge into
+  Bob's existing fact.
+- **Backward compat**: when `user_id` is unset, metadata stays
+  byte-identical to pre-Phase-12. No migration needed on existing
+  bundles. Localised via a `_stamp_user_id` static helper.
+- **Documentation**: new §18.1 "Multi-user scoping" under the
+  ConversationalMemory cookbook recipe, with the REST pattern
+  (`POST /store {"metadata": {"user_id": "alice"}}`).
+
+### Added — lazy stable-capture (Phase 13, closes Task #173)
+
+- **`_stable_capture_dirty` flag + lazy capture**: `consolidate()`
+  no longer runs the O(N_so_far) stable-capture pass eagerly. It
+  flips the dirty flag and returns. The first subsequent
+  `retrieve()` with `graph_rerank_alpha > 0` triggers the capture
+  lazily; alpha=0 paths skip the cost entirely. Mutations
+  (`store`, `store_batch`, `forget`, `clear`) re-dirty the flag so
+  intervening changes get picked up on the next retrieve.
+- **`MemoryLayer.stable_capture()` public API**: eager hook for
+  benchmarks, warmup passes, and callers who want the cost paid
+  predictably. No-op when SOMA isn't attached or the feature is
+  disabled, so safe to call unconditionally.
+- **`eager_stable_capture=True` on `SomaAdapter`**: default pins
+  the pre-Phase-13 behaviour for existing benchmark reports
+  (plasticity / longitudinal-drift / enterprise-scale) so numbers
+  stay comparable commit-to-commit. New benchmark runs can opt
+  into the lazy path by flipping the flag.
+- **Cost impact**: removes O(N²/K) stable-capture work from
+  consolidate sessions. At N=10K, K=100, that's ~1M stable steps
+  per session → 0 under the default alpha=0 config. Becomes
+  load-bearing if/when graph-rerank reactivates (research agenda
+  §5 of paper-draft).
+- **No signal regression**: bit-identical retrieval scores between
+  eager and lazy paths under the same deterministic seed. 11 new
+  tests pin every dirty/clean transition + the mutation-triggers.
+
 ### Added — observability loose ends (Phase 8)
 
 - **`soma_compaction_total{bundle, outcome}`** Counter +

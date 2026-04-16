@@ -46,10 +46,10 @@ variant stayed deferred (see tier-2 auth below).
 
 - **Async extraction mode** (`extraction_mode="async"` with `ThreadPoolExecutor`, `flush()` drains). Phase 2 Stage 2.5. ~1 day. Source: `docs/plans/2026-04-16-phase-2-conversational-memory.md`.
 - **Batch extraction mode** (accumulate K turns, one LLM call). Phase 2 Stage 3. ~1 day.
-- **`extractor_llm=` kwarg** — let users pin a stronger model for extraction while chat uses a smaller one. Critical for 3B-local users. ~2 h.
+- ✅ ~~**`extractor_llm=` kwarg**~~ Shipped in Phase 11 (`34320b4`, `9ca76e1`).
 - **Summary re-summarization from raw turns** every M × `summary_every` to prevent compounding drift. Phase 2 Risks §4. ~4 h.
 - **GDPR-grade forgetting** — scrub derived facts + summaries that reference a piece of info. Goes well beyond `clear_session`. ~1 week.
-- **Multi-user scoping** — `user_id` claim alongside `session_id`. Non-breaking metadata add. ~4 h.
+- ✅ ~~**Multi-user scoping**~~ Shipped in Phase 12 (`cc334d4`, `5216872`). `user_id` kwarg on ConversationalMemory with per-call override; retrieval auto-scopes; supersede enforces ownership. REST pattern via metadata field (no new endpoint).
 
 ## Tier 2 — observability
 
@@ -104,7 +104,7 @@ variant stayed deferred (see tier-2 auth below).
 
 ## Pre-existing (carried forward)
 
-- **Task #173 — Lazy stable-capture.** Defer stable-capture re-run to first retrieve instead of consolidate end. Saves startup time on large stores. Spec at `docs/plans/2026-04-16-lazy-stable-capture.md`.
+- ✅ ~~**Task #173 — Lazy stable-capture.**~~ Shipped in Phase 13 (`25ffb15`, `916717c`, `7c3a4c2`). Removes O(N²/K) cost from consolidate; benchmark adapter pins eager behaviour so existing reports stay comparable. Alpha=0 default means zero user-visible change; becomes load-bearing if graph-rerank reactivates.
 - **Task #174 — Enterprise scale benchmark (100K + 1M).** 1M still running at time of writing.
 - **Pre-existing mypy errors** in `src/soma/memory/api.py` (~5 errors, all from the `has_encoder` pattern). Harmless but eventually worth fixing for `mypy --strict` cleanliness.
 

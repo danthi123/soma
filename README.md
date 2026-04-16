@@ -68,8 +68,8 @@ hits = mem.retrieve("where does the user live?", k=1)
 **Benchmark (same sbert embedder):**
 - Quality: identical Recall@3 / MRR@3 / NDCG@3 to Chroma at 50 facts.
 - Disk: **22.6× smaller at 50** narrowing to **1.4× at 20K** as Chroma's overhead amortizes.
-- Store: **2.5–3× faster across all N tested** (durable claim).
-- Retrieve: SOMA-flat 1.12–1.28× faster than Chroma; opt-in HNSW backend reaches **1.67× at 20K** with identical recall.
+- Store: **3.2–3.6× faster across all N tested** (durable claim).
+- Retrieve: SOMA-flat trails Chroma's HNSW by 7–22%; opt-in HNSW backend wins by a durable **1.18–1.21× across every N tested**, identical recall preserved.
 - Drift: 30-day simulation, old-fact Recall@3 = 0.883 ≈ recent 0.938 (memory doesn't rot).
 
 See `benchmarks/reports/` for the full benchmark suite + paper-draft aggregator.
@@ -143,7 +143,7 @@ mem = MemoryLayer.with_sbert(...)
 mem._faiss_index_type = "hnsw"  # or pass via constructor
 ```
 
-HNSW preserves identical Recall@3 on the labeled benchmark and runs **1.67× faster than Chroma at 20K**. Defaults stay exact-flat so callers get vector-DB-equivalent recall guarantees out of the box.
+HNSW preserves identical Recall@3 on the labeled benchmark and runs **1.18–1.21× faster than Chroma's HNSW** across the 1K/5K/20K range tested. Defaults stay exact-flat so callers get vector-DB-equivalent recall guarantees out of the box.
 
 ## Demos
 

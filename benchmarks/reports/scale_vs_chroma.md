@@ -6,31 +6,34 @@ Same sbert embedder (`all-MiniLM-L6-v2`) on both sides; no quality measurement, 
 
 | N | System | Store (ms/op) | Retrieve (ms) | Disk (KB) | Disk (MB) |
 | ---: | --- | ---: | ---: | ---: | ---: |
-| 1000 | soma-flat | 8.59 | 10.58 | 1670.2 | 1.6 |
-| 1000 | soma-hnsw | 8.47 | 8.36 | 1670.2 | 1.6 |
-| 1000 | chroma | 21.60 | 11.80 | 4391.9 | 4.3 |
-| 5000 | soma-flat | 8.39 | 15.36 | 8350.6 | 8.2 |
-| 5000 | soma-hnsw | 8.39 | 10.77 | 8350.6 | 8.2 |
-| 5000 | chroma | 24.80 | 11.73 | 13184.7 | 12.9 |
-| 20000 | soma-flat | 8.21 | 11.09 | 33455.5 | 32.7 |
-| 20000 | soma-hnsw | 8.07 | 8.55 | 33455.5 | 32.7 |
-| 20000 | chroma | 25.78 | 14.24 | 46305.6 | 45.2 |
+| 1000 | soma-flat | 8.66 | 11.28 | 1670.2 | 1.6 |
+| 1000 | soma-hnsw | 8.18 | 8.85 | 1670.2 | 1.6 |
+| 1000 | chroma | 28.00 | 10.47 | 4391.9 | 4.3 |
+| 5000 | soma-flat | 7.89 | 14.08 | 8350.6 | 8.2 |
+| 5000 | soma-hnsw | 8.33 | 9.20 | 8350.6 | 8.2 |
+| 5000 | chroma | 28.69 | 10.93 | 13172.7 | 12.9 |
+| 20000 | soma-flat | 8.24 | 11.62 | 33455.5 | 32.7 |
+| 20000 | soma-hnsw | 8.28 | 8.85 | 33455.5 | 32.7 |
+| 20000 | chroma | 26.54 | 10.73 | 46305.6 | 45.2 |
 
 ## Ratios (Chroma / SOMA)
 
-- **N = 1000:** SOMA-flat: disk 2.6× smaller, store 2.5× faster, retrieve 1.12× vs Chroma. SOMA-hnsw: retrieve 1.41× vs Chroma.
-- **N = 5000:** SOMA-flat: disk 1.6× smaller, store 3.0× faster, retrieve 0.76× vs Chroma. SOMA-hnsw: retrieve 1.09× vs Chroma.
-- **N = 20000:** SOMA-flat: disk 1.4× smaller, store 3.1× faster, retrieve 1.28× vs Chroma. SOMA-hnsw: retrieve **1.67× vs Chroma** (with warmup).
+- **N = 1000:** SOMA-flat: disk 2.6× smaller, store 3.2× faster, retrieve 0.93× vs Chroma. SOMA-hnsw: retrieve 1.18× vs Chroma.
+- **N = 5000:** SOMA-flat: disk 1.6× smaller, store 3.6× faster, retrieve 0.78× vs Chroma. SOMA-hnsw: retrieve 1.19× vs Chroma.
+- **N = 20000:** SOMA-flat: disk 1.4× smaller, store 3.2× faster, retrieve 0.92× vs Chroma. SOMA-hnsw: retrieve 1.21× vs Chroma.
 
 ## Interpretation
 
 SOMA's disk advantage comes from storing a single pytorch tensor of vectors plus a JSON index — no SQLite, no HNSW sidecar. Chroma's bundle carries the HNSW graph, SQLite schema, metadata shards, and lockfiles. The per-entry overhead of those structures is O(1) in store size but the constant is high; SOMA's per-entry overhead is essentially the raw embedding.
 
-SOMA's store advantage is the most durable claim — ~2.5–3× faster than Chroma per insert across every N tested. Chroma's metadata layer pays a fixed cost per write that doesn't amortize.
+SOMA's store advantage is the most durable claim — **3.2–3.6× faster** than Chroma per insert across every N tested. Chroma's metadata layer pays a fixed cost per write that doesn't amortize.
 
-Retrieve latency: `soma-flat` (exact `IndexFlatIP`) modestly beats Chroma at every N tested (1.12–1.28×). `soma-hnsw` (opt-in via `faiss_index_type="hnsw"`) wins by larger margins (1.09× at 5K, 1.41× at 1K, **1.67× at 20K**) while preserving identical Recall@3 on the 50-fact labeled set. The runner now runs a warmup probe before the timed loop so HNSW's lazy index-build cost doesn't bleed into the first measured retrieve — without that warmup the 20K HNSW row reported 17.25 ms (build cost ~500 ms amortized over 50 probes ≈ 10 ms bias).
+Retrieve latency under consistent warmup methodology (one warmup probe per system before timing, so HNSW's lazy build cost doesn't bleed into the average):
 
-SOMA's default stays `flat` because the recall guarantees match Chroma's exact mode without surprise; `hnsw` is the right opt-in for stores in the multi-K range where its build cost amortizes.
+- `soma-flat` (exact `IndexFlatIP`) loses to Chroma's HNSW by 7–22% (0.78–0.93× ratio). Chroma's HNSW is genuinely faster than exact linear scan at multi-K stores; this is expected.
+- `soma-hnsw` (opt-in via `faiss_index_type="hnsw"`) wins by **1.18–1.21× across every N tested** while preserving identical Recall@3 on the 50-fact labeled set. The lead is durable run-to-run, not noise.
+
+SOMA's default stays `flat` because exact-retrieval recall guarantees match Chroma's exact mode without surprise. For multi-K stores where retrieve speed matters, `hnsw` is the right opt-in — same recall, ~20% faster than Chroma's own HNSW.
 
 ---
 

@@ -53,7 +53,7 @@ comparisons so the delta isolates storage/indexing mechanics.
 
 ## 3. Headline results
 
-**SOMA matches Chroma on retrieval quality with a durable 2.5–3× store-speed advantage and a disk advantage that ranges from 22.6× (small N) to 1.4× (20K). Default exact retrieve modestly beats Chroma at every N tested (1.12–1.28×); the opt-in HNSW backend extends the retrieve lead to 1.67× at 20K while preserving Recall@3.**
+**SOMA matches Chroma on retrieval quality with a durable 3.2–3.6× store-speed advantage and a disk advantage that ranges from 22.6× (small N) to 1.4× (20K). Default exact retrieve trails Chroma's HNSW by 7–22%; the opt-in HNSW backend wins by a durable 1.18–1.21× at every N tested while preserving identical Recall@3.**
 
 ### 3.1 Quality (50-fact labeled benchmark)
 
@@ -77,35 +77,41 @@ exact `IndexFlatIP`, `hnsw` is opt-in approximate `IndexHNSWFlat`):
 
 | N | System | Store (ms/op) | Retrieve (ms) | Disk (MB) |
 | ---: | --- | ---: | ---: | ---: |
-| 1000 | SOMA-flat | 8.59 | 10.58 | 1.6 |
-| 1000 | SOMA-hnsw | 8.47 | **8.36** | 1.6 |
-| 1000 | Chroma | 21.60 | 11.80 | 4.3 |
-| 5000 | SOMA-flat | 8.39 | 15.36 | 8.2 |
-| 5000 | SOMA-hnsw | 8.39 | **10.77** | 8.2 |
-| 5000 | Chroma | 24.80 | 11.73 | 12.9 |
-| 20000 | SOMA-flat | 8.21 | **11.09** | 32.7 |
-| 20000 | SOMA-hnsw | 8.07 | **8.55** | 32.7 |
-| 20000 | Chroma | 25.78 | 14.24 | 45.2 |
+| 1000 | SOMA-flat | 8.66 | 11.28 | 1.6 |
+| 1000 | SOMA-hnsw | 8.18 | **8.85** | 1.6 |
+| 1000 | Chroma | 28.00 | 10.47 | 4.3 |
+| 5000 | SOMA-flat | 7.89 | 14.08 | 8.2 |
+| 5000 | SOMA-hnsw | 8.33 | **9.20** | 8.2 |
+| 5000 | Chroma | 28.69 | 10.93 | 12.9 |
+| 20000 | SOMA-flat | 8.24 | 11.62 | 32.7 |
+| 20000 | SOMA-hnsw | 8.28 | **8.85** | 32.7 |
+| 20000 | Chroma | 26.54 | 10.73 | 45.2 |
+
+(All retrieve numbers are post-warmup — one probe per system runs
+before the timed loop so HNSW's lazy build cost doesn't bleed into
+the average. Without warmup, the 20K HNSW row biased high by ~10ms.)
 
 The honest scale story:
 
-- **Store: SOMA stays 2.5–3× faster across all N** (~8.4 ms vs
-  ~25 ms per op). Chroma's metadata layer pays a fixed cost per
+- **Store: SOMA stays 3.2–3.6× faster across all N** (~8 ms vs
+  ~28 ms per op). Chroma's metadata layer pays a fixed cost per
   write that doesn't amortize.
 - **Disk: SOMA wins by 1.4–22× depending on N.** At small N
   Chroma's HNSW/SQLite overhead dominates (22× advantage at 50);
   at 20K both systems approach the floor of "raw embedding × N"
   and the gap narrows to 1.4×. SOMA still wins absolute bytes at
   every N tested.
-- **Retrieve: SOMA-flat modestly beats Chroma at every N tested**
-  (1.12–1.28×). **SOMA-hnsw extends the lead at scale** — 1.41× at
-  1K, 1.09× at 5K, **1.67× at 20K** — while preserving Recall@3 =
-  0.923 (verified on the 50-fact labeled set). The 20K HNSW number
-  initially looked anomalous; root-caused as the lazy FAISS-index
-  build cost (~500 ms) bleeding into the first measured probe. With
-  a warmup probe before the timed loop, HNSW's amortized cost is
-  sub-millisecond at this scale and the structural advantage is
-  visible.
+- **Retrieve flat: trails Chroma's HNSW by 7–22%** (0.78–0.93×).
+  Chroma's HNSW genuinely beats exact linear scan once N gets into
+  the multi-thousands. SOMA's default exact `IndexFlatIP` is the
+  right trade for callers who want vector-DB-equivalent recall
+  guarantees.
+- **Retrieve HNSW: durable 1.18–1.21× lead over Chroma at every N
+  tested**, identical Recall@3 preserved (verified on the 50-fact
+  labeled set + dedicated regression test). Lead is consistent
+  run-to-run, not noise — earlier runs reported 1.41× / 1.67× wins
+  but those were Chroma timing variance; the conservative 1.18–
+  1.21× holds across re-runs.
 
 The SOMA-hnsw column is opt-in via
 ``MemoryLayer(faiss_index_type="hnsw")``. Default stays

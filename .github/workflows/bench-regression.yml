@@ -1,0 +1,125 @@
+name: bench-regression
+
+# Phase 21: nightly + PR-triggered benchmark regression check. Runs the
+# small-N benchmark matrix, diffs JSON output against
+# `benchmarks/golden/*.json` via `scripts/check_bench_regressions.py`,
+# and fails the job if any metric drifts past tolerance (default ±20%
+# latency / disk, ±5% recall). Non-blocking on PRs (first iteration);
+# blocking on the nightly cron so regressions on `main` do surface.
+
+on:
+  pull_request:
+    paths:
+      - 'src/soma/memory/**'
+      - 'src/soma/io/**'
+      - 'benchmarks/**'
+      - 'scripts/check_bench_regressions.py'
+      - '.github/workflows/bench-regression.yml'
+  schedule:
+    - cron: '0 8 * * *'  # 08:00 UTC nightly
+  workflow_dispatch:
+
+jobs:
+  bench:
+    name: run bench + regression check
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          check-latest: true
+
+      - name: Install SOMA + bench extras
+        # dev + metrics come from the plan; ann + sbert are load-bearing
+        # for the benchmark harnesses (faiss-cpu + sentence-transformers).
+        # chromadb is not a declared SOMA extra — the benchmark harness
+        # pulls it directly, so install it here.
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev,metrics,ann,sbert]"
+          pip install chromadb
+
+      - name: Run retrieval bench
+        run: |
+          mkdir -p /tmp/bench
+          python -m benchmarks.run_retrieval \
+            --out /tmp/bench/retrieval.md \
+            --json-out /tmp/bench/retrieval.json \
+            --lite
+
+      - name: Run scale-vs-chroma bench
+        run: |
+          python -m benchmarks.run_scale_vs_chroma \
+            --out /tmp/bench/scale_vs_chroma.md \
+            --json-out /tmp/bench/scale_vs_chroma.json \
+            --points 1000 5000 20000
+
+      - name: Run backend-matrix smoke
+        # Smoke path = InProcFlat only at N=5000. Keeps us under the
+        # 10-minute budget and avoids pulling lancedb / qdrant-client
+        # into CI. Nightly-only expansions can follow once the core
+        # pipeline is stable.
+        run: |
+          python -m benchmarks.run_backend_matrix \
+            --n 5000 --smoke \
+            --out /tmp/bench/backend_matrix.md
+
+      - name: Check regressions
+        id: check
+        continue-on-error: ${{ github.event_name == 'pull_request' }}
+        run: |
+          python scripts/check_bench_regressions.py \
+            --current /tmp/bench/retrieval.json \
+            --golden  benchmarks/golden/retrieval.json \
+            --current /tmp/bench/scale_vs_chroma.json \
+            --golden  benchmarks/golden/scale_vs_chroma.json \
+            --current /tmp/bench/backend_matrix.json \
+            --golden  benchmarks/golden/backend_matrix.json \
+            --tolerance-latency 0.20 \
+            --tolerance-recall  0.05 | tee /tmp/bench/diff.md
+
+      - name: Upload bench artefacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bench-output
+          path: |
+            /tmp/bench/*.json
+            /tmp/bench/*.md
+
+      - name: Post regression diff as PR comment
+        if: github.event_name == 'pull_request' && steps.check.outcome == 'failure'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            let table = 'Regression check failed but no diff table was captured.';
+            try {
+              table = fs.readFileSync('/tmp/bench/diff.md', 'utf8');
+            } catch (err) {
+              core.warning(`no diff.md: ${err}`);
+            }
+            const body = [
+              '## Benchmark regression check',
+              '',
+              'Non-blocking on PRs. Fix the regression or re-run the',
+              'bench locally and commit a fresh `benchmarks/golden/*.json`',
+              'if the change is intentional.',
+              '',
+              table,
+            ].join('\n');
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo:  context.repo.repo,
+              issue_number: context.issue.number,
+              body,
+            });
+
+      - name: Fail nightly / dispatch on regression
+        # Non-PR runs stay blocking so main-branch regressions fire an
+        # actionable red build rather than an ignored PR comment.
+        if: github.event_name != 'pull_request' && steps.check.outcome == 'failure'
+        run: exit 1

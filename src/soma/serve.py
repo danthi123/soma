@@ -46,7 +46,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field
 
+from soma.log import configure_json_logging
 from soma.memory import MemoryLayer
+
+# Structured JSON logging swap (no-op unless SOMA_LOG_JSON=1). Called at
+# import time so `uvicorn soma.serve:app` picks up the formatter before
+# the first request flows through.
+configure_json_logging()
 
 BUNDLE_PATH = Path(os.environ.get("SOMA_BUNDLE_PATH", "./data/memory"))
 BUNDLES_DIR = Path(os.environ.get("SOMA_BUNDLES_DIR", "./data/bundles"))
@@ -85,6 +91,28 @@ app.add_middleware(
     allow_methods=["GET", "POST"],
     allow_headers=["Authorization", "Content-Type"],
 )
+
+# --------------------------------------------------------------------
+# Optional Prometheus /metrics endpoint. Gated on prometheus-fastapi-
+# instrumentator being importable (``soma[metrics]`` extra). When the
+# extra isn't installed we silently skip — /metrics 404s and the rest
+# of the server keeps working without the observability dep footprint.
+# The instrumentator also adds per-route HTTP counters and latency
+# histograms (standard FastAPI practice); our memory-layer-specific
+# soma_* metrics layer on top via soma.metrics.
+# --------------------------------------------------------------------
+try:
+    from prometheus_fastapi_instrumentator import Instrumentator
+
+    Instrumentator().instrument(app).expose(
+        app,
+        endpoint="/metrics",
+        include_in_schema=True,
+        tags=["system"],
+    )
+except ImportError:  # pragma: no cover
+    # soma[metrics] not installed — /metrics will 404.
+    pass
 
 _BUNDLE_NAME_RE = re.compile(r"^[A-Za-z0-9_.-]{1,64}$")
 _mem_cache: dict[str, MemoryLayer] = {}

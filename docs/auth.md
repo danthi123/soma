@@ -154,8 +154,39 @@ soma auth rotate-secret > .soma.secret
 
 Emits a fresh 32-byte urlsafe-b64 shared secret to stdout. Use it as
 the new `SOMA_JWT_SECRET`. **Rotating invalidates every previously
-issued token** — no blocklist, no revocation list; re-issue what you
-need.
+issued token.** For single-token revocation without nuking the secret,
+use the revocation blocklist (below).
+
+### `soma auth revoke`
+
+```
+soma auth revoke --token <jwt> --reason "leaked on slack"
+# or, if you only have the jti from an access log:
+soma auth revoke --jti <id> --exp <epoch> --reason "suspected compromise"
+```
+
+Appends a record to `SOMA_JWT_BLOCKLIST_PATH`. The running server
+picks it up on its next mtime poll (~30 s). See "Revocation" below.
+
+### `soma auth list-revoked`
+
+```
+soma auth list-revoked
+```
+
+Prints one JSON record per live revocation (past-exp entries are
+skipped — the JWT verifier rejects them on `exp` alone). Use for
+audit.
+
+### `soma auth gc`
+
+```
+soma auth gc
+```
+
+Rewrites the blocklist file dropping past-exp entries. Safe to cron
+daily; writes via temp-file-replace so concurrent `soma auth revoke`
+calls don't race.
 
 ---
 
@@ -194,6 +225,91 @@ not a wire-format change.
 
 ---
 
+## Revocation
+
+Phase 4 auto-populated a `jti` (UUID4) on every issued token so a
+future revocation blocklist could key off it. That blocklist shipped
+as a file-backed JSONL store.
+
+### Enable it
+
+```bash
+export SOMA_JWT_BLOCKLIST_PATH=./data/jwt-blocklist.jsonl
+soma serve --port 8420            # server reads the file on startup + polls mtime
+```
+
+Without the env var, nothing changes — the revocation check is a
+no-op and the server behaves exactly like pre-revocation Phase 4.
+
+### Revoke a token
+
+```bash
+# Full token (server pulls jti + exp from signed claims):
+soma auth revoke --token "$LEAKED" --reason "leaked on slack 2026-04-16"
+
+# Just the jti (from an access log), with explicit exp:
+soma auth revoke --jti 3a8b-... --exp 1715817600 --reason "suspected compromise"
+```
+
+Propagation:
+
+- Same process issuing the revoke: instant (in-memory cache updated
+  at write time).
+- Other processes on the same host (uvicorn worker, sibling `soma
+  serve` instance): up to 30 s (mtime poll cadence).
+- Token verification: the next request made by the revoked token
+  returns HTTP 401 `{"detail": "token revoked"}` with the
+  `soma_auth_failures_total{reason="revoked_token"}` counter
+  advancing.
+
+### Inspect / audit
+
+```bash
+soma auth list-revoked     # one JSON per live entry
+```
+
+Past-exp entries are hidden because the JWT verifier rejects them on
+`exp` alone — they'd clutter the audit view without adding
+information.
+
+### GC cadence
+
+The file grows append-only. Run `soma auth gc` on a cron or systemd
+timer to drop past-exp entries — once a day is ample for most
+workloads. The GC rewrites the file atomically via temp + replace
+under the same sibling-file lock that revocations take, so it's safe
+alongside active writers.
+
+```bash
+# /etc/cron.daily/soma-gc
+#!/bin/sh
+env SOMA_JWT_BLOCKLIST_PATH=/var/lib/soma/jwt-blocklist.jsonl soma auth gc
+```
+
+### Operational notes
+
+- **Single source of truth.** One file per deployment. Point every
+  `soma serve` worker at the same path; they coordinate via
+  portalocker + mtime poll.
+- **No in-memory-only mode.** Revocations always persist. An
+  in-memory list that disappears on restart would be a footgun.
+- **Redis backend is deferred.** For multi-host deploys the right
+  answer is a Redis-backed blocklist with automatic TTL. That's
+  tier-2 and ships as `soma[redis-revocation]` when the operator
+  demand lands. See `docs/plans/2026-04-16-jwt-revocation.md` for
+  the rationale.
+- **Field limits.** `reason` is capped at 256 chars at the store
+  boundary; longer strings are truncated. Keep reasons concise —
+  they're an operator note, not an incident report.
+- **Reading the file by hand.** JSONL, one record per line. Safe to
+  `jq` / `grep` for forensics:
+
+    ```bash
+    jq -r 'select(.reason | test("slack"))' /path/to/jwt-blocklist.jsonl
+    ```
+
+---
+
 ## Deprecation of `SOMA_API_KEY`
 
 `SOMA_API_KEY` still works so existing compose files keep running, but
@@ -221,5 +337,6 @@ Auth failures are counted at `soma_auth_failures_total{reason=...}`:
 | `invalid_token`       | bearer token fails signature / format / wrong secret     |
 | `expired_token`       | token past `exp + leeway`                                |
 | `insufficient_perm`   | valid token but lacks the perm for the requested route   |
+| `revoked_token`       | token's `jti` is in `SOMA_JWT_BLOCKLIST_PATH`            |
 
 See `docs/observability.md` for the full metric catalogue.

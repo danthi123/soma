@@ -139,6 +139,23 @@ All notable changes to SOMA are documented here.
   RS256 tradeoffs, route perm map, CLI reference, rotation workflow,
   deprecation timeline for `SOMA_API_KEY`).
 - `pyjwt[crypto]>=2.8` added to the `serve` extra.
+- **JWT revocation blocklist** — file-backed JSONL store at
+  `SOMA_JWT_BLOCKLIST_PATH` closes the "revoke a leaked token without
+  nuking `SOMA_JWT_SECRET`" gap. New module
+  `src/soma/auth_revocation.py` with `BlocklistBackend` Protocol,
+  `RevocationRecord` dataclass, and `FileBlocklist` impl
+  (portalocker-serialised writes + mtime-polled reads, ~30 s
+  propagation across workers). `verify_token` gains an optional
+  `blocklist=` kwarg; `serve.py` wires a module-level
+  `_blocklist = blocklist_from_env()` so revoked tokens return 401
+  `{"detail": "token revoked"}` with the new
+  `soma_auth_failures_total{reason="revoked_token"}` counter. Unset
+  env var = pre-revocation Phase 4 behaviour intact. New CLI:
+  `soma auth revoke` (either `--token` or `--jti/--exp`),
+  `soma auth list-revoked`, `soma auth gc`. Design memo:
+  `docs/plans/2026-04-16-jwt-revocation.md`; operator reference:
+  "Revocation" section of `docs/auth.md`. Redis-backed variant stays
+  deferred (see `docs/plans/deferred-items.md`).
 
 ### Added — observability
 

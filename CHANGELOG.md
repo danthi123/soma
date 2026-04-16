@@ -78,6 +78,76 @@ All notable changes to SOMA are documented here.
 - **README feature comparison**: Pluggable-vector-backends row now
   reads *yes (InProc + Qdrant + LanceDB)*.
 
+### Changed — docs refresh (Phase 14)
+
+- **README rewrite** for the post-push feature set. Replaced the
+  stale "drop-in vector DB replacement" pitch with the local-first
+  agent-memory framing from `docs/positioning.md`. Feature
+  comparison table now includes ConversationalMemory, multi-user
+  scoping, JWT auth + revocation, Grafana dashboards, LanceDB
+  backend, and the `soma bundle` CLI group. Install extras list
+  updated (`metrics`, `otel`, `qdrant`, `lancedb`); deduplicated
+  legacy entries. Trimmed from 305 to 181 lines.
+- **Quickstart rewrite** (`docs/quickstart.md`) — end-to-end
+  agent-memory flow in 10 copy-paste-runnable steps: install
+  extras, start the server, mint a JWT, create a bundle, use
+  ConversationalMemory with optional `extractor_llm=`, pass
+  `user_id` through metadata for multi-user scoping, retrieve
+  with filters, check bundle state, revoke a leaked token,
+  import a Grafana dashboard.
+- **Cookbook +2 recipes**: §19 LanceDB backend (with correct
+  `LanceDBBackend(path=, dim=, index_type=)` ctor + MemoryLayer
+  wiring), §20 Prometheus + Grafana operational recipe (dashboard
+  list, PromQL reference, JSON-logs env var).
+- **Positioning refresh** (`docs/positioning.md`): swapped stale
+  benchmark bullets (2.8× store / 85 KB vs 1920 KB) for current
+  numbers from `scale_enterprise_100k.md` and `backend_matrix.md`.
+  Deleted the Stage-2/3/4 roadmap block (every item shipped);
+  added five new feature-comparison-matrix rows (conversational
+  extract/reconcile, multi-user scoping, JWT auth/revocation,
+  Grafana, pluggable backends).
+
+### Changed — polish audit + small cleanup (Phase 15)
+
+- **mypy clean on `src/soma/memory/api.py`**: resolved 9 pre-existing
+  errors concentrated on the `has_encoder` Optional-narrowing
+  pattern. Bound `encoder = self._encoder` local variables so mypy
+  narrows the union, replaced boolean `has_encoder` guards with
+  `is not None` checks on the local, annotated `_COMPARE_OPS` as
+  `dict[str, Callable[[Any, Any], bool]]`, added explicit `None`
+  guard on `model.get_sentence_embedding_dimension()` (sbert's
+  declared Optional return). Zero behavioural change.
+- **TypeScript retry middleware** (`clients/typescript/src/retry.ts`)
+  — standalone `withRetry(fetchImpl, opts)` wrapper around any
+  fetch implementation, re-exported from `@soma-ai/client`'s index.
+  Options: `maxRetries` (default 3), `backoff` (`"linear"` |
+  `"exponential"`, default exponential), `initialDelayMs` (default
+  200), `retryOn` (predicate, default retries on 502/503/504).
+  Does NOT retry 4xx by default. 11 new tests covering retry
+  behaviour, give-up-after-max, custom predicates, 4xx skip.
+- **Audit pass — nothing else actionable.** AST-scanned `src/`
+  for duplicate method defs (only false-positive in
+  `llamaindex.py`'s mutually-exclusive `_HAS_LLAMAINDEX` branches),
+  grepped for stale metric name refs post-Phase 9 (all clean in
+  `src/` / `tests/` / `deploy/grafana/`), checked new files
+  (`bundle.py`, `auth_revocation.py`, `lancedb.py`) for
+  error-handling consistency with surrounding code (all match).
+  Reassuring signal that the parallel-agent push didn't leave
+  major artifacts.
+
+### Added — 1M enterprise-scale benchmark row (Task #174)
+
+- **`benchmarks/reports/scale_enterprise_1000000.md`**: index-only
+  methodology at 1M entries. Headline — SOMA 5.0s store vs Chroma
+  4.2 hrs (~3000× faster); SOMA-HNSW 4.44 ms retrieve vs Chroma
+  127 ms (28.6× faster); 1.69 GB vs 2.37 GB on disk (1.41× smaller).
+  Recall@5 actually favours SOMA-flat (0.270) over Chroma (0.230)
+  at this scale — more topic-coherent ordering under linear scan.
+- **`paper-draft.md` §3.3 extended** with the 1M row + findings
+  paragraph tying the mechanics delta to real-time chat-turn
+  budgets (4.44 ms retrieve at 1M is still well under a frame
+  budget).
+
 ### Added — conversational-memory ergonomics (Phase 11)
 
 - **`extractor_llm=` kwarg on `ConversationalMemory`**: lets users

@@ -153,42 +153,44 @@ topic clusters, 100 probes, post-warmup, no embed cost in any row):
 | 100,000 | soma-flat | **0.00** | **0.4s** | 12.75 | **168.6** |
 | 100,000 | soma-hnsw | 0.00 | 0.4s | **5.58** | 168.6 |
 | 100,000 | chroma | 14.16 | 23.6min | 28.56 | 238.7 |
+| 1,000,000 | soma-flat | **0.00** | **5.0s** | 77.09 | **1687.2** |
+| 1,000,000 | soma-hnsw | 0.00 | 4.7s | **4.44** | 1687.2 |
+| 1,000,000 | chroma | 15.15 | 252.5min | 127.16 | 2372.2 |
 
 Recall@5 (topic-cluster cohesion, not single-truth) is effectively
 identical across systems at every N — 0.110 at 5K, 0.116–0.122 at
-20K, 0.17–0.19 at 100K — so the table above focuses on the mechanics
-differences.
+20K, 0.17–0.19 at 100K, and 0.23–0.27 at 1M (SOMA-flat edges ahead
+at 1M with 0.270 vs Chroma's 0.230 — more topic-coherent ordering
+under linear scan). Table above focuses on the mechanics differences.
 
 **Findings:**
 
-- **Store: SOMA is 1000–3500× faster when embed cost is amortized.**
+- **Store: SOMA is 1000–3000× faster when embed cost is amortized.**
   SOMA's `store` is essentially a tensor-append + JSON-index update
   (~0 ms); Chroma pays 14–17 ms per insert for SQLite + HNSW metadata
   regardless of scale. This is the *actual* index/storage mechanics
   gap. Ratios grow with N: **~1000× at 5K, ~3180× at 20K, ~3535× at
-  100K** — Chroma's per-insert floor doesn't amortize.
+  100K, ~3030× at 1M** — Chroma's per-insert floor doesn't amortize.
+  At 1M the absolute wall-clock gap becomes dramatic: **5.0 s vs
+  252.5 min (4.2 hrs)**.
 - **Retrieve scaling:** SOMA-hnsw wins at every N tested — **1.53×
   at 5K** (5.81 ms vs 8.91 ms), **1.33× at 20K** (6.34 ms vs 8.44
-  ms), **5.12× at 100K** (5.58 ms vs 28.56 ms). SOMA-flat loses at
-  small N (linear scan over 5K–20K is slightly slower than Chroma's
-  HNSW) but crosses over by 20K (7.76 ms beats Chroma's 8.44 ms) and
-  wins 2.24× at 100K. The crossover reflects Chroma's metadata
-  overhead growing with N while FAISS kernels stay tight.
-- **Disk: 1.42–1.66× smaller across the range.** 1.66× at 5K,
-  1.46× at 20K, 1.42× at 100K — both systems approach the
-  raw-embedding floor (N × 384-d × 4B) but SOMA stays closer to it
-  at every N.
+  ms), **5.12× at 100K** (5.58 ms vs 28.56 ms), and **28.6× at 1M**
+  (4.44 ms vs 127.16 ms). SOMA-flat crosses over from losing at 5K
+  to winning 2.24× at 100K and 1.65× at 1M against Chroma's linear
+  degradation. The crossover reflects Chroma's metadata overhead
+  growing with N while FAISS kernels stay tight.
+- **Disk: 1.40–1.66× smaller across the range.** 1.66× at 5K,
+  1.46× at 20K, 1.42× at 100K, 1.41× at 1M — both systems approach
+  the raw-embedding floor (N × 384-d × 4B = 1.47 GB at 1M) but SOMA
+  stays closer to it at every N. At 1M: 1.69 GB vs 2.37 GB.
 
 The headline at enterprise scale is the store gap: **SOMA ingests
-100K entries in 0.4 seconds vs Chroma's 23.6 minutes**. Neither
-system is embedding in this test — both are indexing identical
-pre-computed vectors. This is the floor of each system's per-entry
-metadata overhead, and Chroma's is ~1400× higher than SOMA's in
-absolute ms/op.
-
-(Pending: 1M run to confirm the trend extends to the next tier —
-projected overnight based on linear extrapolation of Chroma's
-~16 ms/op constant × 1M = ~4.4 hrs for Chroma store alone.)
+1M entries in 5 seconds vs Chroma's 4.2 hours** (identical
+pre-computed vectors, so the delta is pure metadata overhead). This
+is the floor of each system's per-entry cost, and Chroma's is
+~3000× higher than SOMA's. Retrieve at 1M with HNSW is **4.44 ms**
+— still well within real-time chat-turn budgets even at this scale.
 
 ### 3.4 Cross-validation on real conversational data (LoCoMo)
 

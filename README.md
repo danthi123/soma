@@ -4,11 +4,30 @@
 
 A drop-in replacement for vector-DB + RAG where the store is a plastic graph that grows and prunes with use. Store text, retrieve by meaning, and let the structure reshape itself over time. Everything local, everything on your disk, LLM-agnostic.
 
-## Quick start
+## Install
 
 ```bash
+# Minimal (torch + tokenizers only, ~2GB):
 pip install -e .
+
+# With sentence-transformers for quality retrieval:
+pip install -e ".[sbert]"
+
+# With REST API server:
+pip install -e ".[serve]"
+
+# With FAISS for >10K entries:
+pip install -e ".[ann]"
+
+# With framework adapters:
+pip install -e ".[langchain]"   # LangChain
+pip install -e ".[llamaindex]"  # LlamaIndex
+
+# Everything:
+pip install -e ".[sbert,ann,serve,langchain,llamaindex]"
 ```
+
+## Quick start
 
 ```python
 from soma.memory import MemoryLayer

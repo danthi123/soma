@@ -20,6 +20,23 @@ Swapping adapters does not change MemoryLayer's Python-facing API:
 `save`, and `load` behave the same. What changes is where the vectors
 live and how the query runs.
 
+## Bundle storage
+
+Vector backends decide where live vectors sit at query time; bundle
+storage decides where `MemoryLayer.save(...)` writes the durable
+snapshot. These are orthogonal — every backend above snapshots to
+the same bundle layout, and any backend can save/load to any of:
+
+- `file:///abs/path` or a plain local path (default).
+- `s3://bucket/prefix` — AWS S3 or any S3-compatible store
+  (MinIO, Cloudflare R2, DigitalOcean Spaces, Backblaze B2) via
+  an `endpoint=` query-string override.
+- `gs://bucket/prefix` — Google Cloud Storage.
+
+See [cloud.md](cloud.md) for the full object-storage URL reference
+and deployment recipes (AWS Lambda + S3, Cloud Run + GCS, Fly
+Machines + Cloudflare R2).
+
 ## When to choose which
 
 | Use case | Backend | Why |

@@ -64,3 +64,5 @@ export function createClient(options: SomaClientOptions) {
 }
 
 export type { paths, components, operations } from "./schema";
+export { withRetry } from "./retry";
+export type { RetryOptions } from "./retry";

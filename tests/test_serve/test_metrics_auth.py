@@ -82,9 +82,7 @@ def test_metrics_public_by_default_no_auth(monkeypatch: pytest.MonkeyPatch) -> N
 def test_metrics_explicit_public_1_stays_public(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    reloaded = _fresh_serve(
-        monkeypatch, SOMA_JWT_SECRET=_SECRET, SOMA_METRICS_PUBLIC="1"
-    )
+    reloaded = _fresh_serve(monkeypatch, SOMA_JWT_SECRET=_SECRET, SOMA_METRICS_PUBLIC="1")
     client = TestClient(reloaded.app)
     r = client.get("/metrics")
     assert r.status_code == 200, r.text
@@ -94,9 +92,7 @@ def test_metrics_explicit_public_1_stays_public(
 # Gated — SOMA_METRICS_PUBLIC=0 requires a bearer with read perm
 # ------------------------------------------------------------------
 def test_metrics_gated_requires_bearer(monkeypatch: pytest.MonkeyPatch) -> None:
-    reloaded = _fresh_serve(
-        monkeypatch, SOMA_JWT_SECRET=_SECRET, SOMA_METRICS_PUBLIC="0"
-    )
+    reloaded = _fresh_serve(monkeypatch, SOMA_JWT_SECRET=_SECRET, SOMA_METRICS_PUBLIC="0")
     client = TestClient(reloaded.app)
     r = client.get("/metrics")
     assert r.status_code == 401, r.text
@@ -107,9 +103,7 @@ def test_metrics_gated_accepts_admin_bearer(
 ) -> None:
     from soma.auth import issue_token
 
-    reloaded = _fresh_serve(
-        monkeypatch, SOMA_JWT_SECRET=_SECRET, SOMA_METRICS_PUBLIC="0"
-    )
+    reloaded = _fresh_serve(monkeypatch, SOMA_JWT_SECRET=_SECRET, SOMA_METRICS_PUBLIC="0")
     client = TestClient(reloaded.app)
     token = issue_token(
         sub="ops",
@@ -133,9 +127,7 @@ def test_metrics_gated_read_perm_sufficient(
     """
     from soma.auth import issue_token
 
-    reloaded = _fresh_serve(
-        monkeypatch, SOMA_JWT_SECRET=_SECRET, SOMA_METRICS_PUBLIC="0"
-    )
+    reloaded = _fresh_serve(monkeypatch, SOMA_JWT_SECRET=_SECRET, SOMA_METRICS_PUBLIC="0")
     client = TestClient(reloaded.app)
     token = issue_token(
         sub="prom-scraper",
@@ -148,9 +140,7 @@ def test_metrics_gated_read_perm_sufficient(
 
 
 def test_metrics_gated_bogus_bearer_401(monkeypatch: pytest.MonkeyPatch) -> None:
-    reloaded = _fresh_serve(
-        monkeypatch, SOMA_JWT_SECRET=_SECRET, SOMA_METRICS_PUBLIC="0"
-    )
+    reloaded = _fresh_serve(monkeypatch, SOMA_JWT_SECRET=_SECRET, SOMA_METRICS_PUBLIC="0")
     client = TestClient(reloaded.app)
     r = client.get("/metrics", headers={"Authorization": "Bearer not.a.jwt"})
     assert r.status_code == 401
@@ -160,13 +150,9 @@ def test_metrics_gated_legacy_api_key_works(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Legacy SOMA_API_KEY escape hatch still admits /metrics when gated."""
-    reloaded = _fresh_serve(
-        monkeypatch, SOMA_API_KEY="legacy-scrape-key", SOMA_METRICS_PUBLIC="0"
-    )
+    reloaded = _fresh_serve(monkeypatch, SOMA_API_KEY="legacy-scrape-key", SOMA_METRICS_PUBLIC="0")
     client = TestClient(reloaded.app)
-    r = client.get(
-        "/metrics", headers={"Authorization": "Bearer legacy-scrape-key"}
-    )
+    r = client.get("/metrics", headers={"Authorization": "Bearer legacy-scrape-key"})
     assert r.status_code == 200, r.text
 
 

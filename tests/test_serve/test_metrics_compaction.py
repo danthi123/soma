@@ -24,9 +24,7 @@ try:
 except ImportError:  # pragma: no cover
     _prom_missing = True
 
-pytestmark = pytest.mark.skipif(
-    _prom_missing, reason="prometheus-client not installed"
-)
+pytestmark = pytest.mark.skipif(_prom_missing, reason="prometheus-client not installed")
 
 
 def _hash_embed(text: str) -> torch.Tensor:
@@ -61,25 +59,15 @@ class TestCompactionMetrics:
 
         mem = MemoryLayer(embed_fn=_hash_embed, embed_dim=16)
         mem._bundle_name = "ok_bundle"  # type: ignore[attr-defined]
-        before_ct = _counter_val(
-            COMPACTION_TOTAL.labels(bundle="ok_bundle", outcome="ok")
-        )
-        before_obs = _histogram_count(
-            COMPACTION_SECONDS, {"bundle": "ok_bundle"}
-        )
+        before_ct = _counter_val(COMPACTION_TOTAL.labels(bundle="ok_bundle", outcome="ok"))
+        before_obs = _histogram_count(COMPACTION_SECONDS, {"bundle": "ok_bundle"})
         mem.consolidate()  # no SOMA attached -> returns 0, ok outcome
-        after_ct = _counter_val(
-            COMPACTION_TOTAL.labels(bundle="ok_bundle", outcome="ok")
-        )
-        after_obs = _histogram_count(
-            COMPACTION_SECONDS, {"bundle": "ok_bundle"}
-        )
+        after_ct = _counter_val(COMPACTION_TOTAL.labels(bundle="ok_bundle", outcome="ok"))
+        after_obs = _histogram_count(COMPACTION_SECONDS, {"bundle": "ok_bundle"})
         assert after_ct - before_ct == 1
         assert after_obs - before_obs == 1
 
-    def test_compaction_total_records_error_outcome(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_compaction_total_records_error_outcome(self, monkeypatch: pytest.MonkeyPatch) -> None:
         from soma.memory.api import MemoryLayer
         from soma.metrics import COMPACTION_SECONDS, COMPACTION_TOTAL
 
@@ -91,20 +79,12 @@ class TestCompactionMetrics:
 
         monkeypatch.setattr(mem, "_consolidate_impl", _boom)
 
-        before_ct = _counter_val(
-            COMPACTION_TOTAL.labels(bundle="err_bundle", outcome="error")
-        )
-        before_obs = _histogram_count(
-            COMPACTION_SECONDS, {"bundle": "err_bundle"}
-        )
+        before_ct = _counter_val(COMPACTION_TOTAL.labels(bundle="err_bundle", outcome="error"))
+        before_obs = _histogram_count(COMPACTION_SECONDS, {"bundle": "err_bundle"})
         with pytest.raises(RuntimeError, match="kaboom"):
             mem.consolidate()
-        after_ct = _counter_val(
-            COMPACTION_TOTAL.labels(bundle="err_bundle", outcome="error")
-        )
-        after_obs = _histogram_count(
-            COMPACTION_SECONDS, {"bundle": "err_bundle"}
-        )
+        after_ct = _counter_val(COMPACTION_TOTAL.labels(bundle="err_bundle", outcome="error"))
+        after_obs = _histogram_count(COMPACTION_SECONDS, {"bundle": "err_bundle"})
         # Error outcome still ticks the counter AND records a timing.
         assert after_ct - before_ct == 1
         assert after_obs - before_obs == 1
@@ -119,24 +99,16 @@ class TestCompactionMetrics:
 
         mem = MemoryLayer(embed_fn=_hash_embed, embed_dim=16)
         mem._bundle_name = "mixed_bundle"  # type: ignore[attr-defined]
-        before_ok = _counter_val(
-            COMPACTION_TOTAL.labels(bundle="mixed_bundle", outcome="ok")
-        )
-        before_err = _counter_val(
-            COMPACTION_TOTAL.labels(bundle="mixed_bundle", outcome="error")
-        )
+        before_ok = _counter_val(COMPACTION_TOTAL.labels(bundle="mixed_bundle", outcome="ok"))
+        before_err = _counter_val(COMPACTION_TOTAL.labels(bundle="mixed_bundle", outcome="error"))
         mem.consolidate()  # ok
         monkeypatch.setattr(
             mem, "_consolidate_impl", lambda: (_ for _ in ()).throw(RuntimeError("x"))
         )
         with pytest.raises(RuntimeError):
             mem.consolidate()
-        after_ok = _counter_val(
-            COMPACTION_TOTAL.labels(bundle="mixed_bundle", outcome="ok")
-        )
-        after_err = _counter_val(
-            COMPACTION_TOTAL.labels(bundle="mixed_bundle", outcome="error")
-        )
+        after_ok = _counter_val(COMPACTION_TOTAL.labels(bundle="mixed_bundle", outcome="ok"))
+        after_err = _counter_val(COMPACTION_TOTAL.labels(bundle="mixed_bundle", outcome="error"))
         assert after_ok - before_ok == 1
         assert after_err - before_err == 1
 
@@ -173,9 +145,7 @@ class TestBundleLabelDisabled:
         monkeypatch.setenv("SOMA_METRICS_BUNDLE_LABEL_DISABLE", "0")
         assert _bundle_label("my_bundle") == "my_bundle"
 
-    def test_store_emits_disabled_label_when_env_set(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_store_emits_disabled_label_when_env_set(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """End-to-end: setting the env at store() time collapses the
         bundle label on the resulting STORE_TOTAL series."""
         monkeypatch.setenv("SOMA_METRICS_BUNDLE_LABEL_DISABLE", "1")
@@ -203,11 +173,7 @@ class TestBundleLabelDisabled:
 
         mem = MemoryLayer(embed_fn=_hash_embed, embed_dim=16)
         mem._bundle_name = "cardinality_big"  # type: ignore[attr-defined]
-        before = _counter_val(
-            COMPACTION_TOTAL.labels(bundle="_disabled", outcome="ok")
-        )
+        before = _counter_val(COMPACTION_TOTAL.labels(bundle="_disabled", outcome="ok"))
         mem.consolidate()
-        after = _counter_val(
-            COMPACTION_TOTAL.labels(bundle="_disabled", outcome="ok")
-        )
+        after = _counter_val(COMPACTION_TOTAL.labels(bundle="_disabled", outcome="ok"))
         assert after - before == 1

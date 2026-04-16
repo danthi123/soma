@@ -531,7 +531,7 @@ class MemoryLayer:
             if applied:
                 # Backend already invalidated on each add/remove inside
                 # _apply_record; we just emit the reload metric here.
-                _m.RELOAD_TOTAL.labels(bundle=self._bundle_name).inc()
+                _m.RELOAD_TOTAL.labels(bundle=_m._bundle_label(self._bundle_name)).inc()
             return applied
 
     def _apply_record(self, rec: WalRecord) -> None:
@@ -815,8 +815,9 @@ class MemoryLayer:
             if self._wal is not None:
                 self._last_wal_offset = self._wal.ops_size_on_disk()
             self._maybe_compact()
-        _m.STORE_TOTAL.labels(bundle=self._bundle_name).inc()
-        _m.ENTRIES.labels(bundle=self._bundle_name).set(len(self._ids))
+        bundle_label = _m._bundle_label(self._bundle_name)
+        _m.STORE_TOTAL.labels(bundle=bundle_label).inc()
+        _m.ENTRIES.labels(bundle=bundle_label).set(len(self._ids))
         if (
             self._auto_consolidate_every > 0
             and self._soma is not None
@@ -887,8 +888,9 @@ class MemoryLayer:
             if self._wal is not None:
                 self._last_wal_offset = self._wal.ops_size_on_disk()
             self._maybe_compact()
-        _m.STORE_BATCH_TOTAL.labels(bundle=self._bundle_name).inc()
-        _m.ENTRIES.labels(bundle=self._bundle_name).set(len(self._ids))
+        bundle_label = _m._bundle_label(self._bundle_name)
+        _m.STORE_BATCH_TOTAL.labels(bundle=bundle_label).inc()
+        _m.ENTRIES.labels(bundle=bundle_label).set(len(self._ids))
         if (
             self._auto_consolidate_every > 0
             and self._soma is not None
@@ -985,10 +987,9 @@ class MemoryLayer:
             )
         results = candidates[:k]
         elapsed = time.monotonic() - started
-        _m.RETRIEVE_TOTAL.labels(bundle=self._bundle_name, backend=backend).inc()
-        _m.RETRIEVE_LATENCY.labels(
-            bundle=self._bundle_name, backend=backend
-        ).observe(elapsed)
+        bundle_label = _m._bundle_label(self._bundle_name)
+        _m.RETRIEVE_TOTAL.labels(bundle=bundle_label, backend=backend).inc()
+        _m.RETRIEVE_LATENCY.labels(bundle=bundle_label, backend=backend).observe(elapsed)
         # Single structured-log line per retrieve so operators can trace
         # every lookup in Loki/Datadog/CloudWatch without parsing format
         # strings. Schema is pinned in ``docs/observability.md`` and
@@ -1279,8 +1280,9 @@ class MemoryLayer:
             if self._wal is not None:
                 self._last_wal_offset = self._wal.ops_size_on_disk()
             self._maybe_compact()
-        _m.FORGET_TOTAL.labels(bundle=self._bundle_name).inc()
-        _m.ENTRIES.labels(bundle=self._bundle_name).set(len(self._ids))
+        bundle_label = _m._bundle_label(self._bundle_name)
+        _m.FORGET_TOTAL.labels(bundle=bundle_label).inc()
+        _m.ENTRIES.labels(bundle=bundle_label).set(len(self._ids))
         return True
 
     def consolidate(self) -> int:
@@ -1313,9 +1315,7 @@ class MemoryLayer:
             raise
         finally:
             elapsed = time.monotonic() - started
-            _m.COMPACTION_TOTAL.labels(
-                bundle=bundle_label, outcome=outcome
-            ).inc()
+            _m.COMPACTION_TOTAL.labels(bundle=bundle_label, outcome=outcome).inc()
             _m.COMPACTION_SECONDS.labels(bundle=bundle_label).observe(elapsed)
 
     def _consolidate_impl(self) -> int:

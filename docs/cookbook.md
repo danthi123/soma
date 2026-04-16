@@ -190,7 +190,66 @@ curl -X POST http://localhost:8420/retrieve \
   -d '{"query": "where does the user live?", "k": 3}'
 ```
 
-## 12. Inspect a bundle without loading the LLM
+## 12. Hybrid lexical + vector retrieval
+
+When queries hinge on specific terminology (proper names, domain
+jargon, numeric IDs) that sbert's sub-word tokenizer smears into a
+broader semantic neighbourhood, add BM25 alongside cosine:
+
+```python
+# alpha=0 → pure BM25; alpha=1 → pure cosine; 0.3–0.5 is typical.
+hits = mem.retrieve("reading list for Kubernetes RBAC", k=5, hybrid_alpha=0.3)
+```
+
+BM25 index is built lazily and invalidated when new entries are
+stored. No extra deps.
+
+## 13. Cross-encoder re-ranking
+
+Over-fetch cosine candidates, re-rank them with a small
+cross-encoder (~5–10 ms/candidate on CPU). Usually +5–15% Recall@5
+on real queries:
+
+```python
+from soma.memory.rerank import CrossEncoderReranker
+
+mem.attach_reranker(CrossEncoderReranker())  # lazy model load
+hits = mem.retrieve("...", k=5, rerank_top_n=20)
+
+# Combine with hybrid for best of both:
+hits = mem.retrieve("...", k=5, hybrid_alpha=0.3, rerank_top_n=20)
+```
+
+The pre-rerank score is kept in `h.metadata["_pre_rerank_score"]` so
+you can compare.
+
+## 14. Multi-tenant REST server
+
+One server, many brains. Tenant routes under `/bundles/{name}`:
+
+```bash
+# Start server (optional API key for bearer auth):
+SOMA_API_KEY=change-me SOMA_BUNDLES_DIR=./data/bundles soma serve --port 8420
+
+# Per-tenant store:
+curl -X POST http://localhost:8420/bundles/alex/store \
+  -H 'Authorization: Bearer change-me' \
+  -H 'Content-Type: application/json' \
+  -d '{"text": "alex prefers vegetarian"}'
+
+curl -X POST http://localhost:8420/bundles/bobbi/store \
+  -H 'Authorization: Bearer change-me' \
+  -H 'Content-Type: application/json' \
+  -d '{"text": "bobbi prefers seafood"}'
+
+# Health check (no auth):
+curl http://localhost:8420/health
+```
+
+Each `/bundles/{name}` path maps to `$SOMA_BUNDLES_DIR/{name}/` on
+disk; bundles are loaded lazily and cached in memory.
+
+## 15. Inspect a bundle without loading the LLM
 
 ```bash
 soma stats  --bundle brain/

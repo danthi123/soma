@@ -146,6 +146,13 @@ class MemoryLayer:
         # seen any of the existing entries yet).
         self._consolidation_cursor: int = 0
 
+        # Optional recall boosters — lazy, opt-in at retrieve time.
+        # BM25 lexical index for hybrid search; rebuilt when stale.
+        self._bm25_index: Any = None
+        self._bm25_version: int = -1
+        # Cross-encoder (or any Reranker) for re-ranking top-N.
+        self._reranker: Any = None
+
     # ------------------------------------------------------------------
     # Factory methods
     # ------------------------------------------------------------------
@@ -226,7 +233,14 @@ class MemoryLayer:
             self._stores_since_consolidation = 0
         return node_id
 
-    def retrieve(self, query: str, k: int = 5) -> list[MemoryHit]:
+    def retrieve(
+        self,
+        query: str,
+        k: int = 5,
+        *,
+        hybrid_alpha: float | None = None,
+        rerank_top_n: int | None = None,
+    ) -> list[MemoryHit]:
         """Return up to k entries most similar to ``query`` by cosine.
 
         When a SOMA graph is attached AND consolidation has been run
@@ -234,11 +248,23 @@ class MemoryLayer:
         two-stage pipeline: cosine candidates are re-ranked by a blend
         of cosine score and graph-proximity score derived from SOMA's
         output activations.
+
+        Optional recall boosts:
+
+        - ``hybrid_alpha`` in [0, 1]: blend cosine with BM25 lexical
+          scores. ``0.0`` = pure BM25, ``1.0`` = pure cosine, ``0.5``
+          is a reasonable default. BM25 index is built lazily.
+        - ``rerank_top_n``: over-fetch ``rerank_top_n`` candidates and
+          re-score with the attached :class:`Reranker` (see
+          :meth:`attach_reranker`). Typical: ``3-5× k``.
         """
         if k <= 0:
             raise ValueError(f"k must be positive, got {k}")
         if not self._ids:
             return []
+        if hybrid_alpha is not None and not 0.0 <= hybrid_alpha <= 1.0:
+            raise ValueError(f"hybrid_alpha must be in [0,1], got {hybrid_alpha}")
+
         self._maybe_build_faiss()
         q_vec = self._embed(query)
         has_graph_signal = (
@@ -246,9 +272,26 @@ class MemoryLayer:
             and self._soma is not None
             and any(a is not None for a in self._soma_activations)
         )
-        if has_graph_signal:
-            return self._retrieve_with_rerank(query, q_vec, k=k)
-        return self._rank(q_vec, k=k, exclude_idx=None)
+
+        # Pre-rerank candidate pool: hybrid > graph rerank > plain cosine.
+        candidate_k = rerank_top_n if rerank_top_n else k
+        if hybrid_alpha is not None:
+            candidates = self._retrieve_hybrid(
+                query, q_vec, k=candidate_k, alpha=hybrid_alpha
+            )
+        elif has_graph_signal:
+            candidates = self._retrieve_with_rerank(query, q_vec, k=candidate_k)
+        else:
+            candidates = self._rank(q_vec, k=candidate_k, exclude_idx=None)
+
+        if rerank_top_n and self._reranker is not None and candidates:
+            candidates = self._apply_reranker(query, candidates, top_k=k)
+        elif rerank_top_n and self._reranker is None:
+            raise ValueError(
+                "rerank_top_n set but no reranker attached. "
+                "Call mem.attach_reranker(CrossEncoderReranker()) first."
+            )
+        return candidates[:k]
 
     def related(self, node_id: str, k: int = 5) -> list[MemoryHit]:
         """Return up to k entries most similar to the entry at ``node_id``."""
@@ -257,6 +300,105 @@ class MemoryLayer:
         idx = self._ids.index(node_id)
         q_vec = self._embeddings_list[idx]
         return self._rank(q_vec, k=k, exclude_idx=idx)
+
+    # ------------------------------------------------------------------
+    # Recall boosters — hybrid lexical + cross-encoder re-ranking
+    # ------------------------------------------------------------------
+    def attach_reranker(self, reranker: Any) -> None:
+        """Attach any object satisfying the :class:`Reranker` protocol
+        (``score(query, candidates) -> list[float]``). After attaching,
+        pass ``rerank_top_n=N`` to :meth:`retrieve` to over-fetch N
+        cosine candidates and re-rank them with this model."""
+        self._reranker = reranker
+
+    def _maybe_build_bm25(self) -> None:
+        """Lazily (re)build the BM25 index when stale."""
+        if self._bm25_index is not None and self._bm25_version == self._step:
+            return
+        from soma.memory.bm25 import BM25Index
+
+        idx = BM25Index()
+        idx.build(list(self._texts))
+        self._bm25_index = idx
+        self._bm25_version = self._step
+
+    def _retrieve_hybrid(
+        self, query: str, q_vec: torch.Tensor, *, k: int, alpha: float
+    ) -> list[MemoryHit]:
+        """Blend cosine + BM25 with weight ``alpha`` on cosine.
+
+        Both score streams are normalized to [0, 1] via max-normalization
+        before blending so a heavy-tailed BM25 score doesn't swamp the
+        bounded cosine score (or vice versa).
+        """
+        self._maybe_build_bm25()
+        # Over-fetch a union from both sides so we don't lose items that
+        # one side ranks high and the other ignores.
+        pool_k = min(max(k * 3, 20), len(self._ids))
+        cosine_hits = self._rank(q_vec, k=pool_k, exclude_idx=None)
+        bm25_hits = self._bm25_index.search(query, pool_k) if self._bm25_index else []
+
+        cos_max = max((h.score for h in cosine_hits), default=1e-9)
+        bm25_max = max((s for _, s in bm25_hits), default=1e-9)
+
+        cos_scores: dict[str, float] = {
+            h.node_id: (h.score / cos_max if cos_max > 0 else 0.0)
+            for h in cosine_hits
+        }
+        bm25_scores: dict[str, float] = {
+            self._ids[i]: (s / bm25_max if bm25_max > 0 else 0.0)
+            for i, s in bm25_hits
+        }
+
+        blended: dict[str, float] = {}
+        for node_id in set(cos_scores) | set(bm25_scores):
+            c = cos_scores.get(node_id, 0.0)
+            b = bm25_scores.get(node_id, 0.0)
+            blended[node_id] = alpha * c + (1.0 - alpha) * b
+
+        # Materialize MemoryHits with blended scores, sorted descending.
+        id_to_idx = {nid: i for i, nid in enumerate(self._ids)}
+        ranked = sorted(blended.items(), key=lambda kv: -kv[1])[:k]
+        out: list[MemoryHit] = []
+        for nid, score in ranked:
+            i = id_to_idx[nid]
+            out.append(
+                MemoryHit(
+                    node_id=nid,
+                    text=self._texts[i],
+                    score=float(score),
+                    metadata=dict(self._metadatas[i]),
+                    timestamp_step=self._timestamps[i],
+                )
+            )
+        return out
+
+    def _apply_reranker(
+        self, query: str, candidates: list[MemoryHit], *, top_k: int
+    ) -> list[MemoryHit]:
+        """Re-score ``candidates`` with the attached reranker and return
+        them in descending rerank order. The original cosine/hybrid
+        score is preserved in ``metadata['_pre_rerank_score']`` so
+        callers can compare if they want."""
+        if not candidates or self._reranker is None:
+            return candidates
+        texts = [h.text for h in candidates]
+        scores = self._reranker.score(query, texts)
+        rescored = []
+        for h, s in zip(candidates, scores, strict=True):
+            meta = dict(h.metadata)
+            meta["_pre_rerank_score"] = h.score
+            rescored.append(
+                MemoryHit(
+                    node_id=h.node_id,
+                    text=h.text,
+                    score=float(s),
+                    metadata=meta,
+                    timestamp_step=h.timestamp_step,
+                )
+            )
+        rescored.sort(key=lambda h: -h.score)
+        return rescored[:top_k]
 
     def get(self, node_id: str) -> MemoryHit | None:
         """Fetch an entry by id; ``None`` if unknown. Score is self-cosine (1.0)."""

@@ -84,7 +84,7 @@ def _cmd_serve(args: argparse.Namespace) -> int:
         )
         return 1
     uvicorn.run(
-        "soma.serve.app:app",
+        "soma.serve:app",
         host=args.host,
         port=args.port,
         reload=args.reload,

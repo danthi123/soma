@@ -6,8 +6,21 @@ services:
     volumes:
       - soma-data:/app/data
     environment:
+      # Default single-tenant bundle:
       - SOMA_BUNDLE_PATH=/app/data/memory
+      # Multi-tenant root: /bundles/{name}/... routes to here/{name}/
+      - SOMA_BUNDLES_DIR=/app/data/bundles
       - SOMA_EMBED_MODEL=all-MiniLM-L6-v2
+      # Uncomment to require `Authorization: Bearer <key>` on all
+      # non-/health, non-/version endpoints:
+      # - SOMA_API_KEY=change-me-for-production
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8420/health', timeout=2).read()"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 30s
+    restart: unless-stopped
 
 volumes:
   soma-data:

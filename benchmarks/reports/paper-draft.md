@@ -60,7 +60,7 @@ comparisons so the delta isolates storage/indexing mechanics.
 
 ## 3. Headline results
 
-**SOMA matches Chroma on retrieval quality across both synthetic and real-world conversational benchmarks (LoCoMo). It carries a durable 2.7–3.6× store-speed advantage (full pipeline), a disk advantage of 1.4–22× depending on N, and the opt-in HNSW backend wins on retrieve by 1.18–1.25× while preserving identical recall. At enterprise scale (100K entries under an index-only methodology that pre-computes embeddings once), the store gap widens dramatically to ~3500× because SOMA's single-tensor + JSON-index bundle has essentially zero per-insert overhead while Chroma's SQLite + HNSW metadata layer pays ~14 ms per write regardless of embed cost.**
+**SOMA matches Chroma on retrieval quality across both synthetic and real-world conversational benchmarks (LoCoMo). It carries a durable 2.7–3.6× store-speed advantage (full pipeline), a disk advantage of 1.4–22× depending on N, and the opt-in HNSW backend wins on retrieve by 1.18–1.25× while preserving identical recall. At enterprise scale (100K entries under an index-only methodology that pre-computes embeddings once), the store gap widens dramatically to ~3500× because SOMA's single-tensor + JSON-index bundle has essentially zero per-insert overhead while Chroma's SQLite + HNSW metadata layer pays ~14 ms per write regardless of embed cost. Opt-in recall boosters (hybrid BM25 + cross-encoder rerank) lift LoCoMo Recall@5 from 0.238 to 0.450 — a 21.2 pp absolute gain (89% relative) over the cosine baseline that any same-embedder vector DB reaches.**
 
 ### 3.1 Quality (50-fact labeled benchmark)
 
@@ -222,6 +222,43 @@ baseline numbers and bridges the gap with LLM reasoning. Our headline
 isn't the absolute number; it's that SOMA matches or beats Chroma
 on every metric while running 2.7× faster on store and 1.25× faster
 on retrieve.
+
+### 3.5 Recall boosters — beating the cosine ceiling
+
+§3.1–3.4 hold the retrieval pipeline fixed (pure cosine on sbert)
+so the comparison vs Chroma is mechanics-only. But cosine-on-sbert
+is a *ceiling* any same-embedder vector DB hits — the only way to
+beat peer systems on **recall** is to add something beyond cosine.
+We added two opt-in boosters on top of `MemoryLayer.retrieve()`:
+
+1. **Hybrid search** (`hybrid_alpha ∈ [0,1]`): blend cosine scores
+   with BM25-Okapi lexical scores. Pure-Python BM25 ships in-tree;
+   no extra deps.
+2. **Cross-encoder re-ranking** (`rerank_top_n=N`): over-fetch N
+   cosine candidates, re-score with a small cross-encoder
+   (`cross-encoder/ms-marco-MiniLM-L-6-v2`), return top-k of the
+   re-ranked list.
+
+From `recall_boost_locomo.md` (same LoCoMo corpus + sbert embedder
+as §3.4):
+
+| Strategy | R@1 | R@5 | R@10 | Retrieve (ms) | Lift R@5 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| baseline (cosine) | 0.098 | 0.238 | 0.285 | 13.3 | — |
+| hybrid (alpha=0.3) | 0.207 | **0.415** | 0.456 | 28.5 | **+17.7 pp** |
+| rerank (top-20) | 0.203 | 0.309 | 0.337 | 25.1 | +7.1 pp |
+| hybrid + rerank | **0.287** | **0.450** | **0.490** | 47.7 | **+21.2 pp** |
+
+**The baseline is exactly what any same-embedder vector DB reaches.**
+Every other row is SOMA-side lift that peer DBs don't offer built-in.
+Hybrid alone lifts Recall@5 by 74% relative. Hybrid + rerank combined
+lifts Recall@5 by 89% relative and Recall@1 by 193% (nearly triple).
+Latency budget for both stacked: ~48 ms — still inside a typical
+sub-100 ms retrieval window.
+
+The full doc ( `docs/recall-improvements.md`) lays out the remaining
+research agenda: in-index metadata filtering, LLM query expansion,
+ColBERT-style multi-vector, learned graph re-rank.
 
 ## 4. Experiments
 

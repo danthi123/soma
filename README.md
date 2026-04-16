@@ -200,9 +200,10 @@ mypy src/soma/
 
 - **[Quickstart](docs/quickstart.md)** — 60 seconds to a working chat-with-your-wiki demo
 - **[Comparison](docs/comparison.md)** — SOMA vs Chroma / Mem0 / Letta / Zep / Pinecone
-- **[Cookbook](docs/cookbook.md)** — 12 recipes for common patterns
+- **[Cookbook](docs/cookbook.md)** — 15 recipes (hybrid search, rerank, multi-tenant REST, migrations)
 - **[Demos](docs/demos.md)** — every shipped demo, what it shows, when to run it
 - **[LLM backends](docs/llm-backends.md)** — Ollama / OpenAI / Anthropic / vLLM / HF
+- **[Recall improvements](docs/recall-improvements.md)** — hybrid BM25, cross-encoder rerank, research agenda
 - [Product positioning](docs/positioning.md)
 - [Pivot decision + roadmap](docs/plans/2026-04-15-memory-layer-pivot.md)
 - [Architecture whitepaper](docs/whitepaper.md)

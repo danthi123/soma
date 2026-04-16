@@ -26,10 +26,11 @@ def _stub_embed(text: str) -> torch.Tensor:
     return torch.randn(32, generator=g)
 
 
-def _client_with_stub_mem() -> TestClient:
-    """Replace serve._mem with an in-process MemoryLayer so the test
-    is hermetic — no model download, no disk bundle."""
-    serve._mem = MemoryLayer(embed_fn=_stub_embed, embed_dim=32)
+def _client_with_stub_mem(name: str = "__default__") -> TestClient:
+    """Replace serve._mem_cache entry with an in-process MemoryLayer so
+    the test is hermetic — no model download, no disk bundle."""
+    serve._mem_cache.clear()
+    serve._mem_cache[name] = MemoryLayer(embed_fn=_stub_embed, embed_dim=32)
     return TestClient(serve.app)
 
 

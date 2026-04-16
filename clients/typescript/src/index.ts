@@ -50,11 +50,17 @@ export function createClient(options: SomaClientOptions) {
   if (auth) {
     headers.Authorization = `Bearer ${auth}`;
   }
-  return createOpenApiClient<paths>({
+  // `openapi-fetch` uses `exactOptionalPropertyTypes` — only forward a
+  // custom fetch when the caller actually provided one, otherwise let
+  // the library fall back to the platform default.
+  const clientOptions: Parameters<typeof createOpenApiClient<paths>>[0] = {
     baseUrl: options.baseUrl,
     headers,
-    fetch: options.fetch,
-  });
+  };
+  if (options.fetch) {
+    clientOptions.fetch = options.fetch;
+  }
+  return createOpenApiClient<paths>(clientOptions);
 }
 
 export type { paths, components, operations } from "./schema";

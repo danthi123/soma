@@ -221,7 +221,7 @@ class MemoryLayer:
             and any(a is not None for a in self._soma_activations)
         )
         if has_graph_signal:
-            return self._retrieve_with_rerank(q_vec, k=k)
+            return self._retrieve_with_rerank(query, q_vec, k=k)
         return self._rank(q_vec, k=k, exclude_idx=None)
 
     def related(self, node_id: str, k: int = 5) -> list[MemoryHit]:
@@ -446,6 +446,7 @@ class MemoryLayer:
 
     def _retrieve_with_rerank(
         self,
+        query_text: str,
         query_vec: torch.Tensor,
         *,
         k: int,
@@ -462,7 +463,7 @@ class MemoryLayer:
 
         soma_output_dim = int(self._soma.config.sensor_output_dim)
         q_act = text_to_state(
-            text="",
+            text=query_text,
             soma=self._soma,
             tokenizer=self._soma_tokenizer,
             encoder=self._soma_encoder,

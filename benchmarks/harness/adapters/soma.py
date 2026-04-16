@@ -53,13 +53,9 @@ class SomaAdapter(BaseMemorySystem):
             )
         if self._attach_soma:
             from soma.core.config import SOMAConfig
+            from soma.io.text_encoder import TextEncoder, train_bpe_tokenizer
             from soma.system import SOMA
 
-            if self._use_sbert:
-                raise ValueError(
-                    "attach_soma=True requires use_sbert=False so the "
-                    "TextEncoder feeding SOMA matches the configured SENSOR dim"
-                )
             config = SOMAConfig(
                 vocab_size=128,
                 text_embed_dim=32,
@@ -67,8 +63,20 @@ class SomaAdapter(BaseMemorySystem):
                 max_input_tokens=128,
             )
             soma = SOMA(config)
-            assert self._mem._encoder is not None
-            self._mem.attach_soma(soma, self._mem._tokenizer, self._mem._encoder)
+            # SOMA's graph operates on its own small TextEncoder regardless
+            # of what the MemoryLayer embeds with for cosine. Keeping them
+            # independent lets sbert (384-d) drive retrieval while the 32-d
+            # SOMA substrate drives graph-based re-ranking.
+            if self._use_sbert:
+                soma_tokenizer = train_bpe_tokenizer(["placeholder"], vocab_size=128)
+                soma_encoder = TextEncoder(
+                    soma_tokenizer, embed_dim=32, max_seq_len=128,
+                )
+            else:
+                assert self._mem._encoder is not None
+                soma_tokenizer = self._mem._tokenizer
+                soma_encoder = self._mem._encoder
+            self._mem.attach_soma(soma, soma_tokenizer, soma_encoder)
 
     def store(self, text: str, metadata: dict[str, Any] | None = None) -> str:
         assert self._mem is not None

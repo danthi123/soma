@@ -1,17 +1,21 @@
-"""Retrieval benchmark: SOMA vs Chroma vs SOMA-with-graph on synthetic data.
+"""Retrieval benchmark: SOMA vs Chroma plus two graph-ablation comparisons.
 
 Runs the full 50-fact / 26-query synthetic dataset through:
 - SOMA MemoryLayer (sentence-transformers) — apples-to-apples vs Chroma
 - Chroma (default embedder) — plain RAG baseline
 - SOMA MemoryLayer (TextEncoder, no graph) — same-embedder internal control
 - SOMA MemoryLayer (TextEncoder, with graph consolidation) — graph ablation
+- SOMA MemoryLayer (sbert, no graph) — graph-off control on quality embeddings
+- SOMA MemoryLayer (sbert, with graph consolidation) — the key question:
+  does graph consolidation help once embeddings are strong?
 
-Report contains both the SOMA-vs-Chroma comparison (apples-to-apples
-on sbert embeddings) and the graph-vs-no-graph ablation (apples-to-apples
-on TextEncoder embeddings) so quality and graph-contribution questions
-are separable.
+The report layers three comparisons: SOMA-vs-Chroma (apples-to-apples on
+sbert, no graph on either side) for the pure store-efficiency claim,
+then graph-vs-no-graph on both TextEncoder (graph-forced-to-work-with-
+random-base) and sbert (graph-on-quality-base) so the graph value
+proposition is isolated from embedding quality.
 
-    python benchmarks/run_retrieval.py --out benchmarks/reports/retrieval.md
+    python -m benchmarks.run_retrieval --out benchmarks/reports/retrieval.md
 """
 
 from __future__ import annotations
@@ -58,8 +62,23 @@ def main() -> None:
     te_flat.name = "soma-te-flat"
     te_graph = SomaAdapter(use_sbert=False, attach_soma=True)
     te_graph.name = "soma-te-graph"
-    graph_results = run_retrieval_benchmark(
+    te_graph_results = run_retrieval_benchmark(
         systems=[te_flat, te_graph],
+        dataset=facts,
+        queries=queries,
+        k=args.k,
+        consolidate_after_store=True,
+    )
+
+    # Comparison 3: sbert with/without graph — the one that matters
+    # for the paper's "graph helps when embeddings are quality" claim.
+    print("\n=== Comparison 3: SOMA graph ablation (sbert embeddings) ===")
+    sb_flat = SomaAdapter(use_sbert=True, attach_soma=False)
+    sb_flat.name = "soma-sbert-flat"
+    sb_graph = SomaAdapter(use_sbert=True, attach_soma=True)
+    sb_graph.name = "soma-sbert-graph"
+    sb_graph_results = run_retrieval_benchmark(
+        systems=[sb_flat, sb_graph],
         dataset=facts,
         queries=queries,
         k=args.k,
@@ -85,9 +104,19 @@ def main() -> None:
         "## Comparison 2: SOMA Graph Ablation (TextEncoder embeddings)",
         "",
         "Same TextEncoder embeddings in both rows — isolates the "
-        "contribution of SOMA's graph consolidation + re-ranking.",
+        "contribution of SOMA's graph consolidation + re-ranking on top of "
+        "the project's default random-init encoder.",
         "",
-        format_results_table(graph_results, k=args.k),
+        format_results_table(te_graph_results, k=args.k),
+        "",
+        "## Comparison 3: SOMA Graph Ablation (sbert embeddings)",
+        "",
+        "Same sbert embeddings in both rows — asks whether SOMA's graph "
+        "consolidation adds value once the base embeddings are already "
+        "strong. This is the ablation that matters for the research "
+        "claim.",
+        "",
+        format_results_table(sb_graph_results, k=args.k),
         "",
         "## Headline",
         "",
@@ -109,12 +138,19 @@ def main() -> None:
         f"vs Chroma {chroma_r.disk_bytes / 1024:.1f}KB "
         f"({chroma_r.disk_bytes / max(soma_r.disk_bytes, 1):.1f}x smaller)"
     )
-    flat_r = next(r for r in graph_results if r.system == "soma-te-flat")
-    graph_r = next(r for r in graph_results if r.system == "soma-te-graph")
+    te_flat_r = next(r for r in te_graph_results if r.system == "soma-te-flat")
+    te_graph_r = next(r for r in te_graph_results if r.system == "soma-te-graph")
     lines.append(
-        f"- **Graph ablation:** flat Recall@{args.k}={flat_r.recall_at_k:.3f} "
-        f"vs graph {graph_r.recall_at_k:.3f} "
-        f"(Δ {graph_r.recall_at_k - flat_r.recall_at_k:+.3f})"
+        f"- **Graph ablation (TE):** flat Recall@{args.k}="
+        f"{te_flat_r.recall_at_k:.3f} vs graph {te_graph_r.recall_at_k:.3f} "
+        f"(Δ {te_graph_r.recall_at_k - te_flat_r.recall_at_k:+.3f})"
+    )
+    sb_flat_r = next(r for r in sb_graph_results if r.system == "soma-sbert-flat")
+    sb_graph_r = next(r for r in sb_graph_results if r.system == "soma-sbert-graph")
+    lines.append(
+        f"- **Graph ablation (sbert):** flat Recall@{args.k}="
+        f"{sb_flat_r.recall_at_k:.3f} vs graph {sb_graph_r.recall_at_k:.3f} "
+        f"(Δ {sb_graph_r.recall_at_k - sb_flat_r.recall_at_k:+.3f})"
     )
 
     lines += [

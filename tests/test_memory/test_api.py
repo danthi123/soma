@@ -251,6 +251,52 @@ def test_graph_rerank_activates_after_consolidation(embedder) -> None:
     assert scores == sorted(scores, reverse=True)
 
 
+def test_graph_rerank_threads_query_text_into_activation(embedder) -> None:
+    """Graph re-rank must compute q_act from the query text, not from ``""``.
+
+    Regression guard: an earlier implementation passed ``text=""`` to
+    ``text_to_state`` inside ``_retrieve_with_rerank``, which yielded a
+    zero vector for every query and caused the re-rank blend to be
+    effectively ``(1-alpha) * cosine`` — a monotonic transform except
+    for entries whose stored activation was ``None``, which created
+    a spurious bias. We verify the fix by capturing the ``text`` arg.
+    """
+    from soma.core.config import SOMAConfig
+    from soma.system import SOMA
+
+    tokenizer, encoder = embedder
+    config = SOMAConfig(
+        vocab_size=256, text_embed_dim=32, sensor_output_dim=32, max_input_tokens=64,
+    )
+    soma = SOMA(config)
+    mem = MemoryLayer(tokenizer=tokenizer, encoder=encoder)
+    mem.store("the cat sat on the mat")
+    mem.store("the dog chased the ball")
+    mem.attach_soma(soma, tokenizer, encoder)
+    mem.consolidate()
+
+    import soma.training.verbalizer_bootstrap as vb
+
+    seen_texts: list[str] = []
+    real_text_to_state = vb.text_to_state
+
+    def _capturing_text_to_state(*args, **kwargs):
+        seen_texts.append(kwargs.get("text", ""))
+        return real_text_to_state(*args, **kwargs)
+
+    vb.text_to_state = _capturing_text_to_state
+    try:
+        mem.retrieve("where does the cat sit", k=2)
+        mem.retrieve("which animal chased a ball", k=2)
+    finally:
+        vb.text_to_state = real_text_to_state
+
+    assert seen_texts == [
+        "where does the cat sit",
+        "which animal chased a ball",
+    ], seen_texts
+
+
 def test_store_empty_text_raises(embedder) -> None:
     tokenizer, encoder = embedder
     mem = MemoryLayer(tokenizer=tokenizer, encoder=encoder)

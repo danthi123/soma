@@ -64,9 +64,7 @@ class VerbalizerTrainer:
         # the verbalizer's LR (SOMA params are higher-dim MLPs + Edge
         # weights, much more numerous than the projector).
         self.joint_soma = joint_soma
-        self._soma_lr = (
-            soma_lr if soma_lr is not None else config.verbalizer_lr * 0.01
-        )
+        self._soma_lr = soma_lr if soma_lr is not None else config.verbalizer_lr * 0.01
         # Tokenizer + encoder are plumbed here (rather than pulled off the
         # SOMA instance) because SOMA itself has no default .tokenizer /
         # .text_encoder attributes. Storing them underscore-prefixed to
@@ -615,9 +613,7 @@ def text_to_state(
             if trainable:
                 last_live_outputs = result.get("outputs")
 
-    source_outputs = (
-        (last_live_outputs or {}) if trainable else soma._current_output_activations()
-    )
+    source_outputs = (last_live_outputs or {}) if trainable else soma._current_output_activations()
     pooled = SomaAggregator.collapse(source_outputs, soma_output_dim=soma_output_dim)
     if trainable:
         # Joint-training caller will backward through this tensor into

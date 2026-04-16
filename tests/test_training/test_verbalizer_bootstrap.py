@@ -1170,9 +1170,7 @@ def test_joint_train_step_updates_soma_params():
     soma_before = [p.detach().clone() for p in t.soma.graph.parameters()]
     _ = t.train_step(text="hello world, this is a training sample")
     soma_after = [p.detach().clone() for p in t.soma.graph.parameters()]
-    moved = sum(
-        1 for b, a in zip(soma_before, soma_after, strict=True) if not torch.equal(b, a)
-    )
+    moved = sum(1 for b, a in zip(soma_before, soma_after, strict=True) if not torch.equal(b, a))
     assert moved > 0, "joint training did not move any SOMA param"
 
 

@@ -150,9 +150,14 @@ At enterprise scale (100K entries, pre-computed embeddings), SOMA ingests the en
 ## Demos
 
 ```bash
-python scripts/demo_memory_layer.py             # pure API, no GPU
-python scripts/demo_chat_persistent.py --dry-run  # persistent chat
+python scripts/demo_memory_layer.py             # pure API tour, no GPU
+python scripts/demo_chat_persistent.py --dry-run  # persistent conversation
+python scripts/demo_wiki_chat.py --wiki-dir docs/ --bundle artifacts/wiki-brain --index --chat --dry-run
+python scripts/demo_memory_inspect.py stats --bundle artifacts/wiki-brain
+python scripts/demo_related_browser.py --bundle artifacts/wiki-brain --seed "consolidation"
 ```
+
+Walkthrough: [`docs/demos.md`](docs/demos.md).
 
 ## Benchmarks
 

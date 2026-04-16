@@ -114,6 +114,31 @@ except ImportError:  # pragma: no cover
     # soma[metrics] not installed — /metrics will 404.
     pass
 
+# --------------------------------------------------------------------
+# Optional OpenTelemetry tracing. Opt-in via SOMA_OTEL_ENABLED=1 AND
+# the `soma[otel]` extra being installed. When both line up, the
+# FastAPI instrumentor emits a span per HTTP request that the OTel SDK
+# exports to whatever collector OTEL_EXPORTER_OTLP_ENDPOINT points at
+# (standard OTel env-var setup applies — we don't override it).
+# --------------------------------------------------------------------
+_otel_enabled: bool = False
+if os.environ.get("SOMA_OTEL_ENABLED", "").strip() in ("1", "true", "True"):
+    try:
+        from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+
+        FastAPIInstrumentor.instrument_app(app)
+        _otel_enabled = True
+    except ImportError:  # pragma: no cover
+        # soma[otel] not installed — skip spans, log loudly enough that
+        # operators notice the misconfiguration.
+        import warnings
+
+        warnings.warn(
+            "SOMA_OTEL_ENABLED=1 but opentelemetry-instrumentation-fastapi "
+            "not installed. Install soma[otel] to enable tracing.",
+            stacklevel=2,
+        )
+
 _BUNDLE_NAME_RE = re.compile(r"^[A-Za-z0-9_.-]{1,64}$")
 _mem_cache: dict[str, MemoryLayer] = {}
 _cache_lock = threading.Lock()

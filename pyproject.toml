@@ -85,6 +85,16 @@ metrics = [
     "prometheus-fastapi-instrumentator>=7.1",
     "prometheus-client>=0.20",
 ]
+otel = [
+    # OpenTelemetry tracing — opt-in via SOMA_OTEL_ENABLED=1. The FastAPI
+    # instrumentor + OTel SDK pull ~5 transitive packages, so we keep
+    # them strictly optional. The OTLP exporter lets spans flow to
+    # Jaeger / Tempo / Datadog via the standard OTEL_EXPORTER_OTLP_*
+    # env vars; no in-code config needed.
+    "opentelemetry-instrumentation-fastapi>=0.50",
+    "opentelemetry-sdk>=1.30",
+    "opentelemetry-exporter-otlp>=1.30",
+]
 
 [project.scripts]
 soma = "soma.cli:main"

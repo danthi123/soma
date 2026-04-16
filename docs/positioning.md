@@ -43,6 +43,7 @@ on the user's disk, LLM-agnostic.
 | Consolidation hook (learning-ready) | ❌           | ❌         | ✅       |
 | Single-file "brain" portability   | ❌           | ❌         | ✅       |
 | Swap LLM without losing memory    | ✅           | ⚠️         | ✅       |
+| Survives crashes (WAL + atomic snapshot) | ⚠️      | ⚠️         | ✅       |
 | Learns from use                   | ❌           | ⚠️         | ✅       |
 
 ⚠️ = partial / conditional on provider.

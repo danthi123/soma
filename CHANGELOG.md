@@ -4,6 +4,35 @@ All notable changes to SOMA are documented here.
 
 ## [Unreleased] — 2026-04-16
 
+### Added — durability + concurrency
+
+- **Write-ahead log** (`src/soma/memory/wal.py`). Every `store()` /
+  `store_batch()` / `forget()` appends a CRC-framed record to a paired
+  `memory_ops.wal.jsonl` + `memory_embeddings.wal.bin` sidecar before
+  mutating in-memory state. Crashes after the append (no `save()` call)
+  still replay on reload.
+- **Atomic `save()`** — each output file writes to `<path>.tmp`, fsyncs,
+  then `os.replace`s into place. Crash mid-save leaves the prior bundle
+  untouched.
+- **Schema v2** bundles — `memory_index.json` gains `schema_version: 2`
+  and ships alongside the WAL sidecars. v1 bundles load in legacy mode
+  and auto-upgrade to v2 on the next `save()`.
+- **Durability knob** — `MemoryLayer(..., durability="sync"|"batch"|"async")`.
+  `sync` (default) fsyncs every op; `batch` groups 32 ops; `async`
+  never fsyncs until explicit `flush()`. Cookbook recipe 17 covers the
+  tradeoffs.
+- **Auto-compaction** — a background daemon thread rewrites the
+  snapshot when the WAL exceeds `max(4 MB, 1.0x snapshot)` bytes,
+  10 000 records, or 1 h since the last compaction. Only one
+  compaction runs at a time; concurrent triggers are no-ops.
+- **Multi-worker readers** — `MemoryLayer.reload_if_stale()` scans the
+  WAL tail past a cursor and applies peer-worker appends on top of the
+  in-memory state. Wired into `serve._get_mem()` so every cached
+  bundle sees the freshest committed state before answering a request.
+- **`portalocker.Lock` on `bundle.lock`** — serializes writes across
+  processes sharing a bundle dir. Readers never block writers; writers
+  serialize with each other.
+
 ### Added — cloud deploy
 
 - One-click templates for **Railway** (`railway.json`), **Render**

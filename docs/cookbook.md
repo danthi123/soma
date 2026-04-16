@@ -285,6 +285,36 @@ python scripts/demo_memory_inspect.py recent --bundle brain/ --n 50
 python scripts/demo_memory_inspect.py dump --bundle brain/ > snapshot.jsonl
 ```
 
+## 17. Durability — crash-safe persistence (WAL)
+
+```python
+from soma.memory import MemoryLayer
+
+# durability="sync" (default): fsync after every store — zero loss on
+# kernel panic, ~1 ms/op overhead. Good for "I pressed Ctrl-C" safety.
+mem = MemoryLayer.with_sbert()  # pass bundle_path="brain/" for persistence
+
+# "batch": fsync every 32 ops — 10-20x throughput at the cost of losing
+# up to the last batch on crash. Good for bulk ingest.
+mem = MemoryLayer(
+    embed_fn=my_embed, embed_dim=384,
+    bundle_path="brain/", durability="batch",
+)
+
+# "async": never fsync in hot path; caller flushes on demand. Fastest,
+# loses any in-flight records on an unclean shutdown.
+mem = MemoryLayer(
+    embed_fn=my_embed, embed_dim=384,
+    bundle_path="brain/", durability="async",
+)
+mem.store("fact")
+mem.flush()  # force-sync before planned shutdown
+```
+
+A WAL + snapshot layout lets the bundle reload after a crash WITHOUT
+a prior `save()` call — every `store()` / `forget()` is recoverable.
+Multi-worker uvicorn on one bundle is safe; each worker catches the
+others' WAL tail before each retrieve.
 ---
 
 Missing a recipe you want? Open an issue with the use case — most

@@ -26,6 +26,8 @@ Counters
     ``soma_faiss_rebuild_total{index_type}`` — FAISS index rebuilds
     ``soma_bm25_rebuild_total`` — BM25 index rebuilds
     ``soma_consolidate_total`` — consolidate() calls
+    ``soma_compaction_total{bundle, outcome}`` — consolidate() entry/exit,
+        outcome="ok" | "error".
     ``soma_wal_append_total{op}`` — WAL appends (Phase 1 hook)
     ``soma_auth_failures_total{reason}`` — auth rejections on the REST API
         (invalid_token | expired_token | insufficient_perm | missing_credentials
@@ -42,18 +44,23 @@ Histograms
     ``soma_faiss_rebuild_seconds``
     ``soma_bm25_rebuild_seconds``
     ``soma_consolidate_seconds``
+    ``soma_compaction_seconds{bundle}`` — consolidate() wall-clock,
+        ok + error outcomes combined.
     ``soma_wal_flush_seconds``
 """
 
 from __future__ import annotations
 
 import contextlib
+import os
 from typing import Any
 
 __all__ = [
     "AUTH_FAILURES_TOTAL",
     "BM25_REBUILD_SECONDS",
     "BM25_REBUILD_TOTAL",
+    "COMPACTION_SECONDS",
+    "COMPACTION_TOTAL",
     "CONSOLIDATE_SECONDS",
     "CONSOLIDATE_TOTAL",
     "EMBED_LATENCY",
@@ -73,6 +80,7 @@ __all__ = [
     "STORE_TOTAL",
     "WAL_APPEND_TOTAL",
     "WAL_FLUSH_SECONDS",
+    "_bundle_label",
     "batch_bucket",
     "prometheus_available",
 ]
@@ -300,6 +308,21 @@ WAL_FLUSH_SECONDS = _histogram(
     "soma_wal_flush_seconds",
     "WAL flush duration (fsync cost).",
 )
+# Compaction metrics — MemoryLayer.consolidate() entry/exit. Outcome
+# label distinguishes normal completion ("ok") from an exception bubbling
+# out of the body ("error"). Buckets span the seconds-to-minutes range
+# a graph-consolidation pass can plausibly take on a warm store.
+COMPACTION_TOTAL = _counter(
+    "soma_compaction_total",
+    "Total number of consolidation cycles by outcome.",
+    ("bundle", "outcome"),
+)
+COMPACTION_SECONDS = _histogram(
+    "soma_compaction_seconds",
+    "Duration of consolidation cycles.",
+    ("bundle",),
+    buckets=(0.1, 0.5, 1.0, 2.0, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0),
+)
 
 
 # ---------------------------------------------------------------------------
@@ -323,6 +346,24 @@ def batch_bucket(n: int) -> str:
     if n <= 1000:
         return "1000"
     return "1000+"
+
+
+def _bundle_label(name: str) -> str:
+    """Return the ``bundle`` label value, honouring the cardinality escape.
+
+    Deploys hosting 10k+ bundles can set ``SOMA_METRICS_BUNDLE_LABEL_DISABLE=1``
+    to collapse every ``.labels(bundle=...)`` emission into a single
+    ``"_disabled"`` series. Keeps the dashboards + alerts wired without
+    melting Prometheus's TSDB when cardinality blows up.
+
+    Every MemoryLayer / REST call site that emits a ``bundle=`` label
+    routes through this helper — grep for ``_bundle_label(`` to audit.
+    The env check is per-call (O(1) dict lookup) so tests can toggle
+    between calls without reloading the module.
+    """
+    if os.environ.get("SOMA_METRICS_BUNDLE_LABEL_DISABLE") == "1":
+        return "_disabled"
+    return name
 
 
 # Exposed so call sites that only want to record a duration can use the

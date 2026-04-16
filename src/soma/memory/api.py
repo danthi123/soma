@@ -1295,10 +1295,28 @@ class MemoryLayer:
         Without an attached SOMA, this is a safe no-op (returns 0).
         Callers should include ``consolidate()`` in their loops now; it
         becomes load-bearing once a SOMA is attached.
+
+        Emits both the legacy ``soma_consolidate_*`` metrics and the
+        Phase 8 ``soma_compaction_*`` labelled variants. The compaction
+        counter records ``outcome="ok" | "error"`` so operators can
+        alert on a rising error ratio without parsing logs.
         """
         _m.CONSOLIDATE_TOTAL.inc()
-        with _m.CONSOLIDATE_SECONDS.time():
-            return self._consolidate_impl()
+        bundle_label = _m._bundle_label(self._bundle_name)
+        started = time.monotonic()
+        outcome = "ok"
+        try:
+            with _m.CONSOLIDATE_SECONDS.time():
+                return self._consolidate_impl()
+        except BaseException:
+            outcome = "error"
+            raise
+        finally:
+            elapsed = time.monotonic() - started
+            _m.COMPACTION_TOTAL.labels(
+                bundle=bundle_label, outcome=outcome
+            ).inc()
+            _m.COMPACTION_SECONDS.labels(bundle=bundle_label).observe(elapsed)
 
     def _consolidate_impl(self) -> int:
         """Internal body of consolidate(), wrapped by metrics in the caller."""

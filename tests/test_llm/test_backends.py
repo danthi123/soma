@@ -256,3 +256,136 @@ def test_ollama_alive_returns_false_on_url_error() -> None:
 
     with mock.patch("urllib.request.urlopen", boom):
         assert _ollama_alive("http://nowhere:11434") is False
+
+
+# ------------------------------------------------------------------
+# Phase 28 — stream_generate adapters
+# ------------------------------------------------------------------
+
+
+def test_openai_compat_stream_generate_yields_delta_content_chunks() -> None:
+    """OpenAI-compatible servers (vLLM, LM Studio, OpenAI cloud) use
+    the chat-completions stream=True SSE which surfaces chunks with
+    ``delta.content``. Empty deltas (role-only, stop-reason) are
+    skipped."""
+
+    def _chunk(content: str | None):
+        delta = mock.MagicMock()
+        delta.content = content
+        choice = mock.MagicMock()
+        choice.delta = delta
+        c = mock.MagicMock()
+        c.choices = [choice]
+        return c
+
+    stream_iter = iter(
+        [
+            _chunk(None),  # role-only chunk at start — skip
+            _chunk("hel"),
+            _chunk("lo"),
+            _chunk(" "),
+            _chunk("world"),
+            _chunk(""),  # stop chunk — skip
+        ]
+    )
+
+    fake_client = mock.MagicMock()
+    fake_client.chat.completions.create.return_value = stream_iter
+
+    fake_openai_module = mock.MagicMock()
+    fake_openai_module.OpenAI.return_value = fake_client
+
+    with mock.patch.dict("sys.modules", {"openai": fake_openai_module}):
+        b = OpenAICompatibleBackend(
+            model="my-local",
+            base_url="http://lmstudio:1234/v1",
+            api_key="x",
+        )
+        chunks = list(b.stream_generate("q", max_tokens=42))
+
+    assert chunks == ["hel", "lo", " ", "world"]
+    assert "".join(chunks) == "hello world"
+    create_call = fake_client.chat.completions.create.call_args
+    assert create_call.kwargs["stream"] is True
+    assert create_call.kwargs["model"] == "my-local"
+    assert create_call.kwargs["max_tokens"] == 42
+
+
+def test_openai_backend_inherits_stream_generate() -> None:
+    """OpenAIBackend is a trivial subclass of OpenAICompatibleBackend, so
+    the streaming adapter must be inherited without extra work. This is
+    also the LM Studio path (LM Studio exposes the same OpenAI-compatible
+    API)."""
+    with _env(OPENAI_API_KEY="sk-test"):
+        b = OpenAIBackend()
+    assert hasattr(b, "stream_generate")
+    assert callable(b.stream_generate)
+
+
+def test_ollama_stream_generate_parses_ndjson_chunks() -> None:
+    """Ollama's streaming mode returns newline-delimited JSON over the
+    HTTP response body. Each line has a ``response`` field with the
+    next token(s); the final line carries ``done: true``."""
+    ndjson_lines = [
+        b'{"response": "hel", "done": false}\n',
+        b'{"response": "lo ", "done": false}\n',
+        b'{"response": "world", "done": false}\n',
+        b'{"response": "", "done": true}\n',
+    ]
+
+    captured: dict[str, Any] = {}
+
+    fake_resp = mock.MagicMock()
+    fake_resp.__enter__.return_value = fake_resp
+    fake_resp.__exit__.return_value = False
+    fake_resp.__iter__ = lambda self: iter(ndjson_lines)
+
+    def fake_urlopen(req, timeout):
+        captured["url"] = req.full_url
+        captured["data"] = json.loads(req.data.decode("utf-8"))
+        captured["timeout"] = timeout
+        return fake_resp
+
+    with mock.patch("urllib.request.urlopen", fake_urlopen):
+        b = OllamaBackend(model="llama3.2", host="http://example:11434")
+        chunks = list(b.stream_generate("hello", max_tokens=42))
+
+    assert chunks == ["hel", "lo ", "world"]
+    assert "".join(chunks) == "hello world"
+    assert captured["url"] == "http://example:11434/api/generate"
+    assert captured["data"]["stream"] is True
+    assert captured["data"]["options"]["num_predict"] == 42
+
+
+def test_anthropic_stream_generate_iterates_text_stream() -> None:
+    """Anthropic's streaming API exposes a context manager with a
+    ``text_stream`` iterator that yields the incremental text deltas."""
+    stream_cm = mock.MagicMock()
+    stream_cm.__enter__.return_value = stream_cm
+    stream_cm.__exit__.return_value = False
+    stream_cm.text_stream = iter(["hel", "lo ", "anthropic"])
+
+    fake_client = mock.MagicMock()
+    fake_client.messages.stream.return_value = stream_cm
+
+    fake_anthropic_module = mock.MagicMock()
+    fake_anthropic_module.Anthropic.return_value = fake_client
+
+    with (
+        mock.patch.dict("sys.modules", {"anthropic": fake_anthropic_module}),
+        _env(ANTHROPIC_API_KEY="a-test"),
+    ):
+        b = AnthropicBackend(model="claude-test")
+        chunks = list(b.stream_generate("hi", max_tokens=50))
+
+    assert chunks == ["hel", "lo ", "anthropic"]
+    assert "".join(chunks) == "hello anthropic"
+    stream_call = fake_client.messages.stream.call_args
+    assert stream_call.kwargs["model"] == "claude-test"
+    assert stream_call.kwargs["max_tokens"] == 50
+
+
+def test_dry_run_backend_has_no_stream_generate() -> None:
+    """DryRunBackend must NOT expose stream_generate — the REPL uses
+    hasattr() to pick the path and dry-run should stay one-shot."""
+    assert not hasattr(DryRunBackend(), "stream_generate")

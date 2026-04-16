@@ -13,6 +13,7 @@ from __future__ import annotations
 import os
 import urllib.error
 import urllib.request
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from typing import Any, Protocol, runtime_checkable
 
@@ -114,6 +115,53 @@ class OllamaBackend:
             ) from exc
         return str(payload.get("response", "")).strip()
 
+    def stream_generate(
+        self, prompt: str, *, max_tokens: int = 256
+    ) -> Iterator[str]:
+        """Stream tokens from Ollama's ``/api/generate`` (stream=True).
+
+        Ollama returns newline-delimited JSON on the response body: one
+        object per incremental token (or small token group), each with a
+        ``response`` field carrying the delta, and a final object with
+        ``done: true`` (and an empty ``response``).
+        """
+        import json
+
+        body = json.dumps(
+            {
+                "model": self.model,
+                "prompt": prompt,
+                "stream": True,
+                "options": {"num_predict": max_tokens, "temperature": 0.0},
+            }
+        ).encode("utf-8")
+        req = urllib.request.Request(
+            f"{self.host}/api/generate",
+            data=body,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=self.timeout) as r:
+                for raw in r:
+                    line = raw.decode("utf-8").strip()
+                    if not line:
+                        continue
+                    try:
+                        payload = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    chunk = str(payload.get("response", ""))
+                    if chunk:
+                        yield chunk
+                    if payload.get("done"):
+                        return
+        except urllib.error.URLError as exc:
+            raise RuntimeError(
+                f"Ollama server unreachable at {self.host}: {exc}. "
+                "Install Ollama (https://ollama.com) and run `ollama serve`."
+            ) from exc
+
 
 # ----------------------------------------------------------------------
 # OpenAI-compatible (OpenAI cloud + vLLM / LM Studio / LiteLLM / etc.)
@@ -153,6 +201,39 @@ class OpenAICompatibleBackend:
             temperature=0.0,
         )
         return (resp.choices[0].message.content or "").strip()
+
+    def stream_generate(
+        self, prompt: str, *, max_tokens: int = 256
+    ) -> Iterator[str]:
+        """Stream chunks from an OpenAI-compatible chat-completions API.
+
+        Works against OpenAI cloud, LM Studio, vLLM, LiteLLM, llama.cpp's
+        built-in server — anything that speaks the OpenAI chat protocol.
+        Role-only / stop-reason chunks have ``delta.content`` of ``None``
+        or ``""`` and are skipped.
+        """
+        try:
+            from openai import OpenAI
+        except ImportError as exc:
+            raise ImportError(
+                "OpenAICompatibleBackend needs the openai SDK. Install: pip install openai"
+            ) from exc
+        client = OpenAI(api_key=self.api_key, base_url=self.base_url, timeout=self.timeout)
+        stream = client.chat.completions.create(
+            model=self.model,
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=max_tokens,
+            temperature=0.0,
+            stream=True,
+        )
+        for event in stream:
+            choices = getattr(event, "choices", None) or []
+            if not choices:
+                continue
+            delta = getattr(choices[0], "delta", None)
+            content = getattr(delta, "content", None) if delta is not None else None
+            if content:
+                yield content
 
 
 @dataclass
@@ -208,6 +289,32 @@ class AnthropicBackend:
         # messages.content is a list of blocks; concatenate text blocks.
         parts = [getattr(b, "text", "") for b in msg.content]
         return "".join(parts).strip()
+
+    def stream_generate(
+        self, prompt: str, *, max_tokens: int = 256
+    ) -> Iterator[str]:
+        """Stream text deltas from Anthropic's ``messages.stream`` API.
+
+        ``client.messages.stream(...)`` returns a context manager whose
+        ``text_stream`` attribute yields the incremental text as str.
+        We swallow empty deltas — Anthropic occasionally emits them at
+        block boundaries.
+        """
+        try:
+            from anthropic import Anthropic
+        except ImportError as exc:
+            raise ImportError(
+                "AnthropicBackend needs the anthropic SDK. Install: pip install anthropic"
+            ) from exc
+        client = Anthropic(api_key=self.api_key, timeout=self.timeout)
+        with client.messages.stream(
+            model=self.model,
+            max_tokens=max_tokens,
+            messages=[{"role": "user", "content": prompt}],
+        ) as stream:
+            for text in stream.text_stream:
+                if text:
+                    yield text
 
 
 # ----------------------------------------------------------------------

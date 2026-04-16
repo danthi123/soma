@@ -398,6 +398,128 @@ def test_audit_records_target_user_id_when_differs(tmp_path: Path) -> None:
 # ----------------------------------------------------------------------
 # 7. Record compactness — records should stay small
 # ----------------------------------------------------------------------
+def test_forget_summary_strategy_drop_forces_drop(tmp_path: Path) -> None:
+    """``summary_strategy="drop"`` deletes the summary even when survivors exist.
+
+    Phase 36 default ("regen"): partial coverage → summary is
+    rewritten from surviving turns. Phase 37 Task 3 adds an opt-in
+    override for conservative callers who'd rather over-delete than
+    rely on an LLM to avoid leaking the scrubbed subject into the
+    regenerated text.
+
+    This test stages: two turns 0..1, a manual summary covering
+    [0, 1], then ``forget(text_matches="gardening")`` where only turn
+    0 matches. Under the default the Phase 36 cascade would
+    regenerate the summary from turn 1. Under ``summary_strategy=
+    "drop"`` the summary is deleted outright and
+    ``regenerated_summaries`` stays empty.
+    """
+    cm, mem = _make_cm(extract_replies=[json.dumps([]), json.dumps([])])
+    cm.add_message("user", "gardening turn 0")
+    cm.add_message("user", "unrelated turn 1")
+    # Manual summary covering [0, 1] so the partial-coverage branch
+    # would fire on default. Forgetting turn 0 leaves turn 1 as a
+    # survivor; without the opt-in, Phase 36 regenerates.
+    mem.store(
+        "original summary text",
+        metadata={
+            "session_id": "s",
+            "type": "summary",
+            "summarized_turn_start": 0,
+            "summarized_turn_end": 1,
+        },
+    )
+    result = cm.forget(text_matches="gardening", summary_strategy="drop")
+    # Drop strategy: summary is deleted, not regenerated.
+    assert result.deleted_summaries, (
+        "drop strategy must delete the overlapping summary"
+    )
+    assert result.regenerated_summaries == [], (
+        "drop strategy must skip regen entirely"
+    )
+
+
+def test_forget_summary_strategy_drop_no_llm_call(tmp_path: Path) -> None:
+    """``summary_strategy="drop"`` never calls the LLM for summary regen.
+
+    Under the default Phase 36 cascade a partially-covered summary
+    triggers an LLM regen call. The drop strategy must skip the LLM
+    path entirely — crucial for the LLM-unavailable deploy story
+    where the wrapping caller wants a guaranteed no-regen forget.
+    """
+    mem = MemoryLayer(embed_fn=_stub_embed, embed_dim=16)
+
+    @dataclass
+    class _RecordingLLM:
+        summary_calls: int = 0
+        extract_calls: int = 0
+        name: str = "recording"
+
+        def generate(self, prompt: str, *, max_tokens: int = 256) -> str:
+            if "summarizing a short segment" in prompt:
+                self.summary_calls += 1
+                raise RuntimeError("LLM should not be called for drop strategy")
+            if "You extract atomic facts" in prompt:
+                self.extract_calls += 1
+                return "[]"
+            return "{}"
+
+    llm = _RecordingLLM()
+    cm = ConversationalMemory(
+        memory=mem,
+        llm=llm,
+        session_id="s",
+        summary_every=1000,
+    )
+    cm.add_message("user", "gardening turn 0")
+    cm.add_message("user", "unrelated turn 1")
+    mem.store(
+        "original summary text",
+        metadata={
+            "session_id": "s",
+            "type": "summary",
+            "summarized_turn_start": 0,
+            "summarized_turn_end": 1,
+        },
+    )
+    # Must not raise — drop strategy skips the LLM, so the
+    # RuntimeError guard in the fake backend never fires.
+    result = cm.forget(text_matches="gardening", summary_strategy="drop")
+    assert llm.summary_calls == 0, "drop strategy must not call the summary LLM"
+    assert result.deleted_summaries
+
+
+def test_forget_summary_strategy_default_is_regen(tmp_path: Path) -> None:
+    """Default behaviour unchanged: regen when there are survivors."""
+    cm, mem = _make_cm(extract_replies=[json.dumps([]), json.dumps([])])
+    cm.add_message("user", "gardening turn 0")
+    cm.add_message("user", "unrelated turn 1")
+    mem.store(
+        "original summary text",
+        metadata={
+            "session_id": "s",
+            "type": "summary",
+            "summarized_turn_start": 0,
+            "summarized_turn_end": 1,
+        },
+    )
+    result = cm.forget(text_matches="gardening")
+    # Phase 36 regen: survivors exist, summary is rewritten.
+    assert result.regenerated_summaries, (
+        "default (regen) must rewrite partially-covered summaries"
+    )
+    assert result.deleted_summaries == [], (
+        "regen is a replacement, not a deletion"
+    )
+
+
+def test_forget_summary_strategy_invalid_raises(tmp_path: Path) -> None:
+    cm, _mem = _make_cm(extract_replies=[json.dumps([])])
+    cm.add_message("user", "gardening")
+    with pytest.raises(ValueError, match="summary_strategy"):
+        cm.forget(text_matches="gardening", summary_strategy="bogus")  # type: ignore[arg-type]
+
+
 def test_audit_record_is_one_line_per_emit(tmp_path: Path) -> None:
     """Each emit is one JSONL line; embedded newlines would break tail -f."""
     path = tmp_path / "a.jsonl"

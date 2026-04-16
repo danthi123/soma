@@ -1263,6 +1263,7 @@ class ConversationalMemory:
         case_sensitive: bool = ...,
         dry_run: Literal[True],
         actor: str | None = ...,
+        summary_strategy: Literal["regen", "drop"] = ...,
     ) -> ForgetPreview: ...
 
     @overload
@@ -1275,6 +1276,7 @@ class ConversationalMemory:
         case_sensitive: bool = ...,
         dry_run: Literal[False] = ...,
         actor: str | None = ...,
+        summary_strategy: Literal["regen", "drop"] = ...,
     ) -> ForgetResult: ...
 
     def forget(
@@ -1286,6 +1288,7 @@ class ConversationalMemory:
         case_sensitive: bool = False,
         dry_run: bool = False,
         actor: str | None = None,
+        summary_strategy: Literal["regen", "drop"] = "regen",
     ) -> ForgetPreview | ForgetResult:
         """Delete (or preview) entries matching the criteria.
 
@@ -1343,6 +1346,11 @@ class ConversationalMemory:
                 "forget() requires at least one criterion "
                 "(text_matches=, subject=, or user_id=)"
             )
+        if summary_strategy not in ("regen", "drop"):
+            raise ValueError(
+                "summary_strategy must be 'regen' or 'drop', got "
+                f"{summary_strategy!r}"
+            )
 
         # Pre-flight: drain async in-flight extractions and drop the
         # batch buffer so the preview reflects everything that *will*
@@ -1395,7 +1403,9 @@ class ConversationalMemory:
         regenerated_summaries: list[str] = []
         for sid in preview.summaries:
             outcome = self._cascade_summary(
-                sid, deleted_turn_ids=deleted_turn_set,
+                sid,
+                deleted_turn_ids=deleted_turn_set,
+                summary_strategy=summary_strategy,
             )
             if outcome is None:
                 # Summary disappeared between preview and cascade
@@ -1487,6 +1497,7 @@ class ConversationalMemory:
         summary_id: str,
         *,
         deleted_turn_ids: set[str],
+        summary_strategy: Literal["regen", "drop"] = "regen",
     ) -> tuple[Literal["deleted", "regenerated"], str] | None:
         """Drop or regenerate ``summary_id`` based on surviving turns in its range.
 
@@ -1506,6 +1517,12 @@ class ConversationalMemory:
         user request to forget, prefer over-deletion to silent
         retention of derived content that might still reference the
         scrubbed subject.
+
+        ``summary_strategy="drop"`` (Phase 37 Task 3) forces the drop
+        branch even when survivors exist — the LLM is never called, so
+        this is also the safe path for deploys where the LLM is
+        temporarily unavailable but an operator still wants forget to
+        land. The default ``"regen"`` keeps the Phase 36 behaviour.
         """
         hit = self._memory.get(summary_id)
         if hit is None:
@@ -1516,6 +1533,13 @@ class ConversationalMemory:
         # Fall back to a straight drop when the range metadata is
         # malformed — without a range we can't re-derive from survivors.
         if not isinstance(start, int) or not isinstance(end, int):
+            if self._memory.forget(summary_id):
+                return ("deleted", summary_id)
+            return None
+
+        # Phase 37: drop-strategy short-circuits before we even look
+        # at survivors. Keeps the LLM out of the call path entirely.
+        if summary_strategy == "drop":
             if self._memory.forget(summary_id):
                 return ("deleted", summary_id)
             return None

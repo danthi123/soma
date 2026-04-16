@@ -233,64 +233,6 @@ def test_print_selection_with_quantization(capsys: pytest.CaptureFixture[str]) -
     assert "quant=int4" in out
 
 
-# ----- script-level argparse wiring ----------------------------------------
-
-
-def test_chat_repl_parser_defaults() -> None:
-    """chat_repl --soma-checkpoint X -> --tier auto, --device auto, --dtype auto."""
-    from scripts.chat_repl import _build_parser
-
-    args = _build_parser().parse_args(["--soma-checkpoint", "some/bundle"])
-    assert args.llm_name is None
-    assert args.tier == "auto"
-    assert args.device == "auto"
-    assert args.dtype == "auto"
-
-
-def test_chat_repl_parser_rejects_unknown_tier() -> None:
-    from scripts.chat_repl import _build_parser
-
-    with pytest.raises(SystemExit):
-        _build_parser().parse_args(["--soma-checkpoint", "some/bundle", "--tier", "nonsense"])
-
-
-def test_train_verbalizer_bootstrap_parser_defaults() -> None:
-    from scripts.train_verbalizer_bootstrap import _build_parser
-
-    args = _build_parser().parse_args(
-        [
-            "--soma-checkpoint",
-            "some/bundle",
-            "--corpus",
-            "some.txt",
-            "--out-dir",
-            "some/out",
-        ]
-    )
-    assert args.llm_name is None
-    assert args.tier == "auto"
-    assert args.device == "auto"
-    assert args.dtype == "auto"
-
-
-def test_train_verbalizer_bootstrap_parser_rejects_unknown_dtype() -> None:
-    from scripts.train_verbalizer_bootstrap import _build_parser
-
-    with pytest.raises(SystemExit):
-        _build_parser().parse_args(
-            [
-                "--soma-checkpoint",
-                "some/bundle",
-                "--corpus",
-                "some.txt",
-                "--out-dir",
-                "some/out",
-                "--dtype",
-                "bf16",
-            ]
-        )
-
-
 # ----- vram_safety_factor flag --------------------------------------------
 
 

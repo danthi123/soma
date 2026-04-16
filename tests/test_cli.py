@@ -640,3 +640,100 @@ def test_bundle_info_returns_2_for_non_bundle_dir(
     err = capsys.readouterr().err
     assert rc == 2
     assert "bundle" in err.lower()
+
+
+def test_bundle_delete_yes_flag_removes_bundle(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    bundle = tmp_path / "doomed"
+    _seed_healthy_bundle(bundle, entries=3)
+    assert bundle.exists()
+
+    rc = main(["bundle", "delete", str(bundle), "--yes"])
+    assert rc == 0
+    assert not bundle.exists()
+    out = capsys.readouterr().out
+    assert "deleted" in out.lower()
+
+
+def test_bundle_delete_interactive_y_removes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    bundle = tmp_path / "confirmed"
+    _seed_healthy_bundle(bundle, entries=1)
+    monkeypatch.setattr("builtins.input", lambda _prompt="": "y")
+
+    rc = main(["bundle", "delete", str(bundle)])
+    assert rc == 0
+    assert not bundle.exists()
+
+
+def test_bundle_delete_interactive_yes_removes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Full spelling 'yes' should also trigger the delete."""
+    bundle = tmp_path / "full-yes"
+    _seed_healthy_bundle(bundle, entries=1)
+    monkeypatch.setattr("builtins.input", lambda _prompt="": "YES")
+
+    rc = main(["bundle", "delete", str(bundle)])
+    assert rc == 0
+    assert not bundle.exists()
+
+
+def test_bundle_delete_interactive_n_aborts(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    bundle = tmp_path / "safe"
+    _seed_healthy_bundle(bundle, entries=1)
+    monkeypatch.setattr("builtins.input", lambda _prompt="": "n")
+
+    rc = main(["bundle", "delete", str(bundle)])
+    # Operator chose to abort — that's a success exit, not an error.
+    assert rc == 0
+    assert bundle.exists()
+    out = capsys.readouterr().out
+    assert "abort" in out.lower()
+
+
+def test_bundle_delete_interactive_empty_aborts(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Bare-return at the prompt is treated as No (default)."""
+    bundle = tmp_path / "bare-return"
+    _seed_healthy_bundle(bundle, entries=1)
+    monkeypatch.setattr("builtins.input", lambda _prompt="": "")
+
+    rc = main(["bundle", "delete", str(bundle)])
+    assert rc == 0
+    assert bundle.exists()
+
+
+def test_bundle_delete_refuses_non_bundle_dir(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Safety: even with --yes, a non-bundle dir is never removed."""
+    empty = tmp_path / "just-a-dir"
+    empty.mkdir()
+    (empty / "some_random_file.txt").write_text("hello", encoding="utf-8")
+
+    rc = main(["bundle", "delete", str(empty), "--yes"])
+    err = capsys.readouterr().err
+    assert rc == 2
+    assert empty.exists()
+    assert "bundle" in err.lower() or "refus" in err.lower()
+
+
+def test_bundle_delete_returns_2_for_missing_path(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    rc = main(["bundle", "delete", str(tmp_path / "never-existed"), "--yes"])
+    err = capsys.readouterr().err
+    assert rc == 2
+    assert err  # non-empty error

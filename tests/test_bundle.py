@@ -207,9 +207,11 @@ def test_list_bundles_returns_sorted_desc_by_last_modified(tmp_path: Path) -> No
     old = tmp_path / "old"
     new = tmp_path / "new"
     _write_index(old, entries=1, embed_dim=8)
-    # Touch the old bundle's index file to an older timestamp.
+    # Drag EVERY file in the old bundle back an hour, otherwise the
+    # newer embeddings.pt mtime will still make it sort first.
     past = time.time() - 3600
-    os.utime(old / "memory_index.json", (past, past))
+    for fp in old.iterdir():
+        os.utime(fp, (past, past))
     _write_index(new, entries=2, embed_dim=8)
 
     found = list_bundles(tmp_path)

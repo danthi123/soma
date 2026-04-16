@@ -602,6 +602,55 @@ def _cmd_bundle_info(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_bundle_delete(args: argparse.Namespace) -> int:
+    """Remove a bundle directory, with a confirmation prompt by default.
+
+    Safety: refuses (exit 2) if :func:`soma.bundle.is_bundle_dir` returns
+    False. That check is what stops ``soma bundle delete ~`` from
+    nuking a user's home dir even when ``--yes`` is set. With
+    ``--yes`` we still run the check; we only skip the interactive
+    y/N prompt.
+
+    A ``N`` / empty / unrecognised reply at the prompt aborts with
+    a message and exit 0 — the operator made a conscious choice, not
+    an error we should report non-zero for.
+    """
+    import shutil
+
+    from soma.bundle import is_bundle_dir, load_info
+
+    path = args.path
+    if not path.exists():
+        print(f"error: {path} does not exist", file=sys.stderr)
+        return 2
+    if not is_bundle_dir(path):
+        print(
+            f"error: refusing to delete {path} — not a SOMA bundle",
+            file=sys.stderr,
+        )
+        return 2
+
+    info = load_info(path)
+    entry_str = "CORRUPT" if info.corrupt else f"{info.entries:,}"
+    if not args.yes:
+        prompt = f"delete {path} with {entry_str} entries? [y/N] "
+        try:
+            reply = input(prompt)
+        except EOFError:
+            reply = ""
+        if reply.strip().lower() not in ("y", "yes"):
+            print("aborted")
+            return 0
+
+    try:
+        shutil.rmtree(path)
+    except OSError as exc:
+        print(f"error: failed to delete {path}: {exc}", file=sys.stderr)
+        return 2
+    print(f"deleted {path}")
+    return 0
+
+
 def _cmd_auth_gc(_: argparse.Namespace) -> int:
     """Drop past-exp entries from the blocklist file.
 
@@ -789,6 +838,18 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_bundle_info.add_argument("path", type=Path, help="Bundle directory")
     p_bundle_info.set_defaults(func=_cmd_bundle_info)
+
+    p_bundle_delete = bundle_sub.add_parser(
+        "delete",
+        help="Remove a bundle directory (prompts unless --yes)",
+    )
+    p_bundle_delete.add_argument("path", type=Path, help="Bundle directory")
+    p_bundle_delete.add_argument(
+        "--yes",
+        action="store_true",
+        help="Skip the y/N prompt (still refuses non-bundle paths)",
+    )
+    p_bundle_delete.set_defaults(func=_cmd_bundle_delete)
 
     return p
 

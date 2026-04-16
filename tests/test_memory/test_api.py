@@ -199,6 +199,26 @@ def test_consolidate_with_soma_processes_entries(embedder) -> None:
     assert soma.global_step > 0
 
 
+def test_auto_consolidate_fires_at_threshold(embedder) -> None:
+    from soma.core.config import SOMAConfig
+    from soma.system import SOMA
+
+    tokenizer, encoder = embedder
+    config = SOMAConfig(
+        vocab_size=256, text_embed_dim=32, sensor_output_dim=32, max_input_tokens=64,
+    )
+    soma = SOMA(config)
+    mem = MemoryLayer(
+        tokenizer=tokenizer, encoder=encoder, auto_consolidate_every=3,
+    )
+    mem.attach_soma(soma, tokenizer, encoder)
+    mem.store("fact one")
+    mem.store("fact two")
+    assert soma.global_step == 0
+    mem.store("fact three")
+    assert soma.global_step > 0
+
+
 def test_graph_rerank_activates_after_consolidation(embedder) -> None:
     """After consolidation, retrieve uses the graph-aware re-ranking path."""
     from soma.core.config import SOMAConfig

@@ -74,6 +74,7 @@ class MemoryLayer:
         embed_dim: int | None = None,
         device: torch.device | str | None = None,
         faiss_threshold: int = 10_000,
+        auto_consolidate_every: int = 0,
     ) -> None:
         if embed_fn is None and encoder is None:
             raise ValueError("MemoryLayer needs either (tokenizer + encoder) or embed_fn")
@@ -104,6 +105,8 @@ class MemoryLayer:
         # for related() (which needs exclude-self) and small stores.
         self._faiss_threshold: int = faiss_threshold
         self._faiss_index: Any = None
+        self._auto_consolidate_every: int = auto_consolidate_every
+        self._stores_since_consolidation: int = 0
 
         # Parallel storage. Order is preserved across save/load so
         # ``get_recent`` stays stable.
@@ -189,6 +192,14 @@ class MemoryLayer:
         self._step += 1
         self._faiss_index = None  # invalidate; rebuilt lazily
         self._maybe_build_faiss()
+        self._stores_since_consolidation += 1
+        if (
+            self._auto_consolidate_every > 0
+            and self._soma is not None
+            and self._stores_since_consolidation >= self._auto_consolidate_every
+        ):
+            self.consolidate()
+            self._stores_since_consolidation = 0
         return node_id
 
     def retrieve(self, query: str, k: int = 5) -> list[MemoryHit]:
@@ -271,6 +282,7 @@ class MemoryLayer:
         """
         if self._soma is None:
             return 0
+        self._stores_since_consolidation = 0
         from soma.io.verbalizer import SomaAggregator
 
         soma_output_dim = int(self._soma.config.sensor_output_dim)

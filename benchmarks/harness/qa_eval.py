@@ -34,8 +34,11 @@ if TYPE_CHECKING:
 logger = logging.getLogger("benchmarks.qa_eval")
 
 
-ANSWER_PROMPT = """Answer the question using only the context below. \
-If the context doesn't cover it, say "I don't know."
+ANSWER_PROMPT = """Answer the question based on the context below. \
+You may use reasonable inference from the conversation — if someone says \
+they are keen on a topic, it is fair to conclude they are interested in it. \
+If the context contains no information whatsoever related to the question, \
+say "I don't know."
 
 Context:
 {context}

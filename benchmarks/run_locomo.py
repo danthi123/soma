@@ -78,6 +78,7 @@ def _run_one_system(
     *,
     capture_qa_triples: bool = False,
     qa_max_questions: int | None = None,
+    qa_eval_k: int = 10,
 ) -> LoCoMoResult:
     print(f"  [{name}] preparing...")
     adapter.prepare()
@@ -134,8 +135,9 @@ def _run_one_system(
             and len(qa_triples) < qa_slice_cap
             and q.answer  # skip adversarial "no-answer" QAs
         ):
-            # Use top-5 hits from same-sample (a reasonable read-window).
-            qa_triples.append((q.question, same_sample[:5], q.answer))
+            # qa_eval_k hits from same-sample — wider context lifts accuracy
+            # when retrieval recall@5 is already weak on the dataset.
+            qa_triples.append((q.question, same_sample[:qa_eval_k], q.answer))
 
     n = len(queries)
     recall_avg = {k: recall_sums[k] / max(1, n) for k in K_VALUES}
@@ -298,6 +300,16 @@ def main() -> None:
         ),
     )
     p.add_argument(
+        "--qa-eval-k",
+        type=int,
+        default=10,
+        help=(
+            "Number of retrieved hits handed to the responder LLM per "
+            "question. Larger k = more context = higher QA accuracy "
+            "ceiling but more input tokens. Default 10."
+        ),
+    )
+    p.add_argument(
         "--judge-llm-name",
         type=str,
         default=None,
@@ -353,6 +365,7 @@ def main() -> None:
             queries,
             capture_qa_triples=args.run_qa_eval,
             qa_max_questions=qa_max,
+            qa_eval_k=args.qa_eval_k,
         )
         results.append(r)
         print(

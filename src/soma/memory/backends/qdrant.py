@@ -359,6 +359,85 @@ class QdrantBackend:
             out.append((nid, float(hit.score)))
         return out
 
+    def search_near_id(
+        self,
+        node_id: str,
+        k: int,
+        *,
+        exclude_self: bool = True,
+    ) -> list[tuple[str, float]]:
+        """Server-side neighbour lookup using Qdrant's ``recommend`` API.
+
+        Qdrant exposes ``recommend(positive=[point_id], limit=k)`` which
+        is exactly "find the k nearest neighbours of this stored point"
+        executed server-side against the HNSW index. Over HTTP this is
+        one round-trip instead of the two (``retrieve`` then ``search``)
+        the default impl takes — no Python-side vector ser/deser either.
+
+        Qdrant's ``recommend`` contract *already* omits the positive ids
+        from the response, so ``exclude_self=True`` is the cheap path:
+        we call ``recommend`` directly. For ``exclude_self=False`` the
+        API won't return the self-match on its own; we inject a synthetic
+        top hit with score ``1.0`` (cosine of the normalized vector with
+        itself) and request ``k - 1`` recommendations to fill the rest.
+        """
+        if k <= 0:
+            return []
+        pid = self._id_to_point.get(node_id)
+        if pid is None:
+            # Unknown pivot — contract is to return empty rather than
+            # raise, matching the in-proc default path.
+            return []
+
+        assert self._client is not None
+
+        # Qdrant's recommend API always excludes the positive point
+        # from the result set. We want (k) neighbours if exclude_self,
+        # (k - 1) plus the synthetic self-hit otherwise.
+        recommend_limit = k if exclude_self else max(k - 1, 0)
+
+        try:
+            response = (
+                self._client.recommend(
+                    collection_name=self._collection,
+                    positive=[pid],
+                    limit=recommend_limit,
+                    with_payload=True,
+                )
+                if recommend_limit > 0
+                else []
+            )
+        except Exception:
+            # Qdrant raises when the positive id is missing from the
+            # collection (race with remove, or an inconsistent id map).
+            # Treat as "no neighbours" rather than propagating — keeps
+            # the search_near_id contract uniform across adapters.
+            return []
+
+        neighbours: list[tuple[str, float]] = []
+        for hit in response:
+            hid = hit.id
+            nid = self._point_to_id.get(hid) if isinstance(hid, int) else None
+            if nid is None:
+                nid = (hit.payload or {}).get("node_id")
+            if nid is None:
+                continue
+            if nid == node_id:
+                # recommend() should never return the positive id, but
+                # be defensive in case a future Qdrant version changes
+                # semantics — keep the self-exclusion contract tight.
+                continue
+            neighbours.append((nid, float(hit.score)))
+
+        if exclude_self:
+            return neighbours[:k]
+        # Cosine of a unit-normalized vector with itself is 1.0; Qdrant
+        # stores vectors normalized under COSINE distance so this is
+        # the exact score a ``search`` against the stored point would
+        # surface. Put it at the top to match what every other backend
+        # returns when exclude_self=False.
+        return [(node_id, 1.0), *neighbours][:k]
+
     # ------------------------------------------------------------------
     # Snapshot / restore
     # ------------------------------------------------------------------

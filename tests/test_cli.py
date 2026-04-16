@@ -319,3 +319,176 @@ def test_cli_auth_issue_rejects_bad_expires(
     err = capsys.readouterr().err
     assert rc != 0
     assert err
+
+
+# ------------------------------------------------------------------
+# `soma auth revoke` / `list-revoked` / `gc`
+# ------------------------------------------------------------------
+def test_cli_auth_revoke_adds_to_blocklist(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """`soma auth revoke --token <t> --reason ...` lands a record on disk."""
+    from datetime import timedelta
+
+    from soma.auth import issue_token, verify_token
+
+    bl_path = tmp_path / "bl.jsonl"
+    monkeypatch.setenv("SOMA_JWT_SECRET", _TEST_SECRET)
+    monkeypatch.setenv("SOMA_JWT_BLOCKLIST_PATH", str(bl_path))
+
+    token = issue_token(
+        sub="alex",
+        bundles={"alex": ["read"]},
+        expires_in=timedelta(minutes=5),
+        secret=_TEST_SECRET,
+    )
+    rc = main(
+        [
+            "auth",
+            "revoke",
+            "--token",
+            token,
+            "--reason",
+            "leaked in test",
+        ]
+    )
+    assert rc == 0
+    # Drain CLI stdout so subsequent capsys calls see clean output.
+    capsys.readouterr()
+
+    # Record is on disk, keyed by the token's jti.
+    principal = verify_token(token, secret=_TEST_SECRET)
+    assert principal.jti is not None
+    contents = bl_path.read_text(encoding="utf-8")
+    assert principal.jti in contents
+    assert "leaked in test" in contents
+
+
+def test_cli_auth_revoke_accepts_jti_directly(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """`soma auth revoke --jti <j> --exp <ts> --reason ...` when the token is
+    already discarded (operator only has the jti from a log)."""
+    import time
+
+    bl_path = tmp_path / "bl.jsonl"
+    monkeypatch.setenv("SOMA_JWT_BLOCKLIST_PATH", str(bl_path))
+
+    future = int(time.time()) + 3600
+    rc = main(
+        [
+            "auth",
+            "revoke",
+            "--jti",
+            "manual-jti-xyz",
+            "--exp",
+            str(future),
+            "--reason",
+            "raw id only",
+        ]
+    )
+    assert rc == 0
+    capsys.readouterr()
+
+    contents = bl_path.read_text(encoding="utf-8")
+    assert "manual-jti-xyz" in contents
+    assert str(future) in contents
+
+
+def test_cli_auth_list_revoked_prints_json(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """`soma auth list-revoked` prints one JSON per line for each entry."""
+    import time
+
+    bl_path = tmp_path / "bl.jsonl"
+    monkeypatch.setenv("SOMA_JWT_BLOCKLIST_PATH", str(bl_path))
+
+    now = int(time.time())
+    for i in range(2):
+        rc = main(
+            [
+                "auth",
+                "revoke",
+                "--jti",
+                f"jti-{i}",
+                "--exp",
+                str(now + 3600),
+                "--reason",
+                f"r{i}",
+            ]
+        )
+        assert rc == 0
+        capsys.readouterr()  # drain
+
+    rc = main(["auth", "list-revoked"])
+    assert rc == 0
+    out = capsys.readouterr().out.strip().splitlines()
+    assert len(out) == 2
+    parsed = [json.loads(line) for line in out]
+    jtis = {row["jti"] for row in parsed}
+    assert jtis == {"jti-0", "jti-1"}
+
+
+def test_cli_auth_gc_removes_expired(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """`soma auth gc` drops past-exp entries and prints the count."""
+    import time
+
+    bl_path = tmp_path / "bl.jsonl"
+    monkeypatch.setenv("SOMA_JWT_BLOCKLIST_PATH", str(bl_path))
+
+    now = int(time.time())
+    # One live, one dead.
+    main(["auth", "revoke", "--jti", "live", "--exp", str(now + 3600), "--reason", "ok"])
+    capsys.readouterr()
+    main(["auth", "revoke", "--jti", "dead", "--exp", str(now - 3600), "--reason", "old"])
+    capsys.readouterr()
+
+    rc = main(["auth", "gc"])
+    assert rc == 0
+    out = capsys.readouterr().out.strip()
+    # Output mentions the removed count.
+    assert "1" in out
+
+    # The surviving file only has the live entry.
+    surviving = [
+        json.loads(line)
+        for line in bl_path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    assert len(surviving) == 1
+    assert surviving[0]["jti"] == "live"
+
+
+def test_cli_auth_revoke_requires_blocklist_path(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Without SOMA_JWT_BLOCKLIST_PATH, revoke errors out with a clear hint."""
+    import time
+
+    monkeypatch.delenv("SOMA_JWT_BLOCKLIST_PATH", raising=False)
+    rc = main(
+        [
+            "auth",
+            "revoke",
+            "--jti",
+            "x",
+            "--exp",
+            str(int(time.time()) + 60),
+            "--reason",
+            "no path set",
+        ]
+    )
+    err = capsys.readouterr().err
+    assert rc != 0
+    assert "SOMA_JWT_BLOCKLIST_PATH" in err

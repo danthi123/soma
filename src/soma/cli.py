@@ -304,6 +304,169 @@ def _cmd_auth_rotate_secret(_: argparse.Namespace) -> int:
     return 0
 
 
+# ------------------------------------------------------------------
+# `soma auth revoke` / `list-revoked` / `gc` — blocklist operations
+# ------------------------------------------------------------------
+def _require_blocklist_path() -> str | None:
+    """Return ``SOMA_JWT_BLOCKLIST_PATH`` or ``None`` with a stderr hint.
+
+    Central helper so each subcommand emits the same migration-clear
+    error when the env var is unset. Keeps CLI callers from guessing
+    the name or misspelling the default path.
+    """
+    path = os.environ.get("SOMA_JWT_BLOCKLIST_PATH", "").strip()
+    if not path:
+        print(
+            "error: SOMA_JWT_BLOCKLIST_PATH is required. Set it to a writable "
+            "path (e.g. SOMA_JWT_BLOCKLIST_PATH=./data/jwt-blocklist.jsonl) and "
+            "restart any running `soma serve` so it picks up the file.",
+            file=sys.stderr,
+        )
+        return None
+    return path
+
+
+def _cmd_auth_revoke(args: argparse.Namespace) -> int:
+    """Add a revocation to the blocklist file.
+
+    Two input modes:
+    - ``--token <jwt>``: decode the token, pull ``jti`` + ``exp`` off the
+      claims, append the record. Requires a verifier secret.
+    - ``--jti <j> --exp <ts>``: the caller already has the jti (e.g.,
+      lifted from an access log) and the token itself is lost. Both
+      args required in this mode.
+    """
+    import time
+
+    from soma.auth_revocation import FileBlocklist, RevocationRecord
+
+    path = _require_blocklist_path()
+    if path is None:
+        return 2
+
+    reason = args.reason or "revoked via soma auth revoke"
+    now = int(time.time())
+
+    if args.token:
+        # Token path — need a verifier secret to pull jti/exp safely.
+        from soma.auth import verify_token
+
+        alg = os.environ.get("SOMA_JWT_ALG", "HS256")
+        secret = os.environ.get("SOMA_JWT_SECRET", "")
+        public_key_path = os.environ.get("SOMA_JWT_PUBLIC_KEY_PATH", "")
+
+        verify_kwargs: dict[str, object] = {"alg": alg}
+        if alg == "HS256":
+            if not secret:
+                print(
+                    "error: SOMA_JWT_SECRET is required to revoke by --token.",
+                    file=sys.stderr,
+                )
+                return 2
+            verify_kwargs["secret"] = secret
+        elif alg == "RS256":
+            if not public_key_path:
+                print(
+                    "error: SOMA_JWT_PUBLIC_KEY_PATH is required to revoke by --token.",
+                    file=sys.stderr,
+                )
+                return 2
+            try:
+                verify_kwargs["public_key_pem"] = Path(public_key_path).read_bytes()
+            except OSError as exc:
+                print(f"error: cannot read {public_key_path}: {exc}", file=sys.stderr)
+                return 2
+        else:
+            print(f"error: unsupported SOMA_JWT_ALG={alg!r}", file=sys.stderr)
+            return 2
+
+        # Pull the jti/exp straight off the signed claims so an operator
+        # can't accidentally revoke a forged id. Leeway stays at 60s —
+        # a just-expired token is still worth blocking, but past that
+        # the verifier will refuse it anyway.
+        try:
+            principal = verify_token(args.token, **verify_kwargs)  # type: ignore[arg-type]
+        except Exception as exc:  # noqa: BLE001 — CLI surface
+            print(f"error: token verification failed: {exc}", file=sys.stderr)
+            return 2
+
+        if not principal.jti:
+            print("error: token has no jti claim; nothing to revoke.", file=sys.stderr)
+            return 2
+
+        # exp comes off the unverified-but-signature-checked payload.
+        import jwt as _jwt
+
+        claims = _jwt.decode(args.token, options={"verify_signature": False})
+        exp = int(claims.get("exp", 0))
+        jti = principal.jti
+    else:
+        if not args.jti or args.exp is None:
+            print(
+                "error: supply either --token OR (--jti AND --exp).",
+                file=sys.stderr,
+            )
+            return 2
+        jti = args.jti
+        exp = int(args.exp)
+
+    FileBlocklist(Path(path)).add(
+        RevocationRecord(jti=jti, revoked_at=now, reason=reason, exp=exp)
+    )
+    print(json.dumps({"revoked": jti, "exp": exp, "reason": reason}))
+    return 0
+
+
+def _cmd_auth_list_revoked(_: argparse.Namespace) -> int:
+    """Emit one JSON object per live revocation entry, newline-separated.
+
+    Past-exp entries are skipped — the reader treats them as "not
+    revoked" anyway. Operators who want full history can ``cat`` the
+    file directly.
+    """
+    path = _require_blocklist_path()
+    if path is None:
+        return 2
+
+    p = Path(path)
+    if not p.exists():
+        return 0  # nothing to list
+
+    import time
+
+    now = int(time.time())
+    for line in p.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            rec = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if int(rec.get("exp", 0)) <= now:
+            continue
+        print(json.dumps(rec, sort_keys=True))
+    return 0
+
+
+def _cmd_auth_gc(_: argparse.Namespace) -> int:
+    """Drop past-exp entries from the blocklist file.
+
+    Prints the count removed (0 if nothing to do). Safe to cron —
+    take the sibling ``.lock`` file + rewrite atomically via temp +
+    replace.
+    """
+    from soma.auth_revocation import FileBlocklist
+
+    path = _require_blocklist_path()
+    if path is None:
+        return 2
+
+    removed = FileBlocklist(Path(path)).gc_expired()
+    print(f"removed {removed} expired revocation(s)")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="soma",
@@ -398,6 +561,49 @@ def build_parser() -> argparse.ArgumentParser:
         help="Generate a fresh HS256 shared secret (stdout)",
     )
     p_auth_rotate.set_defaults(func=_cmd_auth_rotate_secret)
+
+    # --- revocation subcommands (require SOMA_JWT_BLOCKLIST_PATH) ---
+    p_auth_revoke = auth_sub.add_parser(
+        "revoke",
+        help="Revoke a JWT by its jti (append to the blocklist file)",
+        description=(
+            "Add a revocation record to SOMA_JWT_BLOCKLIST_PATH. Supply "
+            "either --token (the full JWT; jti + exp are read from its "
+            "claims) OR --jti with --exp (raw id + epoch seconds). "
+            "--reason is free-form and capped at 256 chars."
+        ),
+    )
+    p_auth_revoke.add_argument(
+        "--token",
+        help="Full JWT to revoke; jti + exp are pulled from signed claims",
+    )
+    p_auth_revoke.add_argument(
+        "--jti",
+        help="Raw jti value to revoke (use with --exp)",
+    )
+    p_auth_revoke.add_argument(
+        "--exp",
+        type=int,
+        help="Epoch-seconds expiry for --jti mode (needed for GC)",
+    )
+    p_auth_revoke.add_argument(
+        "--reason",
+        default="",
+        help="Free-form operator note; capped at 256 chars on disk",
+    )
+    p_auth_revoke.set_defaults(func=_cmd_auth_revoke)
+
+    p_auth_list = auth_sub.add_parser(
+        "list-revoked",
+        help="Print one JSON object per live revocation (past-exp skipped)",
+    )
+    p_auth_list.set_defaults(func=_cmd_auth_list_revoked)
+
+    p_auth_gc = auth_sub.add_parser(
+        "gc",
+        help="Rewrite the blocklist dropping entries whose exp is in the past",
+    )
+    p_auth_gc.set_defaults(func=_cmd_auth_gc)
 
     return p
 

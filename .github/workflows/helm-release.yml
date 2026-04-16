@@ -1,0 +1,93 @@
+name: helm-release
+
+# Dual-channel release:
+#   1. OCI push to ghcr.io/soma-ai/charts/soma (primary)
+#   2. GitHub Pages index.yaml + GitHub Release tarball via
+#      helm/chart-releaser-action (secondary)
+#
+# Both must succeed — fail-fast so the two channels never drift.
+
+on:
+  push:
+    tags:
+      - 'chart-v*'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Render + package only; skip push"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write          # needed by chart-releaser-action (creates Releases)
+  packages: write          # needed for OCI push to ghcr.io
+  pages: write
+  id-token: write
+
+jobs:
+  release:
+    name: OCI + GH Pages release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure Git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.14.4
+
+      - name: helm lint (defense-in-depth)
+        run: helm lint deploy/helm/soma
+
+      - name: Package chart
+        id: package
+        run: |
+          mkdir -p .cr-release-packages
+          helm package deploy/helm/soma --destination .cr-release-packages
+          pkg=$(ls .cr-release-packages/soma-*.tgz | head -n1)
+          echo "package=$pkg" >> "$GITHUB_OUTPUT"
+          echo "Packaged: $pkg"
+
+      - name: Log in to ghcr.io (OCI)
+        if: ${{ !inputs.dry_run }}
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | \
+            helm registry login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: OCI push to ghcr.io/soma-ai/charts
+        if: ${{ !inputs.dry_run }}
+        id: oci
+        run: |
+          helm push "${{ steps.package.outputs.package }}" \
+            oci://ghcr.io/soma-ai/charts
+
+      - name: Release via chart-releaser (GH Pages + Release tarball)
+        if: ${{ !inputs.dry_run }}
+        id: gh_pages
+        uses: helm/chart-releaser-action@v1.6.0
+        with:
+          charts_dir: deploy/helm
+          skip_existing: false
+          mark_as_latest: true
+        env:
+          CR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Fail-fast check
+        if: ${{ !inputs.dry_run && (steps.oci.outcome != 'success' || steps.gh_pages.outcome != 'success') }}
+        run: |
+          echo "One of the release channels failed — OCI=${{ steps.oci.outcome }} GH_Pages=${{ steps.gh_pages.outcome }}" >&2
+          exit 1
+
+      - name: Summary
+        run: |
+          echo "## Helm release summary" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Package: ${{ steps.package.outputs.package }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- OCI:     oci://ghcr.io/soma-ai/charts/soma" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Pages:   https://soma-ai.github.io/soma-helm" >> "$GITHUB_STEP_SUMMARY"

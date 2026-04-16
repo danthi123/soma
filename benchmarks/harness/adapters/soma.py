@@ -98,6 +98,30 @@ class SomaAdapter(BaseMemorySystem):
         assert self._mem is not None
         return self._mem.store(text, metadata=metadata)
 
+    def store_with_embedding(
+        self,
+        text: str,
+        embedding: Any,
+        metadata: dict[str, Any] | None = None,
+    ) -> str:
+        """Skip the per-call embed by injecting the precomputed vector
+        through MemoryLayer's internals — we set the custom embed_fn to
+        a closure that returns this exact vector for this exact text."""
+        assert self._mem is not None
+        import torch
+
+        if not isinstance(embedding, torch.Tensor):
+            embedding = torch.as_tensor(embedding)
+        # The MemoryLayer's _embed() routes through _custom_embed_fn when
+        # set. Temporarily override for this single store; the sbert
+        # path remains the default for retrieve.
+        prev_fn = self._mem._custom_embed_fn
+        self._mem._custom_embed_fn = lambda _t: embedding
+        try:
+            return self._mem.store(text, metadata=metadata)
+        finally:
+            self._mem._custom_embed_fn = prev_fn
+
     def retrieve(self, query: str, k: int = 5) -> list[BenchmarkHit]:
         assert self._mem is not None
         hits = self._mem.retrieve(query, k=k)

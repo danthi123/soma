@@ -58,3 +58,7 @@ runs/
 # Reports that summarise a run live under reports/ and are tracked;
 # the raw per-step artifacts stay out of git.
 artifacts/
+
+# Embedding caches for enterprise-scale benchmarks (can be 100s of MB to GB).
+# Regenerate on demand via the benchmark scripts.
+benchmarks/datasets/scale_cache/

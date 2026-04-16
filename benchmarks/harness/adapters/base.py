@@ -40,6 +40,21 @@ class BaseMemorySystem(ABC):
     def store(self, text: str, metadata: dict[str, Any] | None = None) -> str:
         """Persist an entry. Returns a stable node_id."""
 
+    def store_with_embedding(
+        self,
+        text: str,
+        embedding: Any,
+        metadata: dict[str, Any] | None = None,
+    ) -> str:
+        """Persist an entry with a precomputed embedding.
+
+        Adapters that don't override this fall back to ``store(text)``,
+        which re-embeds — so they'll work in benchmarks but won't
+        benefit from the shared-embedding optimization that lets
+        scale runs skip the per-system sbert pass.
+        """
+        return self.store(text, metadata=metadata)
+
     @abstractmethod
     def retrieve(self, query: str, k: int = 5) -> list[BenchmarkHit]:
         """Return up to k entries most similar to ``query``."""

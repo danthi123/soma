@@ -47,6 +47,25 @@ class ChromaAdapter(BaseMemorySystem):
         )
         return nid
 
+    def store_with_embedding(
+        self,
+        text: str,
+        embedding: Any,
+        metadata: dict[str, Any] | None = None,
+    ) -> str:
+        """Use Chroma's direct-embedding path so it skips its internal
+        embed model. Same chromadb API, just providing the vector."""
+        assert self._col is not None
+        nid = uuid.uuid4().hex
+        emb = embedding.tolist() if hasattr(embedding, "tolist") else list(embedding)
+        self._col.add(
+            ids=[nid],
+            documents=[text],
+            embeddings=[emb],
+            metadatas=[metadata] if metadata else None,
+        )
+        return nid
+
     def retrieve(self, query: str, k: int = 5) -> list[BenchmarkHit]:
         assert self._col is not None
         n = min(k, self._col.count())

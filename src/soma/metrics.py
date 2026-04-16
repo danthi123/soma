@@ -27,6 +27,8 @@ Counters
     ``soma_bm25_rebuild_total`` — BM25 index rebuilds
     ``soma_consolidate_total`` — consolidate() calls
     ``soma_wal_append_total{op}`` — WAL appends (Phase 1 hook)
+    ``soma_auth_failures_total{reason}`` — auth rejections on the REST API
+        (invalid_token | expired_token | insufficient_perm | missing_credentials)
 
 Gauges
     ``soma_entries{bundle}`` — live entries
@@ -48,6 +50,7 @@ import contextlib
 from typing import Any
 
 __all__ = [
+    "AUTH_FAILURES_TOTAL",
     "BM25_REBUILD_SECONDS",
     "BM25_REBUILD_TOTAL",
     "CONSOLIDATE_SECONDS",
@@ -238,13 +241,19 @@ CONSOLIDATE_TOTAL = _counter(
 )
 WAL_APPEND_TOTAL = _counter(
     "soma_wal_append_total",
-    "WAL records appended, labelled by op (store | forget).",
+    "WAL records appended, labelled by op (store | forget | update_metadata).",
     ("op",),
 )
 RELOAD_TOTAL = _counter(
     "soma_reload_total",
     "reload_if_stale() invocations that applied ≥1 peer-committed record.",
     ("bundle",),
+)
+AUTH_FAILURES_TOTAL = _counter(
+    "soma_auth_failures_total",
+    "REST auth failures, labelled by reason "
+    "(invalid_token | expired_token | insufficient_perm | missing_credentials).",
+    ("reason",),
 )
 
 # --- Gauges ---

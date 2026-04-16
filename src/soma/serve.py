@@ -18,8 +18,18 @@ Environment variables:
                           (default: all-MiniLM-L6-v2). Use the literal
                           value ``stub`` to return 384-d zero vectors
                           (CI / schema-gen only — no model download).
-    SOMA_API_KEY        — if set, all non-health endpoints require
-                          ``Authorization: Bearer <key>``. Unset = open.
+    SOMA_API_KEY        — legacy admin escape hatch. When set, a raw
+                          match against the bearer token grants full
+                          access; response carries
+                          ``X-SOMA-Deprecated: use JWT``.
+    SOMA_JWT_SECRET     — HS256 shared secret. When set, every
+                          protected endpoint verifies an
+                          ``Authorization: Bearer <JWT>`` with
+                          per-bundle perms (``read``/``write``/
+                          ``admin``).
+    SOMA_JWT_ALG        — ``HS256`` (default) or ``RS256``.
+    SOMA_JWT_PUBLIC_KEY_PATH — RS256 PEM file for verification.
+    SOMA_JWT_LEEWAY     — seconds of clock-skew tolerance (default 60).
     SOMA_CORS_ORIGINS   — comma-separated allow-list for the browser
                           CORS middleware (default: http://localhost:*).
 
@@ -41,11 +51,14 @@ import threading
 from pathlib import Path
 from typing import Any
 
-from fastapi import Depends, FastAPI, HTTPException, status
+import jwt
+from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field
 
+from soma import metrics as _metrics
+from soma.auth import Perm, Principal, verify_token
 from soma.log import configure_json_logging
 from soma.memory import MemoryLayer
 
@@ -58,6 +71,28 @@ BUNDLE_PATH = Path(os.environ.get("SOMA_BUNDLE_PATH", "./data/memory"))
 BUNDLES_DIR = Path(os.environ.get("SOMA_BUNDLES_DIR", "./data/bundles"))
 EMBED_MODEL = os.environ.get("SOMA_EMBED_MODEL", "all-MiniLM-L6-v2")
 API_KEY = os.environ.get("SOMA_API_KEY", "")
+
+# Phase 4 — JWT auth config. When SOMA_JWT_SECRET (HS256) or
+# SOMA_JWT_PUBLIC_KEY_PATH (RS256) is set, every protected route
+# requires a valid JWT whose claims carry per-bundle permissions.
+# SOMA_API_KEY still works in parallel as a deprecated admin
+# escape hatch — responses from that path carry ``X-SOMA-Deprecated:
+# use JWT`` so callers notice.
+JWT_ALG = os.environ.get("SOMA_JWT_ALG", "HS256")
+JWT_SECRET = os.environ.get("SOMA_JWT_SECRET", "")
+JWT_PUBLIC_KEY_PATH = os.environ.get("SOMA_JWT_PUBLIC_KEY_PATH", "")
+try:
+    JWT_LEEWAY = int(os.environ.get("SOMA_JWT_LEEWAY", "60"))
+except ValueError:
+    JWT_LEEWAY = 60
+# Resolved once at import time — rotating the key file requires a
+# server restart, which is the intended operator story.
+_JWT_PUBLIC_KEY_PEM: bytes | None = None
+if JWT_PUBLIC_KEY_PATH:
+    try:
+        _JWT_PUBLIC_KEY_PEM = Path(JWT_PUBLIC_KEY_PATH).read_bytes()
+    except OSError:
+        _JWT_PUBLIC_KEY_PEM = None
 
 app = FastAPI(
     title="SOMA Memory Layer",
@@ -161,32 +196,141 @@ ERROR_RESPONSES: dict[int | str, dict[str, Any]] = {
 
 
 # ------------------------------------------------------------------
-# Auth — HTTPBearer security scheme so OpenAPI advertises bearer auth.
-# Behaviour preserved: unset SOMA_API_KEY = open; set = require Bearer.
+# Auth — HTTPBearer security scheme so OpenAPI advertises bearer JWT.
+# Three modes:
+#   1. Open: neither SOMA_JWT_SECRET nor SOMA_JWT_PUBLIC_KEY_PATH nor
+#      SOMA_API_KEY is set -> every route is open (matches prior
+#      behaviour for frictionless local dev).
+#   2. JWT: SOMA_JWT_SECRET (HS256) or SOMA_JWT_PUBLIC_KEY_PATH (RS256)
+#      is set -> bearer token is decoded, per-bundle perms enforced.
+#   3. Legacy: SOMA_API_KEY is set -> raw match against the bearer
+#      token acts as an admin escape hatch. Responses carry
+#      ``X-SOMA-Deprecated: use JWT`` so callers migrate.
+# When both JWT and legacy envs are set, the JWT path wins for
+# valid tokens; invalid JWTs fall through to the legacy check.
 # ------------------------------------------------------------------
-_bearer_scheme = HTTPBearer(auto_error=False)
+_bearer_scheme = HTTPBearer(bearerFormat="JWT", scheme_name="bearerAuth", auto_error=False)
+
+# Principal instance used to represent a successful legacy SOMA_API_KEY
+# match. Admin everywhere by convention — that's the backward-compat
+# contract Phase 4 inherits. A distinct ``jti`` marker makes it easy to
+# grep access logs for legacy hits.
+_LEGACY_PRINCIPAL = Principal(sub="legacy-api-key", bundles={}, jti="legacy")
 
 
-def require_api_key(
-    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer_scheme),  # noqa: B008
-) -> None:
-    """FastAPI dependency: enforce ``SOMA_API_KEY`` when set.
+def record_auth_failure(reason: str) -> None:
+    """Increment the ``soma_auth_failures_total{reason}`` counter.
 
-    Unset env var = open server (matches prior behaviour). Set env var =
-    require ``Authorization: Bearer <key>``.
+    Reasons used: ``missing_credentials``, ``invalid_token``,
+    ``expired_token``, ``insufficient_perm``. Kept as a thin helper so
+    every 401/403 path funnels through one place — easier to audit and
+    easier to keep the label cardinality bounded.
     """
-    if not API_KEY:
-        return
-    if (
-        credentials is None
-        or credentials.scheme.lower() != "bearer"
-        or credentials.credentials != API_KEY
-    ):
+    _metrics.AUTH_FAILURES_TOTAL.labels(reason=reason).inc()
+
+
+def _auth_disabled() -> bool:
+    """True when no auth env vars are set — open-mode dev server."""
+    return not API_KEY and not JWT_SECRET and _JWT_PUBLIC_KEY_PEM is None
+
+
+def _try_verify_jwt(token: str) -> Principal | None:
+    """Decode the token; return the principal or ``None`` if no JWT
+    verifier is configured.
+
+    Raises :class:`jwt.InvalidTokenError` for any token-shaped failure
+    (bad signature, expired, missing exp, alg=none).
+    """
+    if JWT_ALG == "HS256" and JWT_SECRET:
+        return verify_token(token, alg="HS256", secret=JWT_SECRET, leeway=JWT_LEEWAY)
+    if JWT_ALG == "RS256" and _JWT_PUBLIC_KEY_PEM is not None:
+        return verify_token(
+            token,
+            alg="RS256",
+            public_key_pem=_JWT_PUBLIC_KEY_PEM,
+            leeway=JWT_LEEWAY,
+        )
+    return None
+
+
+def require_auth(
+    bundle_path_param: str | None, perm: Perm
+) -> Any:
+    """Build a FastAPI dependency that enforces the given perm.
+
+    ``bundle_path_param`` names the path parameter that carries the
+    bundle name (e.g., ``"name"`` for ``/bundles/{name}/store``). When
+    ``None``, the route is not tenant-scoped and ``has_perm(None, perm)``
+    applies — any claim that meets the bar satisfies.
+    """
+
+    async def dep(
+        request: Request,
+        response: Response,
+        credentials: HTTPAuthorizationCredentials | None = Depends(_bearer_scheme),  # noqa: B008
+    ) -> Principal | None:
+        # Path 1: open mode — no auth configured.
+        if _auth_disabled():
+            return None
+
+        # Path 2: JWT, when a secret / public key is configured.
+        if credentials and credentials.scheme.lower() == "bearer":
+            try:
+                principal = _try_verify_jwt(credentials.credentials)
+            except jwt.ExpiredSignatureError:
+                record_auth_failure("expired_token")
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="token expired",
+                    headers={"WWW-Authenticate": 'Bearer error="invalid_token"'},
+                ) from None
+            except jwt.InvalidTokenError:
+                # Fall through to legacy check — a malformed JWT might
+                # just be a legacy raw key.
+                principal = None
+            if principal is not None:
+                bundle = (
+                    request.path_params.get(bundle_path_param)
+                    if bundle_path_param
+                    else None
+                )
+                if not principal.has_perm(bundle, perm):
+                    record_auth_failure("insufficient_perm")
+                    detail = (
+                        f"perm {perm!r} required for bundle {bundle!r}"
+                        if bundle
+                        else f"perm {perm!r} required"
+                    )
+                    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=detail)
+                return principal
+
+        # Path 3: legacy SOMA_API_KEY admin escape hatch.
+        if (
+            API_KEY
+            and credentials is not None
+            and credentials.scheme.lower() == "bearer"
+            and credentials.credentials == API_KEY
+        ):
+            response.headers["X-SOMA-Deprecated"] = "use JWT"
+            return _LEGACY_PRINCIPAL
+
+        # Anything else is a clean 401.
+        reason = "missing_credentials" if credentials is None else "invalid_token"
+        record_auth_failure(reason)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="invalid or missing Authorization header",
             headers={"WWW-Authenticate": "Bearer"},
         )
+
+    return dep
+
+
+# Back-compat alias so any external pin (e.g., in a downstream app that
+# imported `soma.serve.require_api_key` as a dependency) keeps working.
+# The new code path does NOT use this — every @app route below binds
+# ``require_auth(...)`` directly.
+require_api_key = require_auth(None, "admin")
 
 
 # ------------------------------------------------------------------
@@ -417,7 +561,7 @@ def version_endpoint() -> VersionResponse:
     operation_id="status",
     tags=["default"],
     responses=ERROR_RESPONSES,
-    dependencies=[Depends(require_api_key)],
+    dependencies=[Depends(require_auth(None, "read"))],
 )
 def status_ep() -> StatusResponse:
     mem = _get_mem()
@@ -434,7 +578,7 @@ def status_ep() -> StatusResponse:
     operation_id="store",
     tags=["default"],
     responses=ERROR_RESPONSES,
-    dependencies=[Depends(require_api_key)],
+    dependencies=[Depends(require_auth(None, "write"))],
 )
 def store(req: StoreRequest) -> StoreResponse:
     mem = _get_mem()
@@ -447,7 +591,7 @@ def store(req: StoreRequest) -> StoreResponse:
     operation_id="store_batch",
     tags=["default"],
     responses=ERROR_RESPONSES,
-    dependencies=[Depends(require_api_key)],
+    dependencies=[Depends(require_auth(None, "write"))],
 )
 def store_batch(req: StoreBatchRequest) -> StoreBatchResponse:
     mem = _get_mem()
@@ -462,7 +606,7 @@ def store_batch(req: StoreBatchRequest) -> StoreBatchResponse:
     operation_id="related",
     tags=["default"],
     responses=ERROR_RESPONSES,
-    dependencies=[Depends(require_api_key)],
+    dependencies=[Depends(require_auth(None, "read"))],
 )
 def related(node_id: str, k: int = 5) -> RetrieveResponse:
     try:
@@ -478,7 +622,7 @@ def related(node_id: str, k: int = 5) -> RetrieveResponse:
     operation_id="retrieve",
     tags=["default"],
     responses=ERROR_RESPONSES,
-    dependencies=[Depends(require_api_key)],
+    dependencies=[Depends(require_auth(None, "read"))],
 )
 def retrieve(req: RetrieveRequest) -> RetrieveResponse:
     mem = _get_mem()
@@ -498,7 +642,7 @@ def retrieve(req: RetrieveRequest) -> RetrieveResponse:
     operation_id="get",
     tags=["default"],
     responses=ERROR_RESPONSES,
-    dependencies=[Depends(require_api_key)],
+    dependencies=[Depends(require_auth(None, "read"))],
 )
 def get_entry(node_id: str) -> HitResponse:
     hit = _get_mem().get(node_id)
@@ -513,7 +657,7 @@ def get_entry(node_id: str) -> HitResponse:
     operation_id="forget",
     tags=["default"],
     responses=ERROR_RESPONSES,
-    dependencies=[Depends(require_api_key)],
+    dependencies=[Depends(require_auth(None, "write"))],
 )
 def forget(req: ForgetRequest) -> ForgetResponse:
     if not _get_mem().forget(req.node_id):
@@ -527,7 +671,7 @@ def forget(req: ForgetRequest) -> ForgetResponse:
     operation_id="consolidate",
     tags=["default"],
     responses=ERROR_RESPONSES,
-    dependencies=[Depends(require_api_key)],
+    dependencies=[Depends(require_auth(None, "write"))],
 )
 def consolidate() -> ConsolidateResponse:
     return ConsolidateResponse(processed=_get_mem().consolidate())
@@ -539,7 +683,7 @@ def consolidate() -> ConsolidateResponse:
     operation_id="save",
     tags=["default"],
     responses=ERROR_RESPONSES,
-    dependencies=[Depends(require_api_key)],
+    dependencies=[Depends(require_auth(None, "write"))],
 )
 def save() -> SaveResponse:
     mem = _get_mem()
@@ -553,7 +697,7 @@ def save() -> SaveResponse:
     operation_id="recent",
     tags=["default"],
     responses=ERROR_RESPONSES,
-    dependencies=[Depends(require_api_key)],
+    dependencies=[Depends(require_auth(None, "read"))],
 )
 def recent(n: int = 10) -> RetrieveResponse:
     hits = _get_mem().get_recent(max(1, n))
@@ -569,7 +713,7 @@ def recent(n: int = 10) -> RetrieveResponse:
     operation_id="bundles_status",
     tags=["bundles"],
     responses=ERROR_RESPONSES,
-    dependencies=[Depends(require_api_key)],
+    dependencies=[Depends(require_auth("name", "read"))],
 )
 def status_bundle(name: str) -> StatusResponse:
     mem = _get_mem(name)
@@ -586,7 +730,7 @@ def status_bundle(name: str) -> StatusResponse:
     operation_id="bundles_store",
     tags=["bundles"],
     responses=ERROR_RESPONSES,
-    dependencies=[Depends(require_api_key)],
+    dependencies=[Depends(require_auth("name", "write"))],
 )
 def store_bundle(name: str, req: StoreRequest) -> StoreResponse:
     mem = _get_mem(name)
@@ -599,7 +743,7 @@ def store_bundle(name: str, req: StoreRequest) -> StoreResponse:
     operation_id="bundles_store_batch",
     tags=["bundles"],
     responses=ERROR_RESPONSES,
-    dependencies=[Depends(require_api_key)],
+    dependencies=[Depends(require_auth("name", "write"))],
 )
 def store_batch_bundle(name: str, req: StoreBatchRequest) -> StoreBatchResponse:
     mem = _get_mem(name)
@@ -614,7 +758,7 @@ def store_batch_bundle(name: str, req: StoreBatchRequest) -> StoreBatchResponse:
     operation_id="bundles_related",
     tags=["bundles"],
     responses=ERROR_RESPONSES,
-    dependencies=[Depends(require_api_key)],
+    dependencies=[Depends(require_auth("name", "read"))],
 )
 def related_bundle(name: str, node_id: str, k: int = 5) -> RetrieveResponse:
     try:
@@ -630,7 +774,7 @@ def related_bundle(name: str, node_id: str, k: int = 5) -> RetrieveResponse:
     operation_id="bundles_retrieve",
     tags=["bundles"],
     responses=ERROR_RESPONSES,
-    dependencies=[Depends(require_api_key)],
+    dependencies=[Depends(require_auth("name", "read"))],
 )
 def retrieve_bundle(name: str, req: RetrieveRequest) -> RetrieveResponse:
     mem = _get_mem(name)
@@ -650,7 +794,7 @@ def retrieve_bundle(name: str, req: RetrieveRequest) -> RetrieveResponse:
     operation_id="bundles_get",
     tags=["bundles"],
     responses=ERROR_RESPONSES,
-    dependencies=[Depends(require_api_key)],
+    dependencies=[Depends(require_auth("name", "read"))],
 )
 def get_bundle(name: str, node_id: str) -> HitResponse:
     hit = _get_mem(name).get(node_id)
@@ -665,7 +809,7 @@ def get_bundle(name: str, node_id: str) -> HitResponse:
     operation_id="bundles_forget",
     tags=["bundles"],
     responses=ERROR_RESPONSES,
-    dependencies=[Depends(require_api_key)],
+    dependencies=[Depends(require_auth("name", "write"))],
 )
 def forget_bundle(name: str, req: ForgetRequest) -> ForgetResponse:
     if not _get_mem(name).forget(req.node_id):
@@ -679,7 +823,7 @@ def forget_bundle(name: str, req: ForgetRequest) -> ForgetResponse:
     operation_id="bundles_consolidate",
     tags=["bundles"],
     responses=ERROR_RESPONSES,
-    dependencies=[Depends(require_api_key)],
+    dependencies=[Depends(require_auth("name", "write"))],
 )
 def consolidate_bundle(name: str) -> ConsolidateResponse:
     return ConsolidateResponse(processed=_get_mem(name).consolidate())
@@ -691,7 +835,7 @@ def consolidate_bundle(name: str) -> ConsolidateResponse:
     operation_id="bundles_save",
     tags=["bundles"],
     responses=ERROR_RESPONSES,
-    dependencies=[Depends(require_api_key)],
+    dependencies=[Depends(require_auth("name", "write"))],
 )
 def save_bundle(name: str) -> SaveResponse:
     mem = _get_mem(name)
@@ -707,7 +851,7 @@ def save_bundle(name: str) -> SaveResponse:
     operation_id="bundles_recent",
     tags=["bundles"],
     responses=ERROR_RESPONSES,
-    dependencies=[Depends(require_api_key)],
+    dependencies=[Depends(require_auth("name", "read"))],
 )
 def recent_bundle(name: str, n: int = 10) -> RetrieveResponse:
     hits = _get_mem(name).get_recent(max(1, n))

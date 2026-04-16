@@ -209,7 +209,25 @@ hits = mem.retrieve("reading list for Kubernetes RBAC", k=5, hybrid_alpha=0.3)
 BM25 index is built lazily and invalidated when new entries are
 stored. No extra deps.
 
-## 13. Cross-encoder re-ranking
+## 13. LLM query expansion
+
+Let the LLM rewrite each question into N variants + sub-questions,
+retrieve per variant, merge with Reciprocal Rank Fusion. Cheap +3-8
+pp Recall@5 on under-specified queries:
+
+```python
+from soma.llm import QueryExpander, RAGSession, backend_from_env
+
+backend = backend_from_env()
+chat = RAGSession(
+    memory=mem, llm=backend,
+    query_expander=QueryExpander(llm=backend, n_variants=3),
+)
+chat.ask("what was that thing I mentioned about dinner?")
+# Expands -> retrieves per variant -> RRF-merges -> final answer
+```
+
+## 14. Cross-encoder re-ranking
 
 Over-fetch cosine candidates, re-rank them with a small
 cross-encoder (~5–10 ms/candidate on CPU). Usually +5–15% Recall@5
@@ -228,7 +246,7 @@ hits = mem.retrieve("...", k=5, hybrid_alpha=0.3, rerank_top_n=20)
 The pre-rerank score is kept in `h.metadata["_pre_rerank_score"]` so
 you can compare.
 
-## 14. Multi-tenant REST server
+## 15. Multi-tenant REST server
 
 One server, many brains. Tenant routes under `/bundles/{name}`:
 
@@ -254,7 +272,7 @@ curl http://localhost:8420/health
 Each `/bundles/{name}` path maps to `$SOMA_BUNDLES_DIR/{name}/` on
 disk; bundles are loaded lazily and cached in memory.
 
-## 15. Inspect a bundle without loading the LLM
+## 16. Inspect a bundle without loading the LLM
 
 ```bash
 soma stats  --bundle brain/

@@ -17,6 +17,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from soma.llm.backends import LLMBackend
+from soma.llm.query_expand import QueryExpander, rrf_merge
 from soma.memory import MemoryLayer
 
 DEFAULT_TEMPLATE = (
@@ -93,6 +94,8 @@ class RAGSession:
     prompt_template: str = DEFAULT_TEMPLATE
     no_context_template: str = NO_CONTEXT_TEMPLATE
     format_context_fn: Any = field(default=None)
+    query_expander: QueryExpander | None = None
+    retrieve_kwargs: dict[str, Any] = field(default_factory=dict)
 
     def _build_prompt(self, question: str, hits: list[Any]) -> str:
         if not hits:
@@ -100,8 +103,19 @@ class RAGSession:
         ctx = (self.format_context_fn or format_context)(hits)
         return self.prompt_template.format(context=ctx, question=question)
 
+    def _retrieve(self, question: str) -> list[Any]:
+        """Retrieve with optional LLM query expansion + RRF merge."""
+        if self.query_expander is None:
+            return self.memory.retrieve(question, k=self.k, **self.retrieve_kwargs)
+        variants = self.query_expander.expand(question)
+        ranked_lists = [
+            self.memory.retrieve(v, k=self.k, **self.retrieve_kwargs)
+            for v in variants
+        ]
+        return rrf_merge(ranked_lists, top_k=self.k)
+
     def ask(self, question: str) -> RAGAnswer:
-        hits = self.memory.retrieve(question, k=self.k)
+        hits = self._retrieve(question)
         prompt = self._build_prompt(question, hits)
         text = self.llm.generate(prompt, max_tokens=self.max_tokens)
         return RAGAnswer(text=text, hits=hits, backend_name=self.llm.name)

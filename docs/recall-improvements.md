@@ -88,15 +88,25 @@ the subset. Composes with `rerank_top_n` too. REST API's
 `/retrieve` + `/bundles/{name}/retrieve` both accept `where`,
 `hybrid_alpha`, and `rerank_top_n`.
 
-### 5. Query expansion via LLM
+### 5. Query expansion via LLM — SHIPPED (2026-04-16)
 
-Under-specified queries benefit from rewriting into a set of
-variants whose top-k are unioned. Cheap with the LLM already in the
-pipeline.
+```python
+from soma.llm import QueryExpander, RAGSession, backend_from_env
 
-**Shape:** optional `QueryRewriter` passed to `RAGSession` that
-produces N variants, runs retrieve on each, merges by RRF
-(reciprocal rank fusion). Expected lift: +3-8% R@5 on hard queries.
+backend = backend_from_env()
+chat = RAGSession(
+    memory=mem, llm=backend,
+    query_expander=QueryExpander(llm=backend, n_variants=3),
+)
+chat.ask("what was that thing I mentioned about dinner?")
+# -> 3 LLM-rewritten variants + original, retrieve k per variant,
+#    merge with Reciprocal Rank Fusion (RRF), feed to prompt.
+```
+
+`rrf_merge(lists, top_k=...)` is exposed separately so you can RRF
+over any ranked lists you produce (hybrid pool, structured-search
+pool, etc.), not just from query expansion. Default RRF constant
+is 60 (industry standard).
 
 ### 6. Multi-vector / ColBERT-style retrieval
 

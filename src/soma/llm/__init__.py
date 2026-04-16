@@ -44,6 +44,7 @@ from soma.llm.backends import (
     OpenAICompatibleBackend,
     backend_from_env,
 )
+from soma.llm.query_expand import QueryExpander, rrf_merge
 from soma.llm.rag import RAGSession
 
 __all__ = [
@@ -54,6 +55,8 @@ __all__ = [
     "OllamaBackend",
     "OpenAIBackend",
     "OpenAICompatibleBackend",
+    "QueryExpander",
     "RAGSession",
     "backend_from_env",
+    "rrf_merge",
 ]

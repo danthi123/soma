@@ -7,11 +7,12 @@ else (ids, texts, metadata, timestamps, WAL, BM25, cross-encoder
 rerank, graph-aware retrieval) stays inside MemoryLayer regardless of
 which backend is attached.
 
-Three adapters ship in-tree:
+Four adapters ship in-tree:
 
 - **`InProcBackend`** (default, zero new deps)
 - **`LanceDBBackend`** (optional extra: `pip install soma[lancedb]`)
 - **`QdrantBackend`** (optional extra: `pip install soma[qdrant]`)
+- **`ChromaBackend`** (optional extra: `pip install soma[chroma]`)
 
 Swapping adapters does not change MemoryLayer's Python-facing API:
 `store`, `retrieve(where=...)`, `related`, `forget`, `consolidate`,
@@ -28,11 +29,14 @@ live and how the query runs.
 | Local agent, <=20K entries, want durable on-disk | `QdrantBackend(mode="local")` | Single-file persistence, survives process restarts |
 | Production agent, multi-host | **`QdrantBackend(mode="http")`** | Horizontal scale, multi-tenant, over-the-wire |
 | Quick tests / CI | `QdrantBackend(mode="memory")` | Embedded in-process, volatile |
+| Migrating from existing Chroma RAG | **`ChromaBackend`** | Point SOMA at your existing Chroma collection — zero export/reimport |
 
 **Rule of thumb:** start with `InProcBackend`. Switch to
 `LanceDBBackend` when you want persistence past 20K without running
 a server; switch to `QdrantBackend(mode="http")` when you need
-multi-host or multi-tenant scale.
+multi-host or multi-tenant scale. Pick `ChromaBackend` when you
+already have a populated Chroma collection and don't want to
+migrate vectors out of it.
 
 ## Protocol
 
@@ -204,6 +208,50 @@ matching the filter come back.
 - Con: metadata filters are not server-side yet — they fall back to
   Python pre-filter + subset rank. Future work can widen the
   table schema to mirror metadata fields for true pushdown.
+
+## ChromaBackend
+
+Install: `pip install soma[chroma]`.
+
+```python
+from soma.memory.api import MemoryLayer
+from soma.memory.backends.chroma import ChromaBackend
+
+backend = ChromaBackend(
+    path="./chroma_data",     # chromadb.PersistentClient directory
+    collection_name="my_agent",
+    dim=384,
+)
+mem = MemoryLayer.with_sbert(backend=backend)
+```
+
+**The pitch: drop-in replacement for an existing Chroma store.** A
+large fraction of agent deployments already keep their vectors in a
+Chroma collection; the switching cost from "export + reimport" to
+"point `MemoryLayer` at the same Chroma store" is this adapter.
+SOMA keeps ids/texts/metadata/WAL/BM25/cross-encoder/graph-rerank on
+its own side; vectors stay in Chroma.
+
+For non-default setups (custom auth, tenancy/database, remote HTTP
+mode), pass a pre-built client instead of a path:
+
+```python
+import chromadb
+
+client = chromadb.HttpClient(host="chroma.internal", port=8000)
+backend = ChromaBackend(client=client, collection_name="my_agent", dim=384)
+```
+
+Filter pushdown mirrors the other adapters (`$eq`/`$ne`/`$gt`/
+`$gte`/`$lt`/`$lte`/`$in`/`$nin`). Metadata written via
+MemoryLayer's own `store(metadata=...)` path stays on SOMA's side
+rather than flowing into Chroma's `metadatas`, so `retrieve(where=...)`
+falls back to SOMA's Python pre-filter + `search_subset` — the
+observable contract (only matching rows come back) is identical.
+
+Pinned minimum: `chromadb>=0.5`. Earlier versions had a different
+`delete_collection` + recreate story and still exposed a now-removed
+`persist()` method; requiring 0.5 lets the adapter skip that branch.
 
 ## QdrantBackend
 

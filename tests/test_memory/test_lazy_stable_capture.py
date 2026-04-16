@@ -184,11 +184,12 @@ def test_disabled_stable_capture_flag_never_dirties(embedder, soma_stack) -> Non
     assert mem._stable_capture_dirty is False
 
 
-def test_store_after_consolidate_sets_dirty(embedder, soma_stack) -> None:
-    """Mutations after a clean stable-capture re-dirty the flag.
+def test_explicit_stable_capture_flips_dirty(embedder, soma_stack) -> None:
+    """Public stable_capture() clears the dirty flag standalone.
 
-    Captures the full state machine: consolidate → retrieve (clears
-    dirty) → store → dirty=True again → retrieve refreshes.
+    Useful for benchmarks / warmup that want to amortize the cost
+    before the first retrieve. A follow-on retrieve (still clean)
+    does NOT re-fire the pass.
     """
     tokenizer, encoder = embedder
     mem = MemoryLayer(
@@ -200,8 +201,78 @@ def test_store_after_consolidate_sets_dirty(embedder, soma_stack) -> None:
         mem.store(t)
     _attach(mem, soma_stack, embedder)
     mem.consolidate()
-    # First retrieve runs the lazy capture and clears the flag.
+    assert mem._stable_capture_dirty is True
+    counter = _count_recapture_calls(mem)
+
+    mem.stable_capture()
+
+    assert mem._stable_capture_dirty is False
+    assert counter[0] == 1, (
+        f"stable_capture() must run exactly once, got {counter[0]}"
+    )
+
+    # A subsequent retrieve at alpha>0 does NOT re-fire.
     mem.retrieve("the cat", k=2)
+    assert counter[0] == 1
+
+
+def test_explicit_stable_capture_is_noop_without_soma(embedder) -> None:
+    """stable_capture() without a SOMA attached is a safe no-op.
+
+    Dirty flag stays True (set by store() because the feature is
+    enabled by default), but we don't crash or flip the flag — callers
+    can invoke this unconditionally in warmup code without guarding.
+    """
+    tokenizer, encoder = embedder
+    mem = MemoryLayer(tokenizer=tokenizer, encoder=encoder)
+    mem.store("some text")
+    assert mem._stable_capture_dirty is True
+    mem.stable_capture()
+    assert mem._stable_capture_dirty is True
+
+
+def test_explicit_stable_capture_is_noop_when_disabled(embedder, soma_stack) -> None:
+    """stable_capture() with graph_rerank_stable_capture=False is a no-op.
+
+    Uses a recapture counter to prove the internal pass never runs
+    when the feature flag is off, even with SOMA attached.
+    """
+    tokenizer, encoder = embedder
+    mem = MemoryLayer(
+        tokenizer=tokenizer,
+        encoder=encoder,
+        graph_rerank_stable_capture=False,
+    )
+    for t in CORPUS:
+        mem.store(t)
+    _attach(mem, soma_stack, embedder)
+    mem.consolidate()
+    counter = _count_recapture_calls(mem)
+
+    mem.stable_capture()
+
+    assert counter[0] == 0, (
+        "stable_capture() must short-circuit when feature is disabled"
+    )
+
+
+def test_store_after_consolidate_sets_dirty(embedder, soma_stack) -> None:
+    """Mutations after a clean stable-capture re-dirty the flag.
+
+    Captures the full state machine: consolidate → stable_capture
+    (dirty=False) → store → dirty=True again → retrieve refreshes.
+    """
+    tokenizer, encoder = embedder
+    mem = MemoryLayer(
+        tokenizer=tokenizer,
+        encoder=encoder,
+        graph_rerank_alpha=0.5,
+    )
+    for t in CORPUS:
+        mem.store(t)
+    _attach(mem, soma_stack, embedder)
+    mem.consolidate()
+    mem.stable_capture()
     assert mem._stable_capture_dirty is False
 
     # A store after a clean capture should re-dirty.
@@ -222,7 +293,7 @@ def test_forget_after_consolidate_sets_dirty(embedder, soma_stack) -> None:
     ids = [mem.store(t) for t in CORPUS]
     _attach(mem, soma_stack, embedder)
     mem.consolidate()
-    mem.retrieve("the cat", k=2)
+    mem.stable_capture()
     assert mem._stable_capture_dirty is False
 
     removed = mem.forget(ids[0])
@@ -243,7 +314,7 @@ def test_store_batch_sets_dirty(embedder, soma_stack) -> None:
     mem.store("seed")  # sets dirty=True
     _attach(mem, soma_stack, embedder)
     mem.consolidate()
-    mem.retrieve("seed", k=1)
+    mem.stable_capture()
     assert mem._stable_capture_dirty is False
 
     mem.store_batch(list(CORPUS))

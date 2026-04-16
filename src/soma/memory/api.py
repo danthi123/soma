@@ -38,6 +38,8 @@ from soma.io.text_encoder import TextEncoder, load_tokenizer
 from soma.memory.backend import FilterPushdownUnsupported, VectorBackend
 from soma.memory.wal import WAL, WalRecord
 
+__all__ = ["MemoryHit", "MemoryLayer"]
+
 logger = logging.getLogger("soma.memory")
 
 _VALID_DURABILITY = {"sync", "batch", "async"}
@@ -973,16 +975,11 @@ class MemoryLayer:
         # active and a prior consolidate() / mutation left the capture
         # stale, refresh it before reading activations. alpha=0 keeps
         # the dirty flag set and skips the O(N) pass entirely — the
-        # production default path.
-        if (
-            self._graph_rerank_alpha > 0.0
-            and self._stable_capture_dirty
-            and self._soma is not None
-            and self._graph_rerank_stable_capture
-        ):
-            soma_output_dim = int(self._soma.config.sensor_output_dim)
-            self._recapture_activations_stable(soma_output_dim)
-            self._stable_capture_dirty = False
+        # production default path. ``stable_capture()`` is the public
+        # primitive and early-returns if the feature is disabled / no
+        # SOMA attached, so the gate here is just an alpha+dirty check.
+        if self._graph_rerank_alpha > 0.0 and self._stable_capture_dirty:
+            self.stable_capture()
         has_graph_signal = (
             self._graph_rerank_alpha > 0.0
             and self._soma is not None
@@ -1415,8 +1412,35 @@ class MemoryLayer:
             self._stable_capture_dirty = True
         return processed
 
+    def stable_capture(self) -> None:
+        """Re-run every stored entry through the post-growth graph (eval_mode).
+
+        Public entry point for the stable-capture pass. The ordinary
+        ``retrieve`` path calls this lazily when
+        ``graph_rerank_alpha > 0`` and the dirty flag is set;
+        benchmarks and warmup loops that want predictable retrieve
+        latency invoke it explicitly instead (``mem.stable_capture()``
+        before the first hot retrieve).
+
+        Safe no-op when no SOMA is attached or
+        ``graph_rerank_stable_capture=False``. On success the dirty
+        flag is cleared so subsequent retrieves (with no intervening
+        mutation) skip the pass entirely.
+
+        Cost is O(N_stored) SOMA.step calls in ``eval_mode=True`` — no
+        weight updates, no growth. See
+        ``docs/plans/2026-04-16-lazy-stable-capture.md`` for the
+        rationale behind hoisting this off the consolidate() write
+        path.
+        """
+        if self._soma is None or not self._graph_rerank_stable_capture:
+            return
+        soma_output_dim = int(self._soma.config.sensor_output_dim)
+        self._recapture_activations_stable(soma_output_dim)
+        self._stable_capture_dirty = False
+
     def _recapture_activations_stable(self, soma_output_dim: int) -> None:
-        """Re-run each text through the final graph state (eval_mode=True).
+        """Internal stable-capture worker — called by :meth:`stable_capture`.
 
         During growth (``eval_mode=False``) the graph mutates between
         entries, so activations captured inline are snapshots of

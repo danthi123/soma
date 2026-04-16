@@ -58,28 +58,47 @@ hits = mem.retrieve("where does the user live?", k=1)
 |---|:---:|:---:|:---:|
 | Vector retrieval | yes | yes | yes |
 | Local-first, zero cloud deps | yes | partial | yes |
-| Graph structure that grows/prunes | no | no | **yes** |
-| Consolidation (sleep replay) | no | no | **yes** |
+| Plastic graph substrate (in-place) | no | no | **yes**\* |
+| Consolidation hook (learning-ready) | no | no | **yes** |
 | Single-directory brain portability | no | no | **yes** |
 | Swap LLM without losing memory | yes | partial | **yes** |
 
-Benchmark (50 facts, same embedder): identical Recall@3, **4x faster retrieves**, **22x smaller on disk** vs Chroma. See `reports/memory-layer-vs-rag-benchmark.md`.
+\* substrate ships; current memory workload doesn't trigger growth/pruning thresholds — see `benchmarks/reports/paper-draft.md` §5 for the research agenda to activate it.
 
-## Graph consolidation (optional)
+**Benchmark (same sbert embedder):**
+- Quality: identical Recall@3 / MRR@3 / NDCG@3 to Chroma at 50 facts.
+- Disk: **22.6× smaller at 50** narrowing to **1.4× at 20K** as Chroma's overhead amortizes.
+- Store: **2.5–3× faster across all N tested** (durable claim).
+- Retrieve: SOMA-flat 1.12–1.28× faster than Chroma; opt-in HNSW backend reaches **1.67× at 20K** with identical recall.
+- Drift: 30-day simulation, old-fact Recall@3 = 0.883 ≈ recent 0.938 (memory doesn't rot).
 
-Attach a SOMA graph to get structural plasticity — the memory doesn't just store, it *restructures* with use:
+See `benchmarks/reports/` for the full benchmark suite + paper-draft aggregator.
+
+## Graph consolidation (optional, research)
+
+Attach a SOMA graph to surface the plasticity substrate. Under the
+current memory-only workload the growth thresholds (training-tuned)
+don't fire and the graph stays at seed size — the substrate ships,
+the activation is the open research question (see paper-draft §5):
 
 ```python
 from soma.memory import MemoryLayer
 from soma.system import SOMA
 from soma.core.config import SOMAConfig
+from soma.io.text_encoder import TextEncoder, train_bpe_tokenizer
 
 mem = MemoryLayer.with_sbert()
-soma = SOMA(SOMAConfig())
-
-mem.attach_soma(soma, tokenizer, encoder)
-mem.consolidate()  # triggers synaptogenesis, pruning, myelination
+soma_tokenizer = train_bpe_tokenizer(["..."], vocab_size=1024)
+soma_encoder = TextEncoder(soma_tokenizer, embed_dim=32, max_seq_len=128)
+soma = SOMA(SOMAConfig(
+    vocab_size=1024, text_embed_dim=32, sensor_output_dim=32,
+))
+mem.attach_soma(soma, soma_tokenizer, soma_encoder)
+mem.consolidate()  # incremental: only processes entries past the cursor
 ```
+
+Graph re-rank is off by default (`graph_rerank_alpha=0.0`); set
+non-zero to opt into the experimental blend.
 
 ## Framework integrations
 
@@ -115,16 +134,35 @@ curl -X POST http://localhost:8420/retrieve \
 
 ## Scaling
 
-MemoryLayer auto-switches to a FAISS index when the store exceeds 10K entries (configurable via `faiss_threshold`). Below that, the O(N) linear scan is faster with zero overhead.
+MemoryLayer auto-switches to a FAISS `IndexFlatIP` (exact) when the store exceeds 10K entries (configurable via `faiss_threshold`). Below that, the O(N) linear scan is faster with zero overhead.
+
+For multi-K stores where retrieve speed matters, opt into the approximate HNSW backend:
+
+```python
+mem = MemoryLayer.with_sbert(...)
+mem._faiss_index_type = "hnsw"  # or pass via constructor
+```
+
+HNSW preserves identical Recall@3 on the labeled benchmark and runs **1.67× faster than Chroma at 20K**. Defaults stay exact-flat so callers get vector-DB-equivalent recall guarantees out of the box.
 
 ## Demos
 
 ```bash
-python scripts/demo_memory_layer.py           # pure API, no GPU
+python scripts/demo_memory_layer.py             # pure API, no GPU
 python scripts/demo_chat_persistent.py --dry-run  # persistent chat
-python scripts/benchmark_memory.py            # vs Chroma benchmark
-python scripts/experiment_plasticity.py       # graph plasticity proof
 ```
+
+## Benchmarks
+
+```bash
+python -m benchmarks.run_retrieval              # vs Chroma at 50 facts
+python -m benchmarks.run_scale_vs_chroma        # vs Chroma at 1K/5K/20K
+python -m benchmarks.run_graph_ablation         # alpha sweep + stable capture
+python -m benchmarks.run_plasticity_scale       # graph growth at 100-2000
+python -m benchmarks.run_longitudinal_drift     # 30-day drift simulation
+```
+
+Reports land in `benchmarks/reports/`. The paper-draft aggregator (`benchmarks/reports/paper-draft.md`) wires every claim back to its committed script + report.
 
 ## Development
 
@@ -140,8 +178,7 @@ mypy src/soma/
 - [Product positioning](docs/positioning.md)
 - [Pivot decision + roadmap](docs/plans/2026-04-15-memory-layer-pivot.md)
 - [Architecture whitepaper](docs/whitepaper.md)
-- [Benchmark report](reports/memory-layer-vs-rag-benchmark.md)
-- [Plasticity experiment](reports/plasticity-experiment.md)
+- [Paper draft (benchmark aggregator)](benchmarks/reports/paper-draft.md)
 
 ## License
 

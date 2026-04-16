@@ -120,7 +120,7 @@ class InProcBackend:
         self._id_to_idx = {}
         self._vectors = np.empty((0, self._dim), dtype=np.float32)
         self._faiss_index = None
-        _m.FAISS_INDEX_SIZE.labels(bundle=self._bundle_name).set(0)
+        _m.FAISS_INDEX_SIZE.labels(bundle=_m._bundle_label(self._bundle_name)).set(0)
 
     def add(self, ids: list[str], vectors: np.ndarray) -> None:
         if len(ids) == 0:
@@ -283,11 +283,11 @@ class InProcBackend:
     def _maybe_build_faiss(self) -> None:
         if self._faiss_threshold <= 0:
             self._faiss_index = None
-            _m.FAISS_INDEX_SIZE.labels(bundle=self._bundle_name).set(0)
+            _m.FAISS_INDEX_SIZE.labels(bundle=_m._bundle_label(self._bundle_name)).set(0)
             return
         if self.ntotal < self._faiss_threshold:
             self._faiss_index = None
-            _m.FAISS_INDEX_SIZE.labels(bundle=self._bundle_name).set(0)
+            _m.FAISS_INDEX_SIZE.labels(bundle=_m._bundle_label(self._bundle_name)).set(0)
             return
         if self._faiss_index is not None:
             return
@@ -313,7 +313,7 @@ class InProcBackend:
         _m.FAISS_REBUILD_TOTAL.labels(
             index_type=self._faiss_index_type
         ).inc()
-        _m.FAISS_INDEX_SIZE.labels(bundle=self._bundle_name).set(
+        _m.FAISS_INDEX_SIZE.labels(bundle=_m._bundle_label(self._bundle_name)).set(
             index.ntotal
         )
 

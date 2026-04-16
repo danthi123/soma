@@ -373,7 +373,16 @@ def run_soma(
 
     snippet_ids: list[str] = [mem.store(s.text) for s in gt.snippets]
 
+    # Reset the cursor before EACH consolidate() so every iteration
+    # actually re-pushes the corpus through the substrate. Without
+    # this, MemoryLayer.consolidate() is incremental — the cursor
+    # moves to len(_texts) on the first call and subsequent calls
+    # become no-ops (because no NEW entries arrived). The C1 plan
+    # asks for an N sweep that exercises the substrate N times, not
+    # "consolidate-once and idle"; this loop respects that intent
+    # while still going through the public ``consolidate`` entry point.
     for _ in range(consolidation_iterations):
+        mem._consolidation_cursor = 0
         mem.consolidate()
     # Even at iterations=0 we want stable-capture so the retrieve
     # path's blend formula sees a coherent activation set rather than

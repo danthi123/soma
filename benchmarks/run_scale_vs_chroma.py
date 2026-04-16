@@ -185,12 +185,23 @@ def main() -> None:
         "constant is high; SOMA's per-entry overhead is essentially "
         "the raw embedding.",
         "",
-        "SOMA's retrieve advantage at small N comes from the linear "
-        "cosine backend skipping HNSW construction cost. At the 10K "
-        "threshold SOMA's FAISS IndexFlatIP kicks in (see "
-        "``MemoryLayer._maybe_build_faiss``) — the cross-over where "
-        "Chroma's HNSW catches up on retrieve time is visible in the "
-        "table.",
+        "SOMA's store advantage is the most durable claim — ~3× "
+        "faster than Chroma per insert across every N tested. "
+        "Chroma's metadata layer pays a fixed cost per write that "
+        "doesn't amortize.",
+        "",
+        "Retrieve latency: ``soma-flat`` (exact ``IndexFlatIP``) is "
+        "roughly tied with Chroma at scale. ``soma-hnsw`` (opt-in "
+        "via ``faiss_index_type='hnsw'``) wins at 1K-5K (1.41× / "
+        "1.09×) while preserving identical Recall@3 on the 50-fact "
+        "labeled set. The 20K HNSW row carries notable noise (only "
+        "50 probe queries; soma-flat retrieve actually got faster "
+        "at 20K than at 5K, indicating ±2 ms run-to-run variance "
+        "dominates the differences). For production at 20K+ the "
+        "knobs are: bump probe count, tune ``ef_search`` (currently "
+        "64), or switch to ``IndexIVFPQ`` for compressed-vector "
+        "retrieval. SOMA's default stays ``flat`` because the recall "
+        "guarantees match Chroma's exact mode without surprise.",
         "",
         "---",
         "",

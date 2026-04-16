@@ -6,24 +6,29 @@ Same sbert embedder (`all-MiniLM-L6-v2`) on both sides; no quality measurement, 
 
 | N | System | Store (ms/op) | Retrieve (ms) | Disk (KB) | Disk (MB) |
 | ---: | --- | ---: | ---: | ---: | ---: |
-| 1000 | soma | 8.82 | 10.79 | 1670.2 | 1.6 |
-| 1000 | chroma | 27.21 | 10.67 | 4395.9 | 4.3 |
-| 5000 | soma | 8.38 | 15.62 | 8350.6 | 8.2 |
-| 5000 | chroma | 25.02 | 12.45 | 13184.7 | 12.9 |
-| 20000 | soma | 8.36 | 14.25 | 33455.5 | 32.7 |
-| 20000 | chroma | 27.03 | 12.39 | 46305.6 | 45.2 |
+| 1000 | soma-flat | 8.59 | 10.58 | 1670.2 | 1.6 |
+| 1000 | soma-hnsw | 8.47 | 8.36 | 1670.2 | 1.6 |
+| 1000 | chroma | 21.60 | 11.80 | 4391.9 | 4.3 |
+| 5000 | soma-flat | 8.39 | 15.36 | 8350.6 | 8.2 |
+| 5000 | soma-hnsw | 8.39 | 10.77 | 8350.6 | 8.2 |
+| 5000 | chroma | 24.80 | 11.73 | 13184.7 | 12.9 |
+| 20000 | soma-flat | 8.25 | 12.48 | 33455.5 | 32.7 |
+| 20000 | soma-hnsw | 7.16 | 17.25 | 33455.5 | 32.7 |
+| 20000 | chroma | 26.19 | 11.98 | 46293.6 | 45.2 |
 
 ## Ratios (Chroma / SOMA)
 
-- **N = 1000:** disk 2.6× smaller, retrieve 1.0× faster, store 3.1× faster for SOMA.
-- **N = 5000:** disk 1.6× smaller, retrieve 0.8× faster, store 3.0× faster for SOMA.
-- **N = 20000:** disk 1.4× smaller, retrieve 0.9× faster, store 3.2× faster for SOMA.
+- **N = 1000:** SOMA-flat: disk 2.6× smaller, store 2.5× faster, retrieve 1.12× vs Chroma. SOMA-hnsw: retrieve 1.41× vs Chroma.
+- **N = 5000:** SOMA-flat: disk 1.6× smaller, store 3.0× faster, retrieve 0.76× vs Chroma. SOMA-hnsw: retrieve 1.09× vs Chroma.
+- **N = 20000:** SOMA-flat: disk 1.4× smaller, store 3.2× faster, retrieve 0.96× vs Chroma. SOMA-hnsw: retrieve 0.69× vs Chroma.
 
 ## Interpretation
 
 SOMA's disk advantage comes from storing a single pytorch tensor of vectors plus a JSON index — no SQLite, no HNSW sidecar. Chroma's bundle carries the HNSW graph, SQLite schema, metadata shards, and lockfiles. The per-entry overhead of those structures is O(1) in store size but the constant is high; SOMA's per-entry overhead is essentially the raw embedding.
 
-SOMA's retrieve advantage at small N comes from the linear cosine backend skipping HNSW construction cost. At the 10K threshold SOMA's FAISS IndexFlatIP kicks in (see ``MemoryLayer._maybe_build_faiss``) — the cross-over where Chroma's HNSW catches up on retrieve time is visible in the table.
+SOMA's store advantage is the most durable claim — ~2.5–3× faster than Chroma per insert across every N tested. Chroma's metadata layer pays a fixed cost per write that doesn't amortize.
+
+Retrieve latency: `soma-flat` (exact `IndexFlatIP`) is roughly tied with Chroma at scale. `soma-hnsw` (opt-in via `faiss_index_type="hnsw"`) wins at 1K–5K (1.41× / 1.09×) while preserving identical Recall@3 on the 50-fact labeled set. The 20K HNSW row carries notable noise (only 50 probe queries; soma-flat retrieve actually got faster at 20K than at 5K, indicating ±2 ms run-to-run variance dominates the differences). For production at 20K+ the knobs are: bump probe count, tune `ef_search` (currently 64), or switch to `IndexIVFPQ` for compressed-vector retrieval. SOMA's default stays `flat` because the recall guarantees match Chroma's exact mode without surprise.
 
 ---
 

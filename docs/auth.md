@@ -286,6 +286,57 @@ alongside active writers.
 env SOMA_JWT_BLOCKLIST_PATH=/var/lib/soma/jwt-blocklist.jsonl soma auth gc
 ```
 
+### Redis backend (multi-host / k8s)
+
+The file backend coordinates peers via mtime polling (~30 s cadence).
+That's fine on a single host but wrong for k8s replicas or geographically
+split workers — you need a shared store with instant propagation.
+
+Install the optional extra and point the env var at your Redis:
+
+```bash
+pip install 'soma[redis-revocation]'
+export SOMA_JWT_BLOCKLIST_REDIS_URL=redis://redis.internal:6379/0
+# SOMA_JWT_BLOCKLIST_PATH is ignored when REDIS_URL is set (warning logged).
+# SOMA_JWT_BLOCKLIST_HASHED=1 still works — same sha256(jti) key scheme
+# as the file backend, so migrations are a straight re-key.
+soma serve --port 8420
+```
+
+Each revocation becomes one Redis key
+(`soma:jwt:revoked:<jti_or_hash>`) with a TTL set to `exp - now` in
+seconds. Redis auto-expires entries, so `soma auth gc` is a no-op
+against the Redis backend — there's nothing to clean up. Propagation
+across workers is instant: the next `is_revoked` check on any replica
+hits Redis directly, no poll.
+
+Minimal docker-compose for local dev:
+
+```yaml
+services:
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
+  soma:
+    image: soma:latest
+    environment:
+      SOMA_JWT_SECRET: "${SOMA_JWT_SECRET}"
+      SOMA_JWT_BLOCKLIST_REDIS_URL: "redis://redis:6379/0"
+      SOMA_JWT_BLOCKLIST_HASHED: "1"
+    depends_on: [redis]
+    ports: ["8420:8420"]
+```
+
+**When to pick which:**
+
+| Deployment shape                    | Backend |
+|-------------------------------------|---------|
+| Single host, one or more uvicorn workers | File |
+| Multi-host, sticky-session load balancer | File (shared NFS path) |
+| k8s deployment, 2+ pods, no sticky sessions | Redis |
+| Horizontal auto-scaling workers     | Redis |
+| File share with sketchy locking semantics | Redis |
+
 ### Operational notes
 
 - **Single source of truth.** One file per deployment. Point every
@@ -293,11 +344,10 @@ env SOMA_JWT_BLOCKLIST_PATH=/var/lib/soma/jwt-blocklist.jsonl soma auth gc
   portalocker + mtime poll.
 - **No in-memory-only mode.** Revocations always persist. An
   in-memory list that disappears on restart would be a footgun.
-- **Redis backend is deferred.** For multi-host deploys the right
-  answer is a Redis-backed blocklist with automatic TTL. That's
-  tier-2 and ships as `soma[redis-revocation]` when the operator
-  demand lands. See `docs/plans/2026-04-16-jwt-revocation.md` for
-  the rationale.
+- **Redis backend ships as `soma[redis-revocation]`.** For multi-host
+  / k8s deploys where the 30 s file-poll lag is unacceptable, flip to
+  the Redis backend (see below). Instant cross-worker propagation and
+  automatic TTL — no GC cron needed.
 - **Field limits.** `reason` is capped at 256 chars at the store
   boundary; longer strings are truncated. Keep reasons concise —
   they're an operator note, not an incident report.

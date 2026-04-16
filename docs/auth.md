@@ -390,3 +390,59 @@ Auth failures are counted at `soma_auth_failures_total{reason=...}`:
 | `revoked_token`       | token's `jti` is in `SOMA_JWT_BLOCKLIST_PATH`            |
 
 See `docs/observability.md` for the full metric catalogue.
+
+---
+
+## Rate limiting
+
+`soma serve` ships an optional in-process rate limiter (Phase 26) for
+single-binary deploys that don't front the server with a real reverse
+proxy. It's keyed on the JWT's `jti` (falling back to `sub` for old
+tokens that predate Phase 18), evicts idle buckets after 5 minutes,
+and rejects with `HTTP 429` + a `Retry-After` header when the bucket
+is drained.
+
+**This is not a WAF.** A single worker can still be saturated by
+unauthenticated traffic, and there's no coordination across workers
+or hosts. For production, terminate at nginx / Caddy / Cloudflare and
+let them do the rate limiting. The in-proc limiter is a cheap abuse
+ceiling for:
+
+- Local dev where you want to catch a runaway client loop.
+- Small-scale homelab deploys behind a Tailscale / VPN.
+- Single-tenant personal memory servers.
+
+### Env vars
+
+| Variable                 | Default      | Meaning                                                                                                  |
+|--------------------------|--------------|----------------------------------------------------------------------------------------------------------|
+| `SOMA_RATE_LIMIT_RPS`    | *unset*      | Steady-state requests per second per key (float). Unset = limiter disabled, every request flows through. |
+| `SOMA_RATE_LIMIT_BURST`  | `ceil(rps)`  | Max tokens in each bucket (int). Defaults to `max(1, ceil(rps))` when only RPS is set.                   |
+| `SOMA_RATE_LIMIT_SCOPE`  | `per-token`  | `per-token` (default, keys on `jti`) or `per-subject` (shares a bucket across refreshes of the same `sub`). |
+
+`/metrics` and `/health` are always exempt so Prometheus scrapes and
+k8s liveness probes never get throttled.
+
+### Scope trade-offs
+
+- **`per-token`** — each refresh gets a fresh budget. Cheap revocation
+  story: burn the noisy `jti` and the caller resets to a clean bucket
+  on their next refresh. Recommended default.
+- **`per-subject`** — the same `sub` shares a bucket across all its
+  live tokens. Useful when you want refresh loops to be rate-limited
+  rather than be a budget-reset mechanism. Trade-off: you can't throttle
+  one token independently of its refresh chain.
+
+### Metric
+
+`soma_rate_limited_total{scope}` counts every 429 the limiter issues.
+Labelled by `scope` only — there's no per-`jti` / per-`sub` label
+because that's a cardinality explosion waiting to happen. The
+actionable query is "total 429s / minute"; use access logs if you need
+to find the offending caller.
+
+### Clock safety
+
+Accounting uses `time.monotonic()` so NTP slew, DST, and manual clock
+rewinds can't corrupt the bucket state. Tests inject `now=` to step
+time deterministically without `sleep`.

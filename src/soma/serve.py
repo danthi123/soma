@@ -80,8 +80,10 @@ from pydantic import BaseModel, Field
 from soma import metrics as _metrics
 from soma.auth import Perm, Principal, parse_ttl_spec, refresh_token, verify_token
 from soma.auth_revocation import blocklist_from_env
+from soma.forget_audit import ForgetAuditSink
 from soma.log import configure_json_logging
 from soma.memory import MemoryLayer
+from soma.memory.conversational import ConversationalMemory
 from soma.rate_limit import RATE_LIMITED_TOTAL, RateLimiter
 
 # Structured JSON logging swap (no-op unless SOMA_LOG_JSON=1). Called at
@@ -164,6 +166,13 @@ def _parse_ttl_env(var: str) -> timedelta | None:
 # resolved once at import time so peer processes can share the file
 # via portalocker + mtime poll (~30 s propagation).
 _blocklist = blocklist_from_env()
+
+# Phase 37 — append-only forget-event audit sink. Gated on
+# ``SOMA_FORGET_AUDIT_PATH``; unset = no-op. Resolved once at import
+# time so every request handler can reach the same sink without
+# reparsing env vars. The sink is thread-safe (per-instance lock
+# around open+write+flush) so FastAPI's thread-pool workers can share.
+_forget_audit: ForgetAuditSink = ForgetAuditSink.from_env()
 
 # Phase 26 — in-proc per-token rate limiter. Opt-in via
 # SOMA_RATE_LIMIT_RPS; when unset, ``RateLimiter.from_env()`` returns
@@ -558,6 +567,25 @@ def _get_mem(name: str | None = None) -> MemoryLayer:
         return mem
 
 
+def _get_conversational_memory(
+    name: str | None = None,
+) -> ConversationalMemory | None:
+    """Return the server's :class:`ConversationalMemory` for ``name``, if any.
+
+    Phase 37 default: returns ``None``. SOMA's REST surface historically
+    exposes only the raw :class:`MemoryLayer` endpoints; conversational
+    ingest is done Python-side and the bundle is re-mounted here for
+    retrieval. Until a future phase wires a fully-managed conversational
+    server mode, the criteria branch of ``POST /forget`` returns 501
+    when this helper yields ``None``.
+
+    Tests inject a live CM by monkey-patching this symbol so the
+    ``/forget`` route can exercise the full cascade without the server
+    owning construction.
+    """
+    return None
+
+
 # ------------------------------------------------------------------
 # Request / response models
 # ------------------------------------------------------------------
@@ -637,7 +665,72 @@ class RetrieveResponse(BaseModel):
 
 
 class ForgetRequest(BaseModel):
-    node_id: str = Field(..., description="Id of the memory entry to remove.")
+    """Unified request body for ``POST /forget``.
+
+    Two shapes, dispatched at the handler:
+
+    - **Legacy** (Phase 4, unchanged): ``{"node_id": "<id>"}`` removes
+      exactly that entry via :meth:`MemoryLayer.forget`.
+    - **Conversational** (Phase 37): any of ``text_matches``,
+      ``subject``, or ``user_id`` routes through
+      :meth:`ConversationalMemory.forget`, returning the richer
+      :class:`ForgetResult` / :class:`ForgetPreview` shape. Mixing
+      ``node_id`` with criteria is not supported — the handler picks
+      the legacy branch when ``node_id`` is present.
+
+    ``summary_strategy`` is the Phase 37 Task 3 opt-in: ``"drop"``
+    deletes every summary in the preview set even when survivors
+    exist (skipping the regeneration LLM call entirely).
+    """
+
+    node_id: str | None = Field(
+        default=None,
+        description=(
+            "Legacy: id of a single memory entry to remove. Mutually "
+            "exclusive with the criteria fields below."
+        ),
+    )
+    text_matches: str | None = Field(
+        default=None,
+        description=(
+            "Substring to match against raw turn text. Case-insensitive by "
+            "default; pass ``case_sensitive=true`` for an exact match."
+        ),
+    )
+    subject: str | None = Field(
+        default=None,
+        description=(
+            "Equality match on each fact's ``metadata.subject``. Only hits "
+            "hand-stamped facts until a future extractor phase populates it."
+        ),
+    )
+    user_id: str | None = Field(
+        default=None,
+        description=(
+            "Equality match on each entry's ``metadata.user_id`` (Phase 12 "
+            "multi-user scope). When the caller's JWT sub differs, the "
+            "audit record carries both."
+        ),
+    )
+    case_sensitive: bool = Field(
+        default=False,
+        description="When True, ``text_matches`` becomes case-sensitive.",
+    )
+    dry_run: bool = Field(
+        default=False,
+        description=(
+            "When True, return a ForgetPreview instead of deleting. "
+            "Audit-logs either way."
+        ),
+    )
+    summary_strategy: str | None = Field(
+        default=None,
+        description=(
+            "``'regen'`` (default) rewrites partially-covered summaries "
+            "from surviving turns; ``'drop'`` deletes every matched "
+            "summary without calling the LLM."
+        ),
+    )
 
 
 class ForgetResponse(BaseModel):
@@ -993,16 +1086,103 @@ def get_entry(node_id: str) -> HitResponse:
 
 @app.post(
     "/forget",
-    response_model=ForgetResponse,
     operation_id="forget",
     tags=["default"],
     responses=ERROR_RESPONSES,
-    dependencies=[Depends(require_auth(None, "write"))],
 )
-def forget(req: ForgetRequest) -> ForgetResponse:
-    if not _get_mem().forget(req.node_id):
-        raise HTTPException(status_code=404, detail=f"node_id {req.node_id} not found")
-    return ForgetResponse(removed=True)
+def forget(
+    req: ForgetRequest,
+    principal: Principal | None = Depends(require_auth(None, "write")),  # noqa: B008
+) -> dict[str, Any]:
+    """Delete memory entries.
+
+    Two dispatch branches:
+
+    1. **Legacy node_id**: ``{"node_id": "<id>"}`` removes exactly one
+       entry via :meth:`MemoryLayer.forget`. Returns ``{"removed":
+       true}`` on success, 404 otherwise. Pre-Phase-37 contract.
+    2. **Conversational criteria**: any of ``text_matches`` / ``subject``
+       / ``user_id`` routes through the Conversational cascade
+       (turns + derived facts + summary regenerate-or-drop) and
+       returns the :class:`ForgetResult` / :class:`ForgetPreview`
+       shape. Requires a ConversationalMemory to be wired through
+       :func:`_get_conversational_memory`; returns 501 otherwise.
+
+    Every invocation (both branches) emits one audit record when
+    ``SOMA_FORGET_AUDIT_PATH`` is set. The caller's ``principal.sub``
+    is stamped on the record; when the request body's ``user_id``
+    differs, the audit line carries both.
+    """
+    actor = principal.sub if principal is not None else "anonymous"
+
+    # Branch 1: legacy node_id path. Keeps the Phase 4 contract byte-
+    # identical for existing clients.
+    if req.node_id is not None:
+        if not _get_mem().forget(req.node_id):
+            raise HTTPException(
+                status_code=404, detail=f"node_id {req.node_id} not found"
+            )
+        return {"removed": True}
+
+    # Branch 2: conversational criteria path. Validate at least one
+    # criterion so callers can't wipe a bundle by omission.
+    if req.text_matches is None and req.subject is None and req.user_id is None:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "forget() requires at least one criterion "
+                "(node_id=, text_matches=, subject=, or user_id=)"
+            ),
+        )
+
+    cm = _get_conversational_memory()
+    if cm is None:
+        raise HTTPException(
+            status_code=501,
+            detail=(
+                "Conversational forget is not configured on this server. "
+                "Wire a ConversationalMemory via _get_conversational_memory "
+                "or POST {\"node_id\": ...} for single-entry deletion."
+            ),
+        )
+
+    # summary_strategy is opt-in; forward only when the caller set it
+    # so the default stays "regen" and pre-Task-3 behaviour survives.
+    kwargs: dict[str, Any] = {
+        "text_matches": req.text_matches,
+        "subject": req.subject,
+        "user_id": req.user_id,
+        "case_sensitive": req.case_sensitive,
+        "dry_run": req.dry_run,
+        "actor": actor,
+    }
+    if req.summary_strategy is not None:
+        if req.summary_strategy not in ("regen", "drop"):
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"summary_strategy must be 'regen' or 'drop', got "
+                    f"{req.summary_strategy!r}"
+                ),
+            )
+        kwargs["summary_strategy"] = req.summary_strategy
+
+    try:
+        outcome = cm.forget(**kwargs)
+    except ValueError as exc:
+        # Matches the library's zero-criteria guard; shouldn't fire
+        # here because we pre-validated, but forward just in case a
+        # future library check fires.
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    # Convert the dataclass to a dict for the JSON response. Pydantic
+    # would also work but the dataclasses are lighter and the shape is
+    # already documented on :class:`ForgetResult` / :class:`ForgetPreview`.
+    return {
+        k: v
+        for k, v in outcome.__dict__.items()
+        if not k.startswith("_")
+    }
 
 
 @app.post(
@@ -1179,6 +1359,13 @@ def get_bundle(name: str, node_id: str) -> HitResponse:
     dependencies=[Depends(require_auth("name", "write"))],
 )
 def forget_bundle(name: str, req: ForgetRequest) -> ForgetResponse:
+    # Per-tenant variant remains the legacy node_id deletion only —
+    # conversational criteria routing is default-bundle for Phase 37.
+    if req.node_id is None:
+        raise HTTPException(
+            status_code=400,
+            detail="bundles/{name}/forget requires a node_id",
+        )
     if not _get_mem(name).forget(req.node_id):
         raise HTTPException(status_code=404, detail=f"node_id {req.node_id} not found")
     return ForgetResponse(removed=True)

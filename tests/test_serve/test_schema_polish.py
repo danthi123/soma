@@ -161,14 +161,34 @@ def test_error_responses_have_schemas() -> None:
     assert "detail" in err["properties"]
 
 
-def test_forget_returns_named_model() -> None:
+def test_forget_request_schema_covers_both_shapes() -> None:
+    """Phase 37: /forget accepts both legacy node_id and conversational criteria.
+
+    The response shape depends on the branch the handler picks —
+    legacy returns ``{"removed": bool}`` (unchanged), conversational
+    returns the richer ``ForgetResult`` / ``ForgetPreview`` dict shape
+    — so the OpenAPI response is the generic dict envelope rather
+    than a single named model. The **request** schema still has a
+    named model (``ForgetRequest``) that carries every field.
+    """
     spec = _spec()
-    forget_200 = spec["paths"]["/forget"]["post"]["responses"]["200"]
-    ref = forget_200["content"]["application/json"]["schema"]["$ref"]
-    assert ref.endswith("/ForgetResponse"), f"unexpected 200 schema: {ref}"
-    model = spec["components"]["schemas"]["ForgetResponse"]
-    assert "removed" in model["properties"]
-    assert model["properties"]["removed"]["type"] == "boolean"
+    forget_req_ref = (
+        spec["paths"]["/forget"]["post"]["requestBody"]
+        ["content"]["application/json"]["schema"]["$ref"]
+    )
+    assert forget_req_ref.endswith("/ForgetRequest"), forget_req_ref
+    req_model = spec["components"]["schemas"]["ForgetRequest"]
+    # Both the legacy node_id field and the Phase 37 criteria fields
+    # are present.
+    for field in ("node_id", "text_matches", "subject", "user_id", "dry_run"):
+        assert field in req_model["properties"], (
+            f"ForgetRequest missing {field!r}: {list(req_model['properties'])}"
+        )
+    # ForgetResponse is still referenced by the bundles/{name}/forget
+    # variant, so the named model stays live in the component map.
+    resp_model = spec["components"]["schemas"]["ForgetResponse"]
+    assert "removed" in resp_model["properties"]
+    assert resp_model["properties"]["removed"]["type"] == "boolean"
 
 
 def test_consolidate_and_save_return_named_models() -> None:

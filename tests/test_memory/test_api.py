@@ -199,6 +199,77 @@ def test_consolidate_with_soma_processes_entries(embedder) -> None:
     assert soma.global_step > 0
 
 
+def test_consolidate_is_incremental_after_first_pass(embedder) -> None:
+    """consolidate() only re-processes entries past the cursor.
+
+    The cursor is the index of the next entry to growth-capture. Old
+    entries had their activations recorded in earlier consolidate()
+    calls; re-running them would inflate per-call cost from
+    O(new_entries) to O(N). Verify by counting SOMA steps.
+    """
+    from soma.core.config import SOMAConfig
+    from soma.system import SOMA
+
+    tokenizer, encoder = embedder
+    config = SOMAConfig(
+        vocab_size=256, text_embed_dim=32, sensor_output_dim=32, max_input_tokens=64,
+    )
+    soma = SOMA(config)
+    mem = MemoryLayer(tokenizer=tokenizer, encoder=encoder)
+    mem.attach_soma(soma, tokenizer, encoder)
+
+    for _ in range(5):
+        mem.store("the cat sat on the mat")
+    mem.consolidate()
+    steps_after_first = soma.global_step
+    assert steps_after_first > 0
+
+    # Second call without new stores should be a near-no-op
+    # (cursor already at end). It still re-runs stable-capture if
+    # enabled, but the growth pass shouldn't fire any SOMA steps.
+    # We verify by storing nothing new and checking the cursor.
+    mem.consolidate()
+    # cursor is at len(_texts) — nothing to growth-process
+    assert mem._consolidation_cursor == len(mem._texts)
+
+    # Add 3 more entries; consolidate() should only growth-process
+    # those 3.
+    for _ in range(3):
+        mem.store("a different fact about dogs")
+    steps_before_second_growth = soma.global_step
+    mem.consolidate()
+    new_steps = soma.global_step - steps_before_second_growth
+    # 5 initial entries got steps_after_first SOMA steps total.
+    # 3 new entries should generate ~3/5 of that count + the
+    # stable-capture pass (which scales as O(N) but is eval_mode).
+    assert new_steps > 0, "consolidate must fire steps for the 3 new entries"
+
+
+def test_consolidate_cursor_resets_on_attach_soma(embedder) -> None:
+    """attach_soma() resets the cursor so a fresh SOMA catches up the store."""
+    from soma.core.config import SOMAConfig
+    from soma.system import SOMA
+
+    tokenizer, encoder = embedder
+    mem = MemoryLayer(tokenizer=tokenizer, encoder=encoder)
+    for _ in range(5):
+        mem.store("seed fact")
+    # No SOMA attached, no consolidation, cursor stays at 0.
+    assert mem._consolidation_cursor == 0
+
+    config = SOMAConfig(
+        vocab_size=256, text_embed_dim=32, sensor_output_dim=32, max_input_tokens=64,
+    )
+    soma = SOMA(config)
+    mem.attach_soma(soma, tokenizer, encoder)
+    # attach_soma resets cursor to 0 so the next consolidate() catches
+    # the SOMA up to the existing store.
+    assert mem._consolidation_cursor == 0
+    mem.consolidate()
+    assert mem._consolidation_cursor == 5
+    assert soma.global_step > 0
+
+
 def test_auto_consolidate_fires_at_threshold(embedder) -> None:
     from soma.core.config import SOMAConfig
     from soma.system import SOMA

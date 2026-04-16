@@ -141,6 +141,12 @@ class MemoryLayer:
         self._step: int = 0
         self._graph_rerank_alpha: float = float(graph_rerank_alpha)
         self._graph_rerank_stable_capture: bool = bool(graph_rerank_stable_capture)
+        # Cursor: index of the next entry consolidate() should process.
+        # Lets consolidate() be incremental — old entries already had
+        # their growth-capture activations recorded in earlier calls.
+        # Reset to 0 by attach_soma (a freshly-attached SOMA hasn't
+        # seen any of the existing entries yet).
+        self._consolidation_cursor: int = 0
 
     # ------------------------------------------------------------------
     # Factory methods
@@ -191,6 +197,9 @@ class MemoryLayer:
         self._soma = soma
         self._soma_tokenizer = tokenizer
         self._soma_encoder = encoder
+        # New SOMA hasn't processed any existing entries yet. Reset
+        # cursor so the next consolidate() catches up the whole store.
+        self._consolidation_cursor = 0
 
     # ------------------------------------------------------------------
     # Core API
@@ -305,8 +314,16 @@ class MemoryLayer:
         from soma.io.verbalizer import SomaAggregator
 
         soma_output_dim = int(self._soma.config.sensor_output_dim)
+
+        # Incremental growth pass: only process entries past the cursor.
+        # Old entries already had their growth-time activations recorded
+        # in prior consolidate() calls — re-running them would do
+        # redundant SOMA steps and balloon cost from O(new_entries) to
+        # O(N) per call.
         processed = 0
-        for entry_idx, text in enumerate(self._texts):
+        start = self._consolidation_cursor
+        for entry_idx in range(start, len(self._texts)):
+            text = self._texts[entry_idx]
             token_embeddings = self._soma_encoder.encode(text)
             if len(token_embeddings) < 2:
                 continue
@@ -321,7 +338,19 @@ class MemoryLayer:
             )
             self._soma_activations[entry_idx] = pooled.detach().cpu()
             processed += 1
-        if self._graph_rerank_stable_capture:
+        self._consolidation_cursor = len(self._texts)
+
+        # Stable-capture re-runs every entry in eval_mode so all
+        # stored activations live in the same graph + weight state
+        # the query will see at retrieval. We only skip it when the
+        # growth pass didn't process anything — in that case nothing
+        # could have shifted weights or topology, so prior captures
+        # remain valid. Note: even without nodes/edges changing, the
+        # growth pass updates Hebbian + backprop weights on every
+        # step, so we cannot skip stable-capture just on
+        # ``num_nodes/num_edges unchanged`` — we have to skip on
+        # ``no SOMA steps fired``.
+        if self._graph_rerank_stable_capture and processed > 0:
             self._recapture_activations_stable(soma_output_dim)
         return processed
 

@@ -1000,3 +1000,105 @@ def test_bundle_delete_returns_2_for_missing_path(
     err = capsys.readouterr().err
     assert rc == 2
     assert err  # non-empty error
+
+
+# ------------------------------------------------------------------
+# Phase 28 — `soma chat` streaming
+# ------------------------------------------------------------------
+
+
+def test_chat_reply_streams_when_backend_supports_stream_generate(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """If the backend exposes stream_generate, the REPL helper streams
+    chunks to stdout and never calls the blocking generate()."""
+    from soma.cli import _chat_reply
+
+    generate_calls: list[str] = []
+
+    class FakeStreamingLLM:
+        name = "fake-stream"
+
+        def generate(self, prompt: str, *, max_tokens: int = 256) -> str:
+            generate_calls.append(prompt)
+            return "SHOULD_NOT_CALL"
+
+        def stream_generate(self, prompt: str, *, max_tokens: int = 256):
+            yield "hello "
+            yield "world"
+
+    text = _chat_reply(FakeStreamingLLM(), "who are you?")
+    out = capsys.readouterr().out
+    assert text == "hello world"
+    assert "hello world" in out
+    # generate() must not be called when stream_generate is available.
+    assert generate_calls == []
+
+
+def test_chat_reply_falls_back_to_generate_when_no_stream(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Backends without stream_generate keep the existing one-shot
+    behaviour exactly (print the full reply, return it)."""
+    from soma.cli import _chat_reply
+
+    class SyncLLM:
+        name = "sync"
+
+        def generate(self, prompt: str, *, max_tokens: int = 256) -> str:
+            return "one-shot reply"
+
+    text = _chat_reply(SyncLLM(), "ping?")
+    out = capsys.readouterr().out
+    assert text == "one-shot reply"
+    assert "one-shot reply" in out
+
+
+def test_chat_reply_returns_joined_text_for_memory_storage(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The full assistant response must be returned in one piece so the
+    caller can hand it to ConversationalMemory / RAGAnswer / etc.
+    without re-collecting chunks itself."""
+    from soma.cli import _chat_reply
+
+    class ThreeChunkLLM:
+        name = "three"
+
+        def generate(self, prompt: str, *, max_tokens: int = 256) -> str:
+            return "SHOULD_NOT_CALL"
+
+        def stream_generate(self, prompt: str, *, max_tokens: int = 256):
+            yield "alpha"
+            yield "-"
+            yield "omega"
+
+    text = _chat_reply(ThreeChunkLLM(), "what?")
+    capsys.readouterr()  # drain
+    assert text == "alpha-omega"
+
+
+def test_chat_reply_keyboard_interrupt_leaves_repl_usable(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Ctrl-C mid-stream should propagate (outer REPL handles it) but
+    still emit a trailing newline so the next prompt doesn't glue to
+    the partial output."""
+    from soma.cli import _chat_reply
+
+    class InterruptingLLM:
+        name = "boom"
+
+        def generate(self, prompt: str, *, max_tokens: int = 256) -> str:
+            return "nope"
+
+        def stream_generate(self, prompt: str, *, max_tokens: int = 256):
+            yield "partial "
+            raise KeyboardInterrupt
+
+    with pytest.raises(KeyboardInterrupt):
+        _chat_reply(InterruptingLLM(), "anything")
+    out = capsys.readouterr().out
+    assert "partial " in out
+    # Trailing newline keeps the terminal in a usable state.
+    assert out.endswith("\n")

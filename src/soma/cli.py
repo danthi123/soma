@@ -95,6 +95,46 @@ def _cmd_chat(args: argparse.Namespace) -> int:
     return 0
 
 
+def _chat_reply(llm: Any, prompt: str, *, max_tokens: int = 256) -> str:
+    """Stream the LLM reply to stdout if possible, else print in one shot.
+
+    If the backend exposes ``stream_generate`` (optional Protocol method),
+    chunks are written to stdout as they arrive with ``flush=True`` so
+    typing feels live. Otherwise the existing blocking
+    :meth:`LLMBackend.generate` path is used — same visible behaviour as
+    before streaming was introduced.
+
+    Returns the full reply text so the caller can persist the assistant
+    turn (ConversationalMemory.add_message, RAGAnswer, etc.) without
+    re-collecting chunks.
+
+    KeyboardInterrupt mid-stream propagates to the outer REPL after
+    emitting a trailing newline — leaves the terminal in a usable state
+    and does NOT store a partial turn.
+    """
+    stream_fn = getattr(llm, "stream_generate", None)
+    if stream_fn is None:
+        reply = llm.generate(prompt, max_tokens=max_tokens)
+        print(reply)
+        return reply
+
+    chunks: list[str] = []
+    try:
+        for chunk in stream_fn(prompt, max_tokens=max_tokens):
+            if not chunk:
+                continue
+            chunks.append(chunk)
+            sys.stdout.write(chunk)
+            sys.stdout.flush()
+    except KeyboardInterrupt:
+        sys.stdout.write("\n")
+        sys.stdout.flush()
+        raise
+    sys.stdout.write("\n")
+    sys.stdout.flush()
+    return "".join(chunks)
+
+
 def _run_chat_repl(
     mem: Any, *, backend_name: str, k: int, dry_run: bool
 ) -> None:
@@ -104,14 +144,19 @@ def _run_chat_repl(
     MemoryLayer is built in-process (not loaded from a bundle). Mirrors
     the loop in ``scripts.demo_wiki_chat._chat`` but takes the memory
     instance as input so the caller can register atexit hooks on it.
+
+    When the resolved backend exposes ``stream_generate`` the REPL
+    streams chunks live; otherwise it falls back to a single blocking
+    ``generate`` call.
     """
     from scripts.demo_wiki_chat import _resolve_backend
-    from soma.llm.rag import RAGSession
+    from soma.llm.rag import RAGAnswer, RAGSession
 
     backend = _resolve_backend(backend_name, dry_run=dry_run)
     print(f"  LLM backend: {backend.name}\n")
 
     session = RAGSession(memory=mem, llm=backend, k=k)
+    streaming = hasattr(backend, "stream_generate")
     print("Type a question, or 'quit' to exit. Ctrl-C also works.\n")
     try:
         while True:
@@ -120,8 +165,22 @@ def _run_chat_repl(
                 continue
             if question.lower() in {"quit", "exit", "q"}:
                 break
-            answer = session.ask(question)
-            print(f"Assistant: {answer.text}\n")
+            if streaming:
+                hits = session._retrieve(question)
+                prompt = session._build_prompt(question, hits)
+                print("Assistant: ", end="", flush=True)
+                try:
+                    text = _chat_reply(
+                        backend, prompt, max_tokens=session.max_tokens
+                    )
+                except KeyboardInterrupt:
+                    # Partial turn — drop it and go back to the prompt.
+                    continue
+                answer = RAGAnswer(text=text, hits=hits, backend_name=backend.name)
+                print()
+            else:
+                answer = session.ask(question)
+                print(f"Assistant: {answer.text}\n")
             if answer.hits:
                 print("  Sources:")
                 for line in answer.cite_lines():

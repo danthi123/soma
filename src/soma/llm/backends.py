@@ -19,7 +19,20 @@ from typing import Any, Protocol, runtime_checkable
 
 @runtime_checkable
 class LLMBackend(Protocol):
-    """Minimal protocol any backend must satisfy."""
+    """Minimal protocol any backend must satisfy.
+
+    Backends MAY additionally implement an optional streaming method::
+
+        def stream_generate(
+            self, prompt: str, *, max_tokens: int = 256
+        ) -> Iterator[str]:
+            ...
+
+    When present, callers that care about live token output (``soma
+    chat``) detect it via ``hasattr(backend, "stream_generate")`` and
+    pipe chunks to stdout as they arrive. Backends without it keep
+    working identically — the optional method is additive.
+    """
 
     name: str
 

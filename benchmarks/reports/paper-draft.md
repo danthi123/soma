@@ -40,6 +40,8 @@ Seeds are fixed; the scripts run on a laptop without a GPU.
 | SOMA vs Chroma (1K/5K/20K efficiency) | `benchmarks/run_scale_vs_chroma.py` | `benchmarks/reports/scale_vs_chroma.md` |
 | **Enterprise scale (100K+) — index-only** | `benchmarks/run_scale_enterprise.py` | `benchmarks/reports/scale_enterprise_*.md` |
 | **LoCoMo retrieval (real conversations)** | `benchmarks/run_locomo.py` | `benchmarks/reports/locomo.md` |
+| **LoCoMo QA (LLM-as-judge)** | `benchmarks/run_locomo.py --run-qa-eval` | `benchmarks/reports/locomo.md` (qa_accuracy column) |
+| **Conv threshold calibration** | `benchmarks/run_conv_threshold_sweep.py` | `benchmarks/reports/conv_threshold_sweep.md` |
 | Graph re-rank sweep | `benchmarks/run_graph_ablation.py` | `benchmarks/reports/graph_ablation.md` + `graph_ablation_shuffled.md` |
 | Plasticity at scale | `benchmarks/run_plasticity_scale.py` | `benchmarks/reports/plasticity_scale.md` |
 | Longitudinal drift | `benchmarks/run_longitudinal_drift.py` | `benchmarks/reports/longitudinal_drift.md` |
@@ -367,6 +369,80 @@ should fail on Mem0-style purge-on-budget schemes and on
 LLM-context systems that drop information when the window fills.
 SOMA has nowhere for old facts to go — the embedding is the
 contract.
+
+### 4.4 Recall vs QA accuracy — two different questions
+
+Recall@k measures whether the memory layer *surfaces* the right
+evidence; QA accuracy measures whether the LLM *uses* the retrieved
+context to produce an answer that matches the gold annotation. Mem0's
+paper (arXiv 2504.19413) reports +26% QA accuracy on LoCoMo vs
+ChatGPT's native memory — we wire up the same LLM-as-judge harness so
+SOMA's number is measurable.
+
+The pipeline (`benchmarks/run_locomo.py --run-qa-eval`):
+
+1. For each LoCoMo question, retrieve the top-5 same-sample hits.
+2. Responder LLM answers from the retrieved context (one-sentence
+   prompt, `temperature=0.0`).
+3. Judge LLM compares the candidate to the gold annotation, returns
+   JSON `{match: bool, reason: ...}`. Strict: malformed JSON → False.
+
+The two metrics answer different questions:
+
+| Metric | Measures | Ceiling |
+| --- | --- | --- |
+| Recall@k | Did memory return the evidence turn? | Pure memory-layer concern — moves with embedder quality, index, hybrid/rerank. |
+| QA accuracy | Given the context, did the LLM answer correctly? | LLM-capability concern — moves with responder model, prompt design, judge strictness. |
+
+A high-recall / low-QA gap means the memory is doing its job but the
+responder is losing the signal (context too long, wrong format,
+hallucinated answer). A low-recall / low-QA gap is unambiguous: the
+memory didn't surface the evidence. This separation is the reason
+Mem0's +26% headline is meaningful; we report both so a reader can see
+where the budget goes.
+
+Real numbers from this harness land in `benchmarks/reports/locomo_qa.md`
+once operated with `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` / Ollama set;
+the default-200-question cap keeps the cost under $1 on paid APIs.
+With `DryRunBackend` the harness runs to completion but QA accuracy is
+reported as "-" for every arm (no real LLM to score against).
+
+### 4.5 ConversationalMemory threshold calibration
+
+`ConversationalMemory` ships with two thresholds that control when the
+extract/reconcile pipeline makes LLM calls:
+
+- `near_dup_threshold` (default 0.92) — cosine ≥ this → skip (new
+  fact is a duplicate of an existing one, no LLM round-trip).
+- `ambiguous_threshold` (default 0.75) — cosine < this → ADD without
+  asking the LLM. In between, one LLM call picks ADD / UPDATE /
+  SUPERSEDE / NOOP.
+
+Both defaults were inherited from Mem0 sbert rules-of-thumb and never
+tuned against our own data. `benchmarks/run_conv_threshold_sweep.py`
+measures the 4×4 grid `near_dup ∈ {0.88, 0.90, 0.92, 0.94}` ×
+`ambiguous ∈ {0.65, 0.70, 0.75, 0.80}` on a 20-conversation LoCoMo
+subset. Per combo we record facts_stored, llm_calls (extract +
+reconcile; QA calls too when `--run-qa-eval` is set), p50/p95
+`add_message` latency, Recall@5, and (optional) QA accuracy. The
+recommendation metric is quality-per-LLM-call — both axes of the grid
+affect both cost and retrieval quality, and raw accuracy alone
+rewards the most LLM-heavy combo regardless of budget.
+
+Schematic layout of the report (real numbers live in
+`benchmarks/reports/conv_threshold_sweep.md` and require a live LLM):
+
+| near_dup | ambiguous | facts | llm calls | p50 add (ms) | R@5 | QA acc |
+| :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| 0.88 | 0.65 | ... | ... | ... | ... | ... |
+| ... | ... | ... | ... | ... | ... | ... |
+| 0.94 | 0.80 | ... | ... | ... | ... | ... |
+
+Recommended defaults: pending a live-backend run of the sweep. The
+shipped (0.92, 0.75) pair sits at the centre of the grid so either
+direction of recommendation is a small delta; the harness exists so
+the defaults can be re-chosen whenever a better embedder lands or a
+new workload surfaces.
 
 ## 5. Open research questions
 

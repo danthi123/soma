@@ -4,6 +4,42 @@ All notable changes to SOMA are documented here.
 
 ## [Unreleased] — 2026-04-16
 
+### Added — benchmarks
+
+- **LoCoMo QA eval with LLM-as-judge** — `benchmarks/run_locomo.py`
+  gains `--run-qa-eval` / `--qa-eval-max-questions` (default 200) /
+  `--judge-llm-name` flags. For each LoCoMo question a responder LLM
+  answers from the retrieved context; a judge LLM compares the
+  candidate against the gold annotation and returns a strict
+  JSON verdict. Post-hoc scoring so every arm sees the same judge.
+  Fallback to `DryRunBackend` with explicit warning when no live
+  backend is reachable. New `benchmarks/harness/qa_eval.py`
+  (`answer_question`, `judge_answer`, `evaluate_qa`) + full TDD
+  coverage in `benchmarks/tests/test_qa_eval.py` — capturing-backend
+  unit tests and an end-to-end smoke through `run_locomo.main`.
+  Run with `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` set or Ollama
+  running to produce real numbers.
+- **Conversational threshold calibration sweep** —
+  `benchmarks/run_conv_threshold_sweep.py` sweeps a 4x4 grid of
+  `near_dup_threshold ∈ {0.88, 0.90, 0.92, 0.94}` x
+  `ambiguous_threshold ∈ {0.65, 0.70, 0.75, 0.80}` on a LoCoMo
+  subset (20 conversations), recording facts_stored, llm_calls,
+  p50/p95 `add_message` latency, Recall@5, and optional QA
+  accuracy per combo. Emits a markdown report at
+  `benchmarks/reports/conv_threshold_sweep.md` with a
+  recommendation banner picking the best cost-adjusted combination
+  (accuracy-per-LLM-call, falling back to recall-per-call when QA
+  eval is off). `_CountingBackend` wraps the LLM for per-combo
+  cost measurement; DryRunBackend fallback documented in-report.
+  Tests at `benchmarks/tests/test_conv_threshold_sweep.py` pin grid
+  shape (16 rows), variance across combos, and recommendation
+  banner presence. Run with `OPENAI_API_KEY` or running Ollama to
+  produce real numbers — the shipped report is a DryRunBackend
+  smoke run.
+- **Paper draft §4.4 + §4.5** (`benchmarks/reports/paper-draft.md`):
+  Recall vs QA accuracy distinction table (memory vs LLM concerns)
+  and threshold calibration table + recommended-defaults section.
+
 ### Added — backends
 
 - **Pluggable LanceDB backend** (`src/soma/memory/backends/lancedb.py`,

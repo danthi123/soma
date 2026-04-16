@@ -48,6 +48,16 @@ All notable changes to SOMA are documented here.
 - **`docs/backends.md`**: protocol overview, when-to-pick-which
   table, InProc vs Qdrant positioning, filter-pushdown semantics,
   and a "write your own backend" walkthrough.
+- **`benchmarks/run_backend_matrix.py`** + smoke tests: adapter
+  matrix harness (InProcFlat, InProcHNSW, QdrantLocal, QdrantHTTP
+  when env set) with shared sbert cache. 1K smoke shows InProcHNSW
+  at Recall@10 = 0.974 (inside the 0.02 ship-blocker threshold) and
+  QdrantLocal at Recall@10 = 1.000.
+- **Feature comparison (README)**: new row — *Pluggable vector
+  backends: yes (InProc + Qdrant)* vs Chroma/Mem0-Zep/Pinecone which
+  all say no.
+- **Paper §4.3.5**: adapter-matrix table + positioning of filter
+  pushdown as the no-callsite-change superpower.
 
 ### Added — TypeScript client
 

@@ -87,6 +87,7 @@ print(chat.ask("where does the user live?").text)
 | Multi-tenant REST (bundles/{name}) | no | yes | yes | **yes** |
 | Swap LLM without losing memory | yes | partial | yes | **yes** |
 | Crash-safe WAL + auto-compaction | partial | yes | yes | **yes** |
+| Pluggable vector backends (adapter protocol) | no | no | no | **yes** (InProc + Qdrant) |
 
 \* substrate ships; current memory workload doesn't trigger growth/pruning thresholds — see `benchmarks/reports/paper-draft.md` §5 for the research agenda to activate it.
 

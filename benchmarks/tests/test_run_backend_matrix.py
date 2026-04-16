@@ -7,8 +7,6 @@ corpus) so CI stays fast.
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from benchmarks.run_backend_matrix import render_report, run_matrix
 
 

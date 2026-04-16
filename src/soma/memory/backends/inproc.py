@@ -27,7 +27,6 @@ import numpy as np
 import torch
 
 from soma import metrics as _m
-from soma.memory.backend import VectorBackend
 
 
 def _import_faiss() -> Any:

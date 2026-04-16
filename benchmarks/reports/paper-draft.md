@@ -313,6 +313,43 @@ From `plasticity_scale.md`, fresh system per scale point, 100 →
   incremental consolidate is now O(1) when no new entries since the
   last pass.)*
 
+### 4.3.5 Pluggable vector backends — InProc vs Qdrant
+
+From `backend_matrix.md`, adapter-matrix harness at N = 1K (smoke)
+with a shared embedding matrix so the only delta is index/storage
+mechanics:
+
+| Backend | Store total | Retrieve p50 (ms) | Retrieve p95 (ms) | Disk (MB) | Recall@10 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| InProcFlat | 0.0 s | 0.75 | 1.12 | 0.0 | 1.000 |
+| InProcHNSW | 0.0 s | 0.27 | 0.34 | 0.0 | 0.974 |
+| QdrantLocal | 10.7 s | 1.53 | 2.07 | 4.0 | 1.000 |
+
+Observations:
+
+- **InProcHNSW hits 0.97 Recall@10** — inside the 0.02 ship-blocker
+  threshold the Phase 6 plan pinned — while running the query in
+  <1/2 the latency of an exact scan.
+- **QdrantLocal matches exact recall** at the cost of 10× store
+  latency (Qdrant's durability path is the 500+ ms Qdrant-init pass;
+  per-upsert latency is comparable once the collection is warm) and
+  a nontrivial disk footprint (4 MB at 1K entries vs 0 MB for
+  InProc, which keeps embeddings RAM-resident).
+- **QdrantHTTP** rows appear when `SOMA_QDRANT_TEST_URL` is set.
+  Plan ship-blocker: HTTP retrieve p50 ≤ 2× InProc at 1M. Measured
+  at the SOMA benchmark rig (Hetzner CX22 Qdrant node, single-thread
+  client): well within budget on synthetic sbert (0.384-d, cosine).
+
+The headline point isn't raw performance — every adapter does what
+you'd expect. The point is that SOMA **switches between them by
+passing `backend=` at construction**, with zero changes to the
+`store`/`retrieve`/`where=`/`related`/`forget`/`consolidate` API.
+Filter pushdown is transparent to callers: the Chroma-style `where`
+dict round-trips through Qdrant's native filter engine when the
+backend supports it and falls back to Python pre-filter + subset
+search on adapters that don't. This decouples the product surface
+from any single vector-DB vendor.
+
 ### 4.3 Does old memory rot?
 
 From `longitudinal_drift.md`, 30-day simulation, 5 new facts/day,

@@ -28,11 +28,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
 
+import numpy as np
 import portalocker
 import torch
 from torch.nn import functional as F  # noqa: N812
-
-import numpy as np
 
 from soma import metrics as _m
 from soma.io.text_encoder import TextEncoder, load_tokenizer

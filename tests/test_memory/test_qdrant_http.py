@@ -122,11 +122,11 @@ def test_http_restore_repoints_without_reingest(tmp_path) -> None:
                 finally:
                     restored.close()
     except Exception:
+        import contextlib
+
         if original._client is not None:
-            try:
+            with contextlib.suppress(Exception):
                 original._client.delete_collection(coll)
-            except Exception:
-                pass
             original.close()
         raise
 
@@ -134,7 +134,6 @@ def test_http_restore_repoints_without_reingest(tmp_path) -> None:
 def test_http_filter_pushdown_matches_payload() -> None:
     """Filter pushdown round-trips the Chroma-style where through
     Qdrant's server-side filter engine."""
-    from qdrant_client.http import models as qm
 
     coll = _unique_collection()
     b = QdrantBackend(

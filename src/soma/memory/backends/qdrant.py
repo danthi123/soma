@@ -40,7 +40,6 @@ from typing import Any
 
 import numpy as np
 
-from soma.memory.backend import FilterPushdownUnsupported, VectorBackend
 from soma.memory.backends.qdrant_filter import to_qdrant_filter
 
 # 20K is the documented cap for local-file Qdrant before the embedded
@@ -151,11 +150,13 @@ class QdrantBackend:
         self._opened = True
 
     def close(self) -> None:
+        import contextlib
+
         if self._client is not None:
-            try:
+            # Best-effort teardown — don't fail close() because of a
+            # client that's already been torn down.
+            with contextlib.suppress(Exception):
                 self._client.close()
-            except Exception:  # pragma: no cover — best-effort teardown
-                pass
         self._client = None
         self._opened = False
 

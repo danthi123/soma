@@ -7,12 +7,13 @@ else (ids, texts, metadata, timestamps, WAL, BM25, cross-encoder
 rerank, graph-aware retrieval) stays inside MemoryLayer regardless of
 which backend is attached.
 
-Four adapters ship in-tree:
+Five adapters ship in-tree:
 
 - **`InProcBackend`** (default, zero new deps)
 - **`LanceDBBackend`** (optional extra: `pip install soma[lancedb]`)
 - **`QdrantBackend`** (optional extra: `pip install soma[qdrant]`)
 - **`ChromaBackend`** (optional extra: `pip install soma[chroma]`)
+- **`PgvectorBackend`** (optional extra: `pip install soma[pgvector]`)
 
 Swapping adapters does not change MemoryLayer's Python-facing API:
 `store`, `retrieve(where=...)`, `related`, `forget`, `consolidate`,
@@ -30,6 +31,7 @@ live and how the query runs.
 | Production agent, multi-host | **`QdrantBackend(mode="http")`** | Horizontal scale, multi-tenant, over-the-wire |
 | Quick tests / CI | `QdrantBackend(mode="memory")` | Embedded in-process, volatile |
 | Migrating from existing Chroma RAG | **`ChromaBackend`** | Point SOMA at your existing Chroma collection — zero export/reimport |
+| "We already run Postgres" | **`PgvectorBackend`** | Reuse your existing managed PG / RDS / Cloud SQL; one table, JSONB metadata, ivfflat index |
 
 **Rule of thumb:** start with `InProcBackend`. Switch to
 `LanceDBBackend` when you want persistence past 20K without running
@@ -252,6 +254,70 @@ observable contract (only matching rows come back) is identical.
 Pinned minimum: `chromadb>=0.5`. Earlier versions had a different
 `delete_collection` + recreate story and still exposed a now-removed
 `persist()` method; requiring 0.5 lets the adapter skip that branch.
+
+## PgvectorBackend
+
+Install: `pip install soma[pgvector]`.
+
+```python
+from soma.memory.api import MemoryLayer
+from soma.memory.backends.pgvector import PgvectorBackend
+
+backend = PgvectorBackend(
+    dsn="postgresql://user:pass@db.internal:5432/agent",
+    dim=384,
+    table_name="soma_vectors",  # per-tenant tables work fine
+)
+mem = MemoryLayer.with_sbert(backend=backend)
+```
+
+**The pitch: reuse the Postgres you already run.** A large fraction
+of production deployments already operate a managed Postgres (RDS,
+Cloud SQL, Supabase, self-hosted). The pgvector extension has been
+the default vector-column type for Postgres since the early 2020s
+and ships in every major managed product. `PgvectorBackend` points
+SOMA's memory layer at a pgvector-enabled Postgres so operators get
+SQL-layer observability, backup, and RBAC for free — no extra
+database to run.
+
+Schema (created on first open, idempotent via `IF NOT EXISTS`):
+
+```sql
+CREATE EXTENSION IF NOT EXISTS vector;
+CREATE TABLE soma_vectors (
+    id       TEXT PRIMARY KEY,
+    vector   vector(dim),
+    metadata JSONB DEFAULT '{}'::jsonb
+);
+CREATE INDEX ... USING ivfflat (vector vector_cosine_ops);
+CREATE INDEX ... USING GIN (metadata);
+```
+
+Filter pushdown rides JSONB containment (`metadata @> %s::jsonb`,
+GIN-indexable) for equality and typed extraction
+(`(metadata->>'field')::float >= %s`) for range ops. `$in` / `$nin`
+use the `ANY(%s)` array idiom. Every literal binds via psycopg
+placeholders; SQL injection is prevented by construction.
+
+Snapshot is `COPY soma_vectors TO STDOUT` → gzip inside the bundle;
+restore is the inverse. Cheaper than `pg_dump` for the single-table
+case, and the bundle stays compact.
+
+### Integration tests
+
+A gated test suite exercises the adapter against a real
+`pgvector/pgvector:pg16` container via testcontainers-python. Run
+locally with Docker available:
+
+```bash
+pip install -e ".[pgvector,pgvector-test]"
+SOMA_PGVECTOR_INTEGRATION=1 \
+    pytest tests/test_memory/test_pgvector_integration.py -q
+```
+
+The default `pytest` run skips this file entirely (no Docker
+dependency). See `tests/test_memory/test_pgvector_integration.py`
+for the gating pattern.
 
 ## QdrantBackend
 

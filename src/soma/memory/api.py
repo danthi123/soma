@@ -37,6 +37,7 @@ from soma import metrics as _m
 from soma.io.text_encoder import TextEncoder, load_tokenizer
 from soma.memory.backend import FilterPushdownUnsupported, VectorBackend
 from soma.memory.wal import WAL, WalRecord
+from soma.storage import LocalFSObjectStore, ObjectStore, parse_store_url
 
 __all__ = ["MemoryHit", "MemoryLayer"]
 
@@ -120,6 +121,42 @@ def _atomic_torch_save(obj: Any, path: Path) -> None:
         with contextlib.suppress(OSError):
             tmp.unlink()
         raise
+
+def _coerce_store(dest: str | Path | ObjectStore) -> ObjectStore:
+    """Normalise a save/load destination to a concrete :class:`ObjectStore`.
+
+    Three call shapes land here:
+
+    * An :class:`ObjectStore` instance — returned unchanged so callers
+      that built their own adapter (tests, third-party stores) keep
+      working.
+    * A ``Path`` or PathLike — treated as a local filesystem root and
+      routed through :class:`LocalFSObjectStore`.
+    * A ``str`` — parsed by :func:`parse_store_url`. Plain absolute
+      paths auto-prefix to ``file://``; ``s3://`` / ``gs://`` raise
+      today and flip in Phases 31 / 32.
+    """
+    if isinstance(dest, ObjectStore):
+        return dest
+    return parse_store_url(dest)
+
+
+def _store_local_root(store: ObjectStore) -> Path:
+    """Return the local-FS root backing ``store`` for WAL / lock use.
+
+    The WAL and ``bundle.lock`` sidecar still need a real local
+    directory in Phase 30. ``LocalFSObjectStore`` exposes that as
+    :attr:`root`; any other adapter (S3 / GCS in Phases 31-32) will
+    need to stage the bundle to a temp dir before calling into the
+    legacy WAL-replay path. For now, raise so the gap is explicit.
+    """
+    if isinstance(store, LocalFSObjectStore):
+        return store.root
+    raise NotImplementedError(
+        f"{type(store).__name__} does not expose a local bundle root; "
+        "remote-store WAL staging lands with the S3/GCS adapters."
+    )
+
 
 EmbedFn = Callable[[str], torch.Tensor]
 
@@ -1575,23 +1612,52 @@ class MemoryLayer:
     # ------------------------------------------------------------------
     # Persistence
     # ------------------------------------------------------------------
-    def save(self, path: str | Path) -> None:
-        """Write a self-contained memory bundle to ``path`` (a directory).
+    def save(self, dest: str | Path | ObjectStore) -> None:
+        """Write a self-contained memory bundle to ``dest``.
 
-        Each file is written to a sibling ``.tmp`` and swapped into
-        place with ``os.replace`` so a crash mid-save leaves the old
-        (consistent) bundle intact, never a half-written mix. Any
-        leftover ``.tmp`` file is deleted on error.
+        ``dest`` may be:
+
+        * A directory :class:`Path` (pre-Phase-30 call shape).
+        * A ``str`` URL — ``file:///abs/path`` or a plain absolute path
+          that auto-prefixes to ``file://``. Phase 31 adds ``s3://``,
+          Phase 32 ``gs://``.
+        * An :class:`ObjectStore` instance — convenient for tests that
+          already built one, or callers wiring up a third-party adapter.
+
+        Each payload is uploaded via ``store.put_bytes`` with a
+        bundle-relative key (``tokenizer.json``, ``encoder.pt``,
+        ``memory_embeddings.pt``, ``memory_index.json``).
+        :class:`~soma.storage.LocalFSObjectStore` writes each key
+        through a sibling ``.tmp`` + ``os.replace`` so a crash
+        mid-save still leaves the previous (consistent) bundle intact.
         """
-        out = Path(path)
-        out.mkdir(parents=True, exist_ok=True)
+        import io
+        import tempfile
+
+        store = _coerce_store(dest)
         encoder = self._encoder
         has_encoder = encoder is not None
         if encoder is not None:
-            # save_tokenizer goes through its own write path; torch.save
-            # we route through the atomic wrapper.
-            encoder.save_tokenizer(out / "tokenizer.json")
-            _atomic_torch_save(encoder.state_dict(), out / "encoder.pt")
+            # The tokenizer library writes to a filesystem path directly,
+            # so route through a short-lived temp file and read the
+            # bytes back through the store. Tokenizer JSONs are small
+            # (KB-sized) so this buffer round-trip is free.
+            with tempfile.NamedTemporaryFile(
+                suffix=".json", delete=False
+            ) as tmp_tok:
+                tok_path = Path(tmp_tok.name)
+            try:
+                encoder.save_tokenizer(tok_path)
+                store.put_bytes("tokenizer.json", tok_path.read_bytes())
+            finally:
+                with contextlib.suppress(OSError):
+                    tok_path.unlink()
+            # Serialise the encoder state to an in-memory buffer and
+            # hand it to the store. Encoders are small enough that
+            # in-memory serialisation is fine.
+            buf = io.BytesIO()
+            torch.save(encoder.state_dict(), buf)
+            store.put_bytes("encoder.pt", buf.getvalue())
         if self._ids:
             # Pull stacked vectors out of the backend in id order so
             # snapshot rows line up with memory_index.json entries.
@@ -1599,7 +1665,14 @@ class MemoryLayer:
             stacked = torch.from_numpy(stacked_np.copy())
         else:
             stacked = torch.empty((0, self._embed_dim))
-        _atomic_torch_save(stacked, out / "memory_embeddings.pt")
+        # Embeddings are the heaviest artefact in the bundle; torch.save
+        # into an in-memory buffer and put_bytes it. For truly massive
+        # stores the S3/GCS adapters (Phases 31-32) will prefer
+        # ``put_stream`` — the Protocol is ready for that; the local
+        # adapter treats both paths equivalently.
+        emb_buf = io.BytesIO()
+        torch.save(stacked, emb_buf)
+        store.put_bytes("memory_embeddings.pt", emb_buf.getvalue())
         index: dict[str, Any] = {
             # v1 = snapshot-only (pre-WAL). v2 = snapshot + optional WAL
             # sidecar. We emit v2 unconditionally now; v1 bundles still
@@ -1626,21 +1699,29 @@ class MemoryLayer:
         }
         if encoder is not None:
             index["max_seq_len"] = int(encoder.max_seq_len)
-        _atomic_write_bytes(
-            out / "memory_index.json",
+        store.put_bytes(
+            "memory_index.json",
             json.dumps(index, indent=2).encode("utf-8"),
         )
 
     @classmethod
     def load(
         cls,
-        path: str | Path,
+        src: str | Path | ObjectStore,
         *,
         embed_fn: EmbedFn | None = None,
         device: torch.device | str | None = None,
         durability: Literal["sync", "batch", "async"] = "sync",
     ) -> MemoryLayer:
-        """Rehydrate a MemoryLayer from a ``save()``-produced directory.
+        """Rehydrate a MemoryLayer from a ``save()``-produced bundle.
+
+        ``src`` may be:
+
+        * A directory :class:`Path` (pre-Phase-30 call shape).
+        * A ``str`` URL — ``file:///abs/path`` or a plain absolute path
+          that auto-prefixes to ``file://``. Phase 31 adds ``s3://``,
+          Phase 32 ``gs://``.
+        * An :class:`ObjectStore` instance.
 
         Bundles saved with the TextEncoder path include ``tokenizer.json``
         and ``encoder.pt``; those are reloaded automatically. Bundles saved
@@ -1653,17 +1734,24 @@ class MemoryLayer:
         A bundle that only has WAL files (no snapshot yet — the common
         case for a brand-new store that never called ``save()``) loads
         from the WAL header for ``embed_dim`` and replays from there.
+
+        Phase 30 only wires the :class:`LocalFSObjectStore` adapter;
+        remote stores still need a local staging directory for WAL
+        replay, and that lands with the S3 / GCS adapters.
         """
-        src = Path(path)
-        index_path = src / "memory_index.json"
-        embeddings_path = src / "memory_embeddings.pt"
-        has_snapshot = index_path.exists() and embeddings_path.exists()
-        wal_ops_path = src / "memory_ops.wal.jsonl"
-        has_wal = wal_ops_path.exists()
+        store = _coerce_store(src)
+        # WAL replay + bundle.lock still need a real local directory.
+        # For LocalFSObjectStore that's ``store.root``; remote adapters
+        # will stage to a temp dir before calling the WAL path.
+        local_root = _store_local_root(store)
+        has_snapshot = store.exists("memory_index.json") and store.exists(
+            "memory_embeddings.pt"
+        )
+        has_wal = store.exists("memory_ops.wal.jsonl")
 
         if not has_snapshot and not has_wal:
             raise FileNotFoundError(
-                f"MemoryLayer bundle missing {index_path.name} (and no WAL found)"
+                "MemoryLayer bundle missing memory_index.json (and no WAL found)"
             )
 
         # --- Determine the embedder + embed_dim. --------------------------
@@ -1671,7 +1759,9 @@ class MemoryLayer:
         # WAL header.
         index: dict[str, Any] | None = None
         if has_snapshot:
-            index = json.loads(index_path.read_text(encoding="utf-8"))
+            index = json.loads(
+                store.get_bytes("memory_index.json").decode("utf-8")
+            )
             schema = index.get("schema_version")
             if schema not in (1, 2):
                 raise ValueError(
@@ -1681,7 +1771,8 @@ class MemoryLayer:
             embed_type = index.get("embed_type", "text_encoder")
         else:
             # No snapshot — must derive embed_dim from the WAL header.
-            first_line = wal_ops_path.read_text(encoding="utf-8").splitlines()[0]
+            wal_bytes = store.get_bytes("memory_ops.wal.jsonl")
+            first_line = wal_bytes.decode("utf-8").splitlines()[0]
             header = json.loads(first_line)
             embed_dim = int(header["embed_dim"])
             # No snapshot means no tokenizer/encoder files either →
@@ -1689,29 +1780,35 @@ class MemoryLayer:
             embed_type = "custom"
 
         if embed_type == "text_encoder":
-            tokenizer_path = src / "tokenizer.json"
-            encoder_path = src / "encoder.pt"
-            for f in (tokenizer_path, encoder_path):
-                if not f.exists():
-                    raise FileNotFoundError(f"MemoryLayer bundle missing {f.name}")
-            tokenizer = load_tokenizer(tokenizer_path)
+            if not store.exists("tokenizer.json"):
+                raise FileNotFoundError("MemoryLayer bundle missing tokenizer.json")
+            if not store.exists("encoder.pt"):
+                raise FileNotFoundError("MemoryLayer bundle missing encoder.pt")
+            # Tokenizer loader expects a filesystem path. For LocalFS
+            # that's just ``root/tokenizer.json``; _store_local_root
+            # would have raised earlier for any non-local adapter so
+            # LocalFS is the only live path today.
+            tokenizer = load_tokenizer(local_root / "tokenizer.json")
             encoder = TextEncoder(
                 tokenizer,
                 embed_dim=embed_dim,
                 max_seq_len=int((index or {}).get("max_seq_len", 512)),
                 device=device,
             )
-            encoder_state = torch.load(
-                encoder_path,
-                map_location=device or "cpu",
-                weights_only=True,
-            )
+            # torch.load accepts a file-like object; stream from the
+            # store so we don't hold a separate state-dict buffer in RAM.
+            with store.get_stream("encoder.pt") as fh:
+                encoder_state = torch.load(
+                    fh,
+                    map_location=device or "cpu",
+                    weights_only=True,
+                )
             encoder.load_state_dict(encoder_state)
             instance = cls(
                 tokenizer=tokenizer,
                 encoder=encoder,
                 device=device,
-                bundle_path=src,
+                bundle_path=local_root,
                 durability=durability,
             )
         else:
@@ -1724,7 +1821,7 @@ class MemoryLayer:
                 embed_fn=embed_fn,
                 embed_dim=embed_dim,
                 device=device,
-                bundle_path=src,
+                bundle_path=local_root,
                 durability=durability,
             )
 
@@ -1732,9 +1829,10 @@ class MemoryLayer:
         if has_snapshot:
             assert index is not None
             instance._step = int(index.get("step", 0))
-            embeddings = torch.load(
-                embeddings_path, map_location=device or "cpu", weights_only=True
-            )
+            with store.get_stream("memory_embeddings.pt") as fh:
+                embeddings = torch.load(
+                    fh, map_location=device or "cpu", weights_only=True
+                )
             # Batch-insert into the backend in one call so adapters that
             # build per-call indices only do it once. Populate the
             # MemoryLayer lists in parallel.

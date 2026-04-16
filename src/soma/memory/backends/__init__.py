@@ -6,8 +6,10 @@ SOMA already ships. Additional adapters (Qdrant, LanceDB, ...) live
 alongside it and are imported on demand.
 
 ``QdrantBackend`` is an optional dep (``pip install soma[qdrant]``);
-it's re-exported from this module when qdrant-client is installed, and
-silently skipped otherwise so SOMA still imports on bare environments.
+``LanceDBBackend`` is an optional dep (``pip install soma[lancedb]``).
+Both are re-exported from this module when the underlying dep is
+installed and silently skipped otherwise so SOMA still imports on
+bare environments.
 """
 
 from __future__ import annotations
@@ -20,5 +22,12 @@ try:
     from soma.memory.backends.qdrant import QdrantBackend  # noqa: F401
 
     __all__.append("QdrantBackend")
+except ImportError:  # pragma: no cover — optional dep
+    pass
+
+try:
+    from soma.memory.backends.lancedb import LanceDBBackend  # noqa: F401
+
+    __all__.append("LanceDBBackend")
 except ImportError:  # pragma: no cover — optional dep
     pass

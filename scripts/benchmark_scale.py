@@ -69,13 +69,13 @@ def _benchmark_tier(
         mem.store(text)
     store_total = time.perf_counter() - t0
 
-    using_faiss = mem._faiss_index is not None
-
     retrieve_times = []
     for q in queries:
         t1 = time.perf_counter()
         mem.retrieve(q, k=K)
         retrieve_times.append(time.perf_counter() - t1)
+
+    using_faiss = mem._faiss_index is not None
 
     bundle_path = tmp / f"scale-{n}"
     mem.save(bundle_path)

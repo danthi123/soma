@@ -199,6 +199,38 @@ def test_consolidate_with_soma_processes_entries(embedder) -> None:
     assert soma.global_step > 0
 
 
+def test_graph_rerank_activates_after_consolidation(embedder) -> None:
+    """After consolidation, retrieve uses the graph-aware re-ranking path."""
+    from soma.core.config import SOMAConfig
+    from soma.system import SOMA
+
+    tokenizer, encoder = embedder
+    config = SOMAConfig(
+        vocab_size=256,
+        text_embed_dim=32,
+        sensor_output_dim=32,
+        max_input_tokens=64,
+    )
+    soma = SOMA(config)
+
+    mem = MemoryLayer(tokenizer=tokenizer, encoder=encoder)
+    mem.store("the cat sat on the mat")
+    mem.store("the dog chased the ball")
+    mem.store("quantum physics is fascinating")
+
+    pre_hits = mem.retrieve("cat", k=3)
+    assert len(pre_hits) == 3
+
+    mem.attach_soma(soma, tokenizer, encoder)
+    mem.consolidate()
+
+    post_hits = mem.retrieve("cat", k=3)
+    assert len(post_hits) == 3
+    assert all(isinstance(h.score, float) for h in post_hits)
+    scores = [h.score for h in post_hits]
+    assert scores == sorted(scores, reverse=True)
+
+
 def test_store_empty_text_raises(embedder) -> None:
     tokenizer, encoder = embedder
     mem = MemoryLayer(tokenizer=tokenizer, encoder=encoder)

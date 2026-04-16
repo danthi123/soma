@@ -114,8 +114,12 @@ class MemoryLayer:
         # (N, embed_dim) — lazily rebuilt from _embeddings_list when persisting
         # so we don't pay stack cost on every store.
         self._embeddings_list: list[torch.Tensor] = []
+        # SOMA output activations captured during consolidate(), keyed by
+        # list index. Used for graph-aware re-ranking when SOMA is attached.
+        self._soma_activations: list[torch.Tensor | None] = []
 
         self._step: int = 0
+        self._graph_rerank_alpha: float = 0.3
 
     # ------------------------------------------------------------------
     # Factory methods
@@ -181,18 +185,32 @@ class MemoryLayer:
         self._metadatas.append(dict(metadata) if metadata else {})
         self._timestamps.append(self._step)
         self._embeddings_list.append(embedding)
+        self._soma_activations.append(None)
         self._step += 1
         self._faiss_index = None  # invalidate; rebuilt lazily
         self._maybe_build_faiss()
         return node_id
 
     def retrieve(self, query: str, k: int = 5) -> list[MemoryHit]:
-        """Return up to k entries most similar to ``query`` by cosine."""
+        """Return up to k entries most similar to ``query`` by cosine.
+
+        When a SOMA graph is attached AND consolidation has been run
+        (producing stored SOMA output activations), retrieval uses a
+        two-stage pipeline: cosine candidates are re-ranked by a blend
+        of cosine score and graph-proximity score derived from SOMA's
+        output activations.
+        """
         if k <= 0:
             raise ValueError(f"k must be positive, got {k}")
         if not self._ids:
             return []
         q_vec = self._embed(query)
+        has_graph_signal = (
+            self._soma is not None
+            and any(a is not None for a in self._soma_activations)
+        )
+        if has_graph_signal:
+            return self._retrieve_with_rerank(q_vec, k=k)
         return self._rank(q_vec, k=k, exclude_idx=None)
 
     def related(self, node_id: str, k: int = 5) -> list[MemoryHit]:
@@ -234,6 +252,7 @@ class MemoryLayer:
         self._metadatas.pop(idx)
         self._timestamps.pop(idx)
         self._embeddings_list.pop(idx)
+        self._soma_activations.pop(idx)
         self._faiss_index = None  # invalidate
         return True
 
@@ -252,8 +271,11 @@ class MemoryLayer:
         """
         if self._soma is None:
             return 0
+        from soma.io.verbalizer import SomaAggregator
+
+        soma_output_dim = int(self._soma.config.sensor_output_dim)
         processed = 0
-        for text in self._texts:
+        for entry_idx, text in enumerate(self._texts):
             token_embeddings = self._soma_encoder.encode(text)
             if len(token_embeddings) < 2:
                 continue
@@ -262,6 +284,11 @@ class MemoryLayer:
                 inputs = {"text": detached[i]}
                 targets = {"text": detached[i + 1]}
                 self._soma.step(inputs, targets=targets, eval_mode=False)
+            output_acts = self._soma._current_output_activations()
+            pooled = SomaAggregator.collapse(
+                output_acts, soma_output_dim=soma_output_dim,
+            )
+            self._soma_activations[entry_idx] = pooled.detach().cpu()
             processed += 1
         return processed
 
@@ -386,6 +413,7 @@ class MemoryLayer:
             instance._metadatas.append(dict(entry.get("metadata", {})))
             instance._timestamps.append(int(entry.get("timestamp_step", 0)))
             instance._embeddings_list.append(vec.to(target_device))
+            instance._soma_activations.append(None)
         return instance
 
     # ------------------------------------------------------------------
@@ -403,6 +431,60 @@ class MemoryLayer:
             return torch.zeros(self._embed_dim, device=self._device)
         pooled = stacked.mean(dim=0)
         return pooled.detach().to(self._device)
+
+    def _retrieve_with_rerank(
+        self,
+        query_vec: torch.Tensor,
+        *,
+        k: int,
+        oversample: int = 3,
+    ) -> list[MemoryHit]:
+        """Two-stage retrieval: cosine candidates → graph-score re-rank."""
+        from soma.training.verbalizer_bootstrap import text_to_state
+
+        candidates = self._rank_linear(
+            query_vec, k=min(k * oversample, len(self._ids)), exclude_idx=None,
+        )
+        if not candidates:
+            return []
+
+        soma_output_dim = int(self._soma.config.sensor_output_dim)
+        q_act = text_to_state(
+            text="",
+            soma=self._soma,
+            tokenizer=self._soma_tokenizer,
+            encoder=self._soma_encoder,
+            soma_output_dim=soma_output_dim,
+        )
+
+        alpha = self._graph_rerank_alpha
+        scored: list[tuple[float, MemoryHit]] = []
+        for hit in candidates:
+            idx = self._ids.index(hit.node_id)
+            stored_act = self._soma_activations[idx]
+            if stored_act is not None and q_act is not None:
+                graph_score = float(
+                    F.cosine_similarity(
+                        q_act.view(1, -1).cpu(),
+                        stored_act.view(1, -1).cpu(),
+                        dim=-1,
+                    ).item()
+                )
+                blended = (1.0 - alpha) * hit.score + alpha * graph_score
+            else:
+                blended = hit.score
+            scored.append((
+                blended,
+                MemoryHit(
+                    node_id=hit.node_id,
+                    text=hit.text,
+                    score=blended,
+                    metadata=hit.metadata,
+                    timestamp_step=hit.timestamp_step,
+                ),
+            ))
+        scored.sort(key=lambda x: x[0], reverse=True)
+        return [hit for _, hit in scored[:k]]
 
     def _rank(
         self,

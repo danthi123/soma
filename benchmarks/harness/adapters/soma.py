@@ -29,11 +29,15 @@ class SomaAdapter(BaseMemorySystem):
         attach_soma: bool = False,
         embed_model: str = "all-MiniLM-L6-v2",
         auto_consolidate_every: int = 0,
+        graph_rerank_alpha: float = 0.0,
+        graph_rerank_stable_capture: bool = True,
     ) -> None:
         self._use_sbert = use_sbert
         self._attach_soma = attach_soma
         self._embed_model = embed_model
         self._auto_consolidate_every = auto_consolidate_every
+        self._graph_rerank_alpha = graph_rerank_alpha
+        self._graph_rerank_stable_capture = graph_rerank_stable_capture
         self._mem: MemoryLayer | None = None
         self._bundle_path: Path | None = None
 
@@ -41,6 +45,8 @@ class SomaAdapter(BaseMemorySystem):
         if self._use_sbert:
             self._mem = MemoryLayer.with_sbert(self._embed_model)
             self._mem._auto_consolidate_every = self._auto_consolidate_every
+            self._mem._graph_rerank_alpha = self._graph_rerank_alpha
+            self._mem._graph_rerank_stable_capture = self._graph_rerank_stable_capture
         else:
             from soma.io.text_encoder import TextEncoder, train_bpe_tokenizer
 
@@ -50,6 +56,8 @@ class SomaAdapter(BaseMemorySystem):
                 tokenizer=tokenizer,
                 encoder=encoder,
                 auto_consolidate_every=self._auto_consolidate_every,
+                graph_rerank_alpha=self._graph_rerank_alpha,
+                graph_rerank_stable_capture=self._graph_rerank_stable_capture,
             )
         if self._attach_soma:
             from soma.core.config import SOMAConfig

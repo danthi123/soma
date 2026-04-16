@@ -75,6 +75,8 @@ class MemoryLayer:
         device: torch.device | str | None = None,
         faiss_threshold: int = 10_000,
         auto_consolidate_every: int = 0,
+        graph_rerank_alpha: float = 0.0,
+        graph_rerank_stable_capture: bool = True,
     ) -> None:
         if embed_fn is None and encoder is None:
             raise ValueError("MemoryLayer needs either (tokenizer + encoder) or embed_fn")
@@ -122,7 +124,8 @@ class MemoryLayer:
         self._soma_activations: list[torch.Tensor | None] = []
 
         self._step: int = 0
-        self._graph_rerank_alpha: float = 0.3
+        self._graph_rerank_alpha: float = float(graph_rerank_alpha)
+        self._graph_rerank_stable_capture: bool = bool(graph_rerank_stable_capture)
 
     # ------------------------------------------------------------------
     # Factory methods
@@ -217,7 +220,8 @@ class MemoryLayer:
         self._maybe_build_faiss()
         q_vec = self._embed(query)
         has_graph_signal = (
-            self._soma is not None
+            self._graph_rerank_alpha > 0.0
+            and self._soma is not None
             and any(a is not None for a in self._soma_activations)
         )
         if has_graph_signal:
@@ -302,7 +306,38 @@ class MemoryLayer:
             )
             self._soma_activations[entry_idx] = pooled.detach().cpu()
             processed += 1
+        if self._graph_rerank_stable_capture:
+            self._recapture_activations_stable(soma_output_dim)
         return processed
+
+    def _recapture_activations_stable(self, soma_output_dim: int) -> None:
+        """Re-run each text through the final graph state (eval_mode=True).
+
+        During growth (``eval_mode=False``) the graph mutates between
+        entries, so activations captured inline are snapshots of
+        *different* graphs — not directly comparable to the activation
+        computed for a query at retrieval time, which sees the post-growth
+        graph. A second pass in eval_mode (no growth, no weight updates)
+        re-captures every stored entry's activation under the same graph
+        that queries will encounter, restoring the comparability the
+        cosine-style re-rank blend implicitly assumes.
+        """
+        from soma.io.verbalizer import SomaAggregator
+
+        for entry_idx, text in enumerate(self._texts):
+            token_embeddings = self._soma_encoder.encode(text)
+            if len(token_embeddings) < 2:
+                continue
+            detached = [e.detach() for e in token_embeddings]
+            for i in range(len(detached) - 1):
+                inputs = {"text": detached[i]}
+                targets = {"text": detached[i + 1]}
+                self._soma.step(inputs, targets=targets, eval_mode=True)
+            output_acts = self._soma._current_output_activations()
+            pooled = SomaAggregator.collapse(
+                output_acts, soma_output_dim=soma_output_dim,
+            )
+            self._soma_activations[entry_idx] = pooled.detach().cpu()
 
     def __len__(self) -> int:
         return len(self._ids)

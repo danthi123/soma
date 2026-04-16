@@ -202,11 +202,14 @@ def generate_dataset(
     *,
     n_facts: int | None = None,
     seed: int = 42,
+    shuffle: bool = False,
 ) -> tuple[list[str], list[TopicFact], list[LabeledQuery]]:
     """Generate (facts, topic_facts, queries).
 
     If ``n_facts`` is None, returns all facts. Otherwise samples a
-    reproducible subset spread across topics.
+    reproducible subset spread across topics. Set ``shuffle=True`` to
+    randomize fact order even when returning the full set — useful for
+    isolating consolidation-order artifacts from true semantic signal.
     """
     rng = random.Random(seed)
     all_topic_facts = [
@@ -219,6 +222,8 @@ def generate_dataset(
         selected = all_topic_facts[:n_facts]
     else:
         selected = list(all_topic_facts)
+        if shuffle:
+            rng.shuffle(selected)
 
     # Only keep queries whose gold-truth facts survived the sampling.
     fact_set = {tf.fact for tf in selected}

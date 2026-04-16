@@ -9,8 +9,8 @@ Apples-to-apples with identical embeddings — isolates indexing/storage mechani
 
 | System | Recall@3 | MRR@3 | NDCG@3 | Store (ms/op) | Retrieve (ms) | Disk (KB) |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| soma | 0.923 | 0.891 | 0.885 | 9.90 | 6.29 | 85.1 |
-| chroma | 0.923 | 0.891 | 0.885 | 28.77 | 8.20 | 1920.7 |
+| soma | 0.923 | 0.891 | 0.885 | 9.46 | 5.98 | 85.1 |
+| chroma | 0.923 | 0.891 | 0.885 | 26.88 | 7.53 | 1920.7 |
 
 ## Comparison 2: SOMA Graph Ablation (TextEncoder embeddings)
 
@@ -18,8 +18,8 @@ Same TextEncoder embeddings in both rows — isolates the contribution of SOMA's
 
 | System | Recall@3 | MRR@3 | NDCG@3 | Store (ms/op) | Retrieve (ms) | Disk (KB) |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| soma-te-flat | 0.269 | 0.154 | 0.183 | 0.13 | 0.20 | 39.2 |
-| soma-te-graph | 0.077 | 0.051 | 0.058 | 0.16 | 106.02 | 39.2 |
+| soma-te-flat | 0.308 | 0.244 | 0.260 | 0.13 | 0.21 | 39.2 |
+| soma-te-graph | 0.308 | 0.186 | 0.217 | 0.15 | 111.47 | 39.2 |
 
 ## Comparison 3: SOMA Graph Ablation (sbert embeddings)
 
@@ -27,16 +27,16 @@ Same sbert embeddings in both rows — asks whether SOMA's graph consolidation a
 
 | System | Recall@3 | MRR@3 | NDCG@3 | Store (ms/op) | Retrieve (ms) | Disk (KB) |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| soma-sbert-flat | 0.923 | 0.891 | 0.885 | 5.13 | 4.94 | 85.1 |
-| soma-sbert-graph | 0.788 | 0.724 | 0.741 | 5.49 | 115.89 | 85.1 |
+| soma-sbert-flat | 0.923 | 0.891 | 0.885 | 5.33 | 4.91 | 85.1 |
+| soma-sbert-graph | 0.923 | 0.891 | 0.885 | 5.71 | 139.22 | 85.1 |
 
 ## Headline
 
 - **Quality:** SOMA Recall@3=0.923 vs Chroma 0.923 (Δ +0.000)
-- **Retrieve latency:** SOMA 6.29ms vs Chroma 8.20ms (1.3x faster)
+- **Retrieve latency:** SOMA 5.98ms vs Chroma 7.53ms (1.3x faster)
 - **Disk:** SOMA 85.1KB vs Chroma 1920.7KB (22.6x smaller)
-- **Graph ablation (TE):** flat Recall@3=0.269 vs graph 0.077 (Δ -0.192)
-- **Graph ablation (sbert):** flat Recall@3=0.923 vs graph 0.788 (Δ -0.135)
+- **Graph ablation (TE):** flat Recall@3=0.308 vs graph 0.308 (Δ +0.000)
+- **Graph ablation (sbert):** flat Recall@3=0.923 vs graph 0.923 (Δ +0.000)
 
 ---
 

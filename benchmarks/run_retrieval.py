@@ -56,11 +56,18 @@ def main() -> None:
         systems=sbert_systems, dataset=facts, queries=queries, k=args.k,
     )
 
-    # Comparison 2: TextEncoder with/without graph
+    # Comparison 2: TextEncoder with/without graph re-rank.
+    # Graph re-rank is off by default (alpha=0); enable explicitly in the
+    # "graph" arm so the comparison actually exercises the blend path.
     print("\n=== Comparison 2: SOMA graph ablation (TextEncoder embeddings) ===")
     te_flat = SomaAdapter(use_sbert=False, attach_soma=False)
     te_flat.name = "soma-te-flat"
-    te_graph = SomaAdapter(use_sbert=False, attach_soma=True)
+    te_graph = SomaAdapter(
+        use_sbert=False,
+        attach_soma=True,
+        graph_rerank_alpha=0.3,
+        graph_rerank_stable_capture=True,
+    )
     te_graph.name = "soma-te-graph"
     te_graph_results = run_retrieval_benchmark(
         systems=[te_flat, te_graph],
@@ -70,12 +77,18 @@ def main() -> None:
         consolidate_after_store=True,
     )
 
-    # Comparison 3: sbert with/without graph — the one that matters
-    # for the paper's "graph helps when embeddings are quality" claim.
+    # Comparison 3: sbert with/without graph re-rank — the ablation that
+    # matters for the research claim. See graph_ablation.md for the full
+    # alpha sweep + stable-capture investigation.
     print("\n=== Comparison 3: SOMA graph ablation (sbert embeddings) ===")
     sb_flat = SomaAdapter(use_sbert=True, attach_soma=False)
     sb_flat.name = "soma-sbert-flat"
-    sb_graph = SomaAdapter(use_sbert=True, attach_soma=True)
+    sb_graph = SomaAdapter(
+        use_sbert=True,
+        attach_soma=True,
+        graph_rerank_alpha=0.3,
+        graph_rerank_stable_capture=True,
+    )
     sb_graph.name = "soma-sbert-graph"
     sb_graph_results = run_retrieval_benchmark(
         systems=[sb_flat, sb_graph],

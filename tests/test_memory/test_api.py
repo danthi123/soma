@@ -251,6 +251,50 @@ def test_graph_rerank_activates_after_consolidation(embedder) -> None:
     assert scores == sorted(scores, reverse=True)
 
 
+def test_graph_rerank_skipped_when_alpha_is_zero(embedder) -> None:
+    """alpha=0 short-circuits the re-rank so retrieve stays fast flat cosine.
+
+    The re-rank pass runs SOMA forward on the query text — a ~100ms
+    per-query cost. When alpha is zero the blend is identity over cosine
+    regardless, so we skip the whole thing. Regression guard.
+    """
+    from soma.core.config import SOMAConfig
+    from soma.system import SOMA
+
+    tokenizer, encoder = embedder
+    config = SOMAConfig(
+        vocab_size=256, text_embed_dim=32, sensor_output_dim=32, max_input_tokens=64,
+    )
+    soma = SOMA(config)
+    mem = MemoryLayer(
+        tokenizer=tokenizer, encoder=encoder, graph_rerank_alpha=0.0,
+    )
+    mem.store("the cat sat on the mat")
+    mem.store("the dog chased the ball")
+    mem.attach_soma(soma, tokenizer, encoder)
+    mem.consolidate()
+
+    import soma.training.verbalizer_bootstrap as vb
+
+    call_count = 0
+    real_text_to_state = vb.text_to_state
+
+    def _counting_text_to_state(*args, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        return real_text_to_state(*args, **kwargs)
+
+    vb.text_to_state = _counting_text_to_state
+    try:
+        mem.retrieve("where does the cat sit", k=2)
+    finally:
+        vb.text_to_state = real_text_to_state
+
+    assert call_count == 0, (
+        f"Expected no text_to_state calls when alpha=0, got {call_count}"
+    )
+
+
 def test_graph_rerank_threads_query_text_into_activation(embedder) -> None:
     """Graph re-rank must compute q_act from the query text, not from ``""``.
 
@@ -269,7 +313,12 @@ def test_graph_rerank_threads_query_text_into_activation(embedder) -> None:
         vocab_size=256, text_embed_dim=32, sensor_output_dim=32, max_input_tokens=64,
     )
     soma = SOMA(config)
-    mem = MemoryLayer(tokenizer=tokenizer, encoder=encoder)
+    # The re-rank path is gated on graph_rerank_alpha > 0. We want to
+    # verify the query text reaches text_to_state when re-rank is
+    # actually active.
+    mem = MemoryLayer(
+        tokenizer=tokenizer, encoder=encoder, graph_rerank_alpha=0.3,
+    )
     mem.store("the cat sat on the mat")
     mem.store("the dog chased the ball")
     mem.attach_soma(soma, tokenizer, encoder)

@@ -21,8 +21,9 @@ Run::
 from __future__ import annotations
 
 import argparse
+import json
 import time
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
 
 from benchmarks.datasets.templated import generate_templated_facts
@@ -109,6 +110,23 @@ def main() -> None:
         nargs="+",
         default=SCALE_POINTS,
     )
+    p.add_argument(
+        "--json-out",
+        type=Path,
+        default=None,
+        help=(
+            "path for the JSON sidecar (defaults to <out>.json). "
+            "Used by scripts/check_bench_regressions.py for CI gating."
+        ),
+    )
+    p.add_argument(
+        "--lite",
+        action="store_true",
+        help=(
+            "skip the Chroma arm (SOMA-only) — used by the CI workflow "
+            "so we don't pay Chroma's install cost on every PR"
+        ),
+    )
     args = p.parse_args()
 
     max_n = max(args.points)
@@ -138,17 +156,23 @@ def main() -> None:
             ),
             facts, probes,
         ))
-        rows.append(_run_system("chroma", ChromaAdapter(), facts, probes))
-        r_flat = rows[-3]
-        r_hnsw = rows[-2]
-        r_chroma = rows[-1]
-        cf = r_chroma.retrieve_avg_ms / max(r_flat.retrieve_avg_ms, 1e-3)
-        ch = r_chroma.retrieve_avg_ms / max(r_hnsw.retrieve_avg_ms, 1e-3)
-        fh = r_flat.retrieve_avg_ms / max(r_hnsw.retrieve_avg_ms, 1e-3)
-        print(
-            f"  retrieve ratios — chroma/flat={cf:.2f}x "
-            f"chroma/hnsw={ch:.2f}x flat/hnsw={fh:.2f}x"
-        )
+        if not args.lite:
+            rows.append(_run_system("chroma", ChromaAdapter(), facts, probes))
+            r_flat = rows[-3]
+            r_hnsw = rows[-2]
+            r_chroma = rows[-1]
+            cf = r_chroma.retrieve_avg_ms / max(r_flat.retrieve_avg_ms, 1e-3)
+            ch = r_chroma.retrieve_avg_ms / max(r_hnsw.retrieve_avg_ms, 1e-3)
+            fh = r_flat.retrieve_avg_ms / max(r_hnsw.retrieve_avg_ms, 1e-3)
+            print(
+                f"  retrieve ratios — chroma/flat={cf:.2f}x "
+                f"chroma/hnsw={ch:.2f}x flat/hnsw={fh:.2f}x"
+            )
+        else:
+            r_flat = rows[-2]
+            r_hnsw = rows[-1]
+            fh = r_flat.retrieve_avg_ms / max(r_hnsw.retrieve_avg_ms, 1e-3)
+            print(f"  retrieve ratios — flat/hnsw={fh:.2f}x (chroma skipped, --lite)")
 
     lines = [
         "# Scale vs Chroma — Pure Efficiency Profile",
@@ -168,18 +192,27 @@ def main() -> None:
     ]
 
     sizes = sorted({r.n for r in rows})
+    has_chroma = any(r.system == "chroma" for r in rows)
     for n in sizes:
         flat = next(r for r in rows if r.n == n and r.system == "soma-flat")
         hnsw = next(r for r in rows if r.n == n and r.system == "soma-hnsw")
-        chroma = next(r for r in rows if r.n == n and r.system == "chroma")
-        lines.append(
-            f"- **N = {n}:** SOMA-flat: disk "
-            f"{chroma.disk_kb / max(flat.disk_kb, 1):.1f}× smaller, "
-            f"store {chroma.store_avg_ms / max(flat.store_avg_ms, 1e-3):.1f}× faster, "
-            f"retrieve {chroma.retrieve_avg_ms / max(flat.retrieve_avg_ms, 1e-3):.2f}× "
-            f"vs Chroma. SOMA-hnsw: retrieve "
-            f"{chroma.retrieve_avg_ms / max(hnsw.retrieve_avg_ms, 1e-3):.2f}× vs Chroma."
-        )
+        if has_chroma:
+            chroma = next(r for r in rows if r.n == n and r.system == "chroma")
+            lines.append(
+                f"- **N = {n}:** SOMA-flat: disk "
+                f"{chroma.disk_kb / max(flat.disk_kb, 1):.1f}× smaller, "
+                f"store {chroma.store_avg_ms / max(flat.store_avg_ms, 1e-3):.1f}× faster, "
+                f"retrieve {chroma.retrieve_avg_ms / max(flat.retrieve_avg_ms, 1e-3):.2f}× "
+                f"vs Chroma. SOMA-hnsw: retrieve "
+                f"{chroma.retrieve_avg_ms / max(hnsw.retrieve_avg_ms, 1e-3):.2f}× vs Chroma."
+            )
+        else:
+            # --lite mode: no Chroma arm, just flat/hnsw comparison.
+            lines.append(
+                f"- **N = {n}:** SOMA-flat retrieve "
+                f"{flat.retrieve_avg_ms:.2f}ms vs SOMA-hnsw "
+                f"{hnsw.retrieve_avg_ms:.2f}ms (chroma skipped, --lite)."
+            )
 
     lines += [
         "",
@@ -219,6 +252,18 @@ def main() -> None:
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text("\n".join(lines) + "\n", encoding="utf-8")
     print(f"\nReport: {args.out}")
+
+    # JSON sidecar for downstream tooling (regression checker, paper
+    # figures). Keeps the markdown as the human-facing artefact and the
+    # JSON as the machine-facing one — same pattern as
+    # ``run_backend_matrix.py``.
+    json_out = args.json_out if args.json_out is not None else args.out.with_suffix(".json")
+    json_out.parent.mkdir(parents=True, exist_ok=True)
+    json_out.write_text(
+        json.dumps([asdict(r) for r in rows], indent=2),
+        encoding="utf-8",
+    )
+    print(f"JSON:   {json_out}")
 
 
 if __name__ == "__main__":

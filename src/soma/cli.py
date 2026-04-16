@@ -7,6 +7,7 @@ don't need to remember script paths::
     soma chat    --bundle my-brain/        # auto-picks LLM backend
     soma stats   --bundle my-brain/
     soma search  --bundle my-brain/ --query "where does the user live?"
+    soma forget  --bundle my-brain/ --node-id <uuid>
     soma serve   --port 8420               # REST API
     soma version
 
@@ -74,6 +75,36 @@ def _cmd_search(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_forget(args: argparse.Namespace) -> int:
+    from soma.memory import MemoryLayer
+
+    if not args.bundle.exists():
+        print(f"error: bundle {args.bundle} not found", file=sys.stderr)
+        return 2
+    mem = MemoryLayer.load(args.bundle)
+    if not mem.forget(args.node_id):
+        # Try unique-prefix match for convenience.
+        matches = [nid for nid in mem._ids if nid.startswith(args.node_id)]
+        if len(matches) == 1:
+            mem.forget(matches[0])
+            print(f"forgot {matches[0]} (prefix match)")
+        elif len(matches) > 1:
+            print(
+                f"error: prefix {args.node_id!r} matches {len(matches)} entries; "
+                "use a longer prefix or the full id",
+                file=sys.stderr,
+            )
+            return 2
+        else:
+            print(f"error: node_id {args.node_id!r} not found", file=sys.stderr)
+            return 2
+    else:
+        print(f"forgot {args.node_id}")
+    mem.save(args.bundle)
+    print(f"saved {args.bundle}")
+    return 0
+
+
 def _cmd_serve(args: argparse.Namespace) -> int:
     try:
         import uvicorn
@@ -136,6 +167,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_search.add_argument("--query", required=True)
     p_search.add_argument("--k", type=int, default=5)
     p_search.set_defaults(func=_cmd_search)
+
+    p_forget = sub.add_parser(
+        "forget", parents=[bundle_arg], help="Delete an entry by node_id (or unique prefix)"
+    )
+    p_forget.add_argument("--node-id", required=True)
+    p_forget.set_defaults(func=_cmd_forget)
 
     p_serve = sub.add_parser("serve", help="Start REST API server (uvicorn)")
     p_serve.add_argument("--host", default="127.0.0.1")

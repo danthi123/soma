@@ -11,6 +11,16 @@ All notable changes to SOMA are documented here.
   index once at the end.
 - O(1) id lookups: added `_id_to_idx` cache so `get` / `related` /
   `forget` / `in` are constant-time instead of O(N) scans of `_ids`.
+- REST: `POST /store_batch`, `GET /related/{node_id}` on default +
+  `/bundles/{name}/...` routes for parity with the Python API.
+- CLI: `soma forget --bundle <b> --node-id <id>` accepts a full id or
+  a unique prefix, then re-saves the bundle.
+
+### Added — project files
+
+- `LICENSE` (MIT) at the repo root — pyproject already declared MIT
+  but the file was missing.
+- `CONTRIBUTING.md` — scope, setup, style, and PR expectations.
 
 ### Removed — dead weight
 
@@ -24,11 +34,6 @@ All notable changes to SOMA are documented here.
 - `docs/plans/2026-04-{12,13,14}-*` (12 pre-pivot design docs).
 - `docs/{AUTONOMOUS_LOOP,UI_GUIDE,loop_tick_prompt,deployment}.md`.
 - 15 pre-pivot test modules under `tests/test_scripts/`.
-
-### Added — LICENSE
-
-- `LICENSE` file (MIT) checked in at repo root — pyproject already
-  declared MIT but the file was missing.
 
 ### Added — recall boosters
 

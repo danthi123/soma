@@ -16,7 +16,7 @@ def test_parser_has_all_subcommands() -> None:
     sub_actions = [a for a in p._actions if a.dest == "cmd"]
     assert sub_actions
     choices = sub_actions[0].choices
-    assert {"index", "chat", "stats", "search", "serve", "version"} <= set(choices)
+    assert {"index", "chat", "stats", "search", "forget", "serve", "version"} <= set(choices)
 
 
 def test_parser_index_requires_wiki_and_bundle() -> None:
@@ -101,3 +101,57 @@ def test_stats_runs_against_real_bundle(tmp_path: Path) -> None:
     out = out_buf.getvalue()
     assert "entries: 2" in out
     assert "embed_dim: 8" in out
+
+
+def test_forget_deletes_entry_by_full_id(tmp_path: Path) -> None:
+    from soma.io.text_encoder import TextEncoder, train_bpe_tokenizer
+    from soma.memory import MemoryLayer
+
+    tok = train_bpe_tokenizer(["alpha beta gamma"], vocab_size=32)
+    enc = TextEncoder(tok, embed_dim=8, max_seq_len=16)
+    mem = MemoryLayer(tokenizer=tok, encoder=enc)
+    keep = mem.store("alpha")
+    drop = mem.store("beta")
+    bundle = tmp_path / "b"
+    mem.save(bundle)
+
+    rc = main(["forget", "--bundle", str(bundle), "--node-id", drop])
+    assert rc == 0
+
+    reloaded = MemoryLayer.load(bundle)
+    assert keep in reloaded
+    assert drop not in reloaded
+
+
+def test_forget_accepts_unique_prefix(tmp_path: Path) -> None:
+    from soma.io.text_encoder import TextEncoder, train_bpe_tokenizer
+    from soma.memory import MemoryLayer
+
+    tok = train_bpe_tokenizer(["alpha beta"], vocab_size=32)
+    enc = TextEncoder(tok, embed_dim=8, max_seq_len=16)
+    mem = MemoryLayer(tokenizer=tok, encoder=enc)
+    target = mem.store("alpha")
+    bundle = tmp_path / "b"
+    mem.save(bundle)
+
+    rc = main(["forget", "--bundle", str(bundle), "--node-id", target[:6]])
+    assert rc == 0
+    assert target not in MemoryLayer.load(bundle)
+
+
+def test_forget_rejects_unknown_id(tmp_path: Path) -> None:
+    from soma.io.text_encoder import TextEncoder, train_bpe_tokenizer
+    from soma.memory import MemoryLayer
+
+    tok = train_bpe_tokenizer(["alpha"], vocab_size=32)
+    enc = TextEncoder(tok, embed_dim=8, max_seq_len=16)
+    mem = MemoryLayer(tokenizer=tok, encoder=enc)
+    mem.store("alpha")
+    bundle = tmp_path / "b"
+    mem.save(bundle)
+
+    err_buf = io.StringIO()
+    with redirect_stderr(err_buf):
+        rc = main(["forget", "--bundle", str(bundle), "--node-id", "definitely-not-real"])
+    assert rc == 2
+    assert "not found" in err_buf.getvalue()

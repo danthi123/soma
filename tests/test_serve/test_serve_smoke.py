@@ -97,3 +97,36 @@ def test_consolidate_without_soma_is_safe_noop() -> None:
     assert r.status_code == 200, r.text
     # No SOMA attached → consolidate returns 0
     assert r.json()["processed"] == 0
+
+
+def test_store_batch_bulk_ingest() -> None:
+    client = _client_with_stub_mem()
+    r = client.post(
+        "/store_batch",
+        json={
+            "texts": ["one", "two", "three"],
+            "metadatas": [{"i": 0}, {"i": 1}, {"i": 2}],
+        },
+    )
+    assert r.status_code == 200, r.text
+    ids = r.json()["node_ids"]
+    assert len(ids) == 3 and len(set(ids)) == 3
+    assert client.get("/status").json()["num_entries"] == 3
+
+
+def test_related_endpoint_returns_neighbors() -> None:
+    client = _client_with_stub_mem()
+    a = client.post("/store", json={"text": "cat on mat"}).json()["node_id"]
+    client.post("/store", json={"text": "dog on log"})
+    client.post("/store", json={"text": "fish in dish"})
+    r = client.get(f"/related/{a}?k=2")
+    assert r.status_code == 200, r.text
+    hits = r.json()["hits"]
+    assert len(hits) == 2
+    assert all(h["node_id"] != a for h in hits)
+
+
+def test_related_unknown_returns_404() -> None:
+    client = _client_with_stub_mem()
+    r = client.get("/related/definitely-not-a-real-id")
+    assert r.status_code == 404

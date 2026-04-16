@@ -20,13 +20,13 @@ Environment variables:
                         ``Authorization: Bearer <key>``. Unset = open.
 
 Endpoints:
-    GET  /health                       — liveness probe (no auth)
-    GET  /version                      — package version (no auth)
-    GET  /status                       — default bundle stats
-    POST /store | /retrieve | /forget  — default bundle ops
-    GET  /get/{id} | /recent
+    GET  /health                              — liveness probe (no auth)
+    GET  /version                             — package version (no auth)
+    GET  /status                              — default bundle stats
+    POST /store | /store_batch | /retrieve | /forget
+    GET  /get/{id} | /recent | /related/{id}
     POST /consolidate | /save
-    *    /bundles/{name}/<same as above>  — per-tenant variants
+    *    /bundles/{name}/<same as above>    — per-tenant variants
 """
 
 from __future__ import annotations
@@ -142,6 +142,15 @@ class StoreResponse(BaseModel):
     node_id: str
 
 
+class StoreBatchRequest(BaseModel):
+    texts: list[str]
+    metadatas: list[dict[str, Any]] | None = None
+
+
+class StoreBatchResponse(BaseModel):
+    node_ids: list[str]
+
+
 class RetrieveRequest(BaseModel):
     query: str
     k: int = 5
@@ -228,6 +237,27 @@ def store(req: StoreRequest) -> StoreResponse:
     return StoreResponse(node_id=mem.store(req.text, metadata=req.metadata))
 
 
+@app.post(
+    "/store_batch", response_model=StoreBatchResponse, dependencies=[Depends(require_api_key)]
+)
+def store_batch(req: StoreBatchRequest) -> StoreBatchResponse:
+    mem = _get_mem()
+    return StoreBatchResponse(
+        node_ids=mem.store_batch(req.texts, metadatas=req.metadatas)
+    )
+
+
+@app.get(
+    "/related/{node_id}", response_model=RetrieveResponse, dependencies=[Depends(require_api_key)]
+)
+def related(node_id: str, k: int = 5) -> RetrieveResponse:
+    try:
+        hits = _get_mem().related(node_id, k=max(1, k))
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return RetrieveResponse(hits=[_hit(h) for h in hits])
+
+
 @app.post("/retrieve", response_model=RetrieveResponse, dependencies=[Depends(require_api_key)])
 def retrieve(req: RetrieveRequest) -> RetrieveResponse:
     mem = _get_mem()
@@ -299,6 +329,31 @@ def status_bundle(name: str) -> StatusResponse:
 def store_bundle(name: str, req: StoreRequest) -> StoreResponse:
     mem = _get_mem(name)
     return StoreResponse(node_id=mem.store(req.text, metadata=req.metadata))
+
+
+@app.post(
+    "/bundles/{name}/store_batch",
+    response_model=StoreBatchResponse,
+    dependencies=[Depends(require_api_key)],
+)
+def store_batch_bundle(name: str, req: StoreBatchRequest) -> StoreBatchResponse:
+    mem = _get_mem(name)
+    return StoreBatchResponse(
+        node_ids=mem.store_batch(req.texts, metadatas=req.metadatas)
+    )
+
+
+@app.get(
+    "/bundles/{name}/related/{node_id}",
+    response_model=RetrieveResponse,
+    dependencies=[Depends(require_api_key)],
+)
+def related_bundle(name: str, node_id: str, k: int = 5) -> RetrieveResponse:
+    try:
+        hits = _get_mem(name).related(node_id, k=max(1, k))
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return RetrieveResponse(hits=[_hit(h) for h in hits])
 
 
 @app.post(

@@ -379,6 +379,19 @@ Design notes:
 - **Rolling summaries.** Every `summary_every` turns (default 20) the
   wrapper asks the LLM for a 3–5-sentence recap and stores it with
   `metadata.type="summary"`.
+- **Re-summarization (anti-drift).** Chained summaries compound
+  hallucinations over long sessions: each new summary is built from
+  the previous summary plus recent turns, so mistakes stick. Every
+  `resummarize_every` summaries (default 5) the wrapper instead
+  re-derives a fresh summary from the last
+  `resummarize_every × summary_every` raw turns only, bypassing the
+  previous summary. Tune lower (e.g. 3) for noisy extractors where
+  drift accumulates fast, higher (e.g. 10) when LLM calls are
+  expensive and turns are short. Set `resummarize_every=0` to
+  disable re-summarization and keep the pre-Phase-17 chained-only
+  behaviour. Re-summary entries are marked with
+  `metadata.resummary=True` so the audit trail distinguishes chained
+  from re-derived summaries.
 - **SUPERSEDE ≠ delete.** Old entries stay in the bundle with
   `metadata.superseded_by = new_id`. `retrieve()` filters them out by
   default; pass `include_superseded=True` to see the audit trail.

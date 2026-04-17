@@ -1,36 +1,18 @@
 {
   "soma-plastic": {
-    "acc": 0.7564,
-    "bwt": -0.0175,
-    "fwt": 0.0115,
-    "wall_clock_s": 475.3
-  },
-  "soma-frozen": {
-    "acc": 0.754,
-    "bwt": -0.0095,
-    "fwt": 0.0125,
-    "wall_clock_s": 264.7
-  },
-  "soma-no-consolidation": {
-    "acc": 0.7588,
-    "bwt": -0.0185,
-    "fwt": 0.016,
-    "wall_clock_s": 417.7
-  },
-  "soma-no-critical-periods": {
-    "acc": 0.7564,
-    "bwt": -0.0175,
-    "fwt": 0.0115,
-    "wall_clock_s": 355.2
+    "acc": 0.7502,
+    "bwt": -0.1221,
+    "fwt": 0.0154,
+    "wall_clock_s": 8047.6
   },
   "meta": {
-    "tasks": 5,
-    "epochs": 3,
+    "tasks": 10,
+    "epochs": 5,
     "batch_size": 128,
-    "train_samples_per_task": 1000,
-    "test_samples_per_task": 500,
+    "train_samples_per_task": 2000,
+    "test_samples_per_task": 1000,
     "soma_seed": 42,
-    "device": "cpu",
-    "total_wall_clock_s": 1515.5
+    "device": "cuda",
+    "total_wall_clock_s": 8052.0
   }
 }

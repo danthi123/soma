@@ -106,20 +106,7 @@ def main() -> None:
                 f"[{session.date_time}] {turn.speaker}: {turn.text}"
             )
 
-    config = SOMAConfig(
-        vocab_size=256,
-        text_embed_dim=64,
-        sensor_output_dim=64,
-        max_input_tokens=128,
-        initial_integrator_count=4,
-        initial_associator_count=8,
-        synaptogenesis_interval=20,
-        neurogenesis_interval=50,
-        pruning_interval=100,
-        consolidation_interval=50,
-        consolidation_replay_steps=20,
-        seed=42,
-    )
+    config = SOMAConfig.developmental()
 
     loop = InteractionLoop(
         config=config,
@@ -153,9 +140,14 @@ def main() -> None:
     dev_time = time.perf_counter() - t0
     print(f"  Development complete in {dev_time:.1f}s", flush=True)
 
-    # Get developed state
-    developed_state = verbalize_state(loop.predictive_soma.soma)
-    print(f"\n--- Developed SOMA State ---", flush=True)
+    # Get developed state with graph-driven retrieval
+    query_sample = conv.qa_pairs[0].question if conv.qa_pairs else ""
+    query_vec = loop.encode_text(query_sample)
+    recalled = loop.predictive_soma.retrieve_by_graph(query_vec, top_k=5)
+    developed_state = verbalize_state(
+        loop.predictive_soma.soma, recalled=recalled,
+    )
+    print(f"\n--- Developed SOMA State (sample) ---", flush=True)
     print(developed_state, flush=True)
 
     # Phase 2: QA evaluation — developed vs blank state
@@ -174,9 +166,14 @@ def main() -> None:
 
     results = []
     for qi, qa in enumerate(qa_pairs):
-        # With developed SOMA
+        # With developed SOMA — graph-driven retrieval per question
+        qvec = loop.encode_text(qa.question)
+        recalled = loop.predictive_soma.retrieve_by_graph(qvec, top_k=5)
+        dev_state = verbalize_state(
+            loop.predictive_soma.soma, recalled=recalled,
+        )
         hyp_dev = _call_llm(
-            qa.question, developed_state, args.api_base, args.model,
+            qa.question, dev_state, args.api_base, args.model,
         )
         # With blank SOMA
         hyp_blank = _call_llm(

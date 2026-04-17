@@ -48,12 +48,14 @@ class PredictiveSOMA(nn.Module):
         )
         self.prediction_error: float = 0.0
         self.error_history: deque[float] = deque(maxlen=error_history_size)
+        # Win counts per node — used to penalize dominant nodes
+        self._win_counts: dict[str, int] = {}
         # Text store: maps step → original text for verbalization
         self.text_store: dict[int, str] = {}
-        # Activation fingerprints: maps step → output activation vector
-        # Used for graph-driven retrieval (cosine sim between query
-        # activation and stored activations)
-        self._activation_store: dict[int, torch.Tensor] = {}
+        # Activation fingerprints: maps step → {node_id: magnitude}
+        # Used for graph-driven retrieval. Dict format is robust
+        # to neurogenesis (new nodes get new keys).
+        self._activation_store: dict[int, dict[str, float]] = {}
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -79,49 +81,40 @@ class PredictiveSOMA(nn.Module):
 
     def _get_node_fingerprint(
         self, inhibition_ratio: float = 0.1,
-    ) -> torch.Tensor:
+    ) -> dict[str, float]:
         """Build a sparse fingerprint via lateral inhibition.
 
-        Concatenates all node activations, but zeros out the weakest
-        nodes — only the top ``inhibition_ratio`` fraction keep their
-        activations.  This forces different inputs to produce different
-        sparse patterns (biological lateral inhibition).
+        Returns a dict mapping node_id → activation magnitude for the
+        top ``inhibition_ratio`` fraction of nodes.  Suppressed nodes
+        are omitted (implicitly zero).
 
-        Without inhibition all nodes fire similarly for all inputs
-        (cross-topic cosine ~0.995).  At 30% keep ratio, similarity
-        drops to ~0.93, enabling meaningful graph-driven retrieval.
+        Using a dict (not a fixed-size tensor) makes fingerprints
+        robust to neurogenesis — new nodes get new keys, old
+        fingerprints just don't have those keys.
         """
-        nodes = sorted(self.soma.graph.all_nodes(), key=lambda n: n.id)
+        nodes = self.soma.graph.all_nodes()
 
-        # Collect activations and magnitudes
-        acts: list[torch.Tensor] = []
-        mags: list[float] = []
+        # Collect magnitudes
+        node_mags: list[tuple[str, float]] = []
         for node in nodes:
             if node.last_activation is not None:
-                acts.append(node.last_activation.detach())
-                mags.append(node.last_activation.norm().item())
+                mag = node.last_activation.norm().item()
             else:
-                acts.append(torch.zeros(node.output_dim, device=self.device))
-                mags.append(0.0)
+                mag = 0.0
+            node_mags.append((node.id, mag))
 
-        if not acts:
-            return torch.zeros(1, device=self.device)
+        if not node_mags:
+            return {}
 
-        # Lateral inhibition: keep only top-K nodes by magnitude
-        k = max(1, int(len(mags) * inhibition_ratio))
-        if len(mags) > k:
-            threshold = sorted(mags, reverse=True)[k - 1]
-        else:
-            threshold = 0.0
+        # Lateral inhibition: keep only top-K by magnitude
+        k = max(1, int(len(node_mags) * inhibition_ratio))
+        threshold = sorted([m for _, m in node_mags], reverse=True)[
+            min(k - 1, len(node_mags) - 1)
+        ]
 
-        parts: list[torch.Tensor] = []
-        for mag, act in zip(mags, acts):
-            if mag >= threshold:
-                parts.append(act)
-            else:
-                parts.append(torch.zeros_like(act))
-
-        return torch.cat(parts)
+        return {
+            nid: mag for nid, mag in node_mags if mag >= threshold
+        }
 
     def _apply_lateral_inhibition(self, keep_ratio: float = 0.1) -> None:
         """Suppress weakest nodes' last_activation in-place.
@@ -150,6 +143,71 @@ class PredictiveSOMA(nn.Module):
             if mag < threshold:
                 node.last_activation = torch.zeros_like(node.last_activation)
 
+    def _competitive_learning(
+        self,
+        input_tensor: torch.Tensor,
+        lr: float = 0.001,
+        margin: float = 1.2,
+    ) -> None:
+        """Competitive learning: winner node adapts toward the input.
+
+        After lateral inhibition, the most active non-boundary node
+        is the "winner" — but only if it's at least ``margin`` times
+        more active than the runner-up.  This prevents a single node
+        from claiming all inputs.
+
+        The winner's first-layer weights are nudged toward the input,
+        making it more responsive to similar inputs in the future.
+        Suppressed and losing nodes don't learn, so they remain
+        available to specialize for other inputs.
+        """
+        from soma.core.node import NodeType
+
+        nodes = self.soma.graph.all_nodes()
+        eligible = [
+            n for n in nodes
+            if n.node_type not in (NodeType.SENSOR, NodeType.OUTPUT)
+            and n.last_activation is not None
+        ]
+        if len(eligible) < 2:
+            return
+
+        # Score by how much this activation DEVIATES from the node's
+        # running average — not raw magnitude. A node that fires
+        # equally for everything has low surprise; a node that fires
+        # unusually strongly for this input is genuinely selective.
+        scored = []
+        for n in eligible:
+            mag = n.last_activation.norm().item()
+            avg = n.activation_ema  # running average magnitude
+            surprise = mag - avg if avg > 0 else mag
+            scored.append((surprise, n))
+
+        scored.sort(key=lambda t: -t[0])
+        winner = scored[0][1]
+
+        # Only update if the winner is genuinely surprised (above avg)
+        if scored[0][0] <= 0:
+            return
+
+        # Adapt winner's first-layer weights toward the input
+        with torch.no_grad():
+            w = winner.linear1.weight  # (hidden_dim, input_dim)
+            inp = input_tensor.detach().to(w.device)
+
+            # Resize input to match weight's input_dim
+            if inp.shape[0] != w.shape[1]:
+                if inp.shape[0] > w.shape[1]:
+                    inp = inp[: w.shape[1]]
+                else:
+                    padded = torch.zeros(w.shape[1], device=w.device)
+                    padded[: inp.shape[0]] = inp
+                    inp = padded
+
+            # SOM update: w_new = w + lr * (input - w)
+            delta = inp.unsqueeze(0) - w
+            w.add_(delta, alpha=lr)
+
     def retrieve_by_graph(
         self,
         query_tensor: torch.Tensor,
@@ -175,13 +233,11 @@ class PredictiveSOMA(nn.Module):
         )
         query_act = self._get_node_fingerprint()
 
-        # Cosine similarity against stored activations
+        # Similarity between dict fingerprints: dot product of magnitudes
+        # over shared node IDs, normalized by vector norms.
         scored: list[tuple[float, int]] = []
-        for step, stored_act in self._activation_store.items():
-            sim = float(torch.nn.functional.cosine_similarity(
-                query_act.unsqueeze(0),
-                stored_act.unsqueeze(0),
-            ).item())
+        for step, stored_fp in self._activation_store.items():
+            sim = self._fingerprint_similarity(query_act, stored_fp)
             scored.append((sim, step))
 
         scored.sort(key=lambda t: -t[0])
@@ -192,6 +248,21 @@ class PredictiveSOMA(nn.Module):
             if text:
                 results.append((step, text, sim))
         return results
+
+    @staticmethod
+    def _fingerprint_similarity(
+        a: dict[str, float], b: dict[str, float],
+    ) -> float:
+        """Cosine similarity between two sparse dict fingerprints."""
+        shared = set(a.keys()) & set(b.keys())
+        if not shared:
+            return 0.0
+        dot = sum(a[k] * b[k] for k in shared)
+        norm_a = sum(v * v for v in a.values()) ** 0.5
+        norm_b = sum(v * v for v in b.values()) ** 0.5
+        if norm_a == 0 or norm_b == 0:
+            return 0.0
+        return dot / (norm_a * norm_b)
 
     # ------------------------------------------------------------------
     # Public API
@@ -238,6 +309,11 @@ class PredictiveSOMA(nn.Module):
         # co-active (non-suppressed) nodes, so different inputs
         # strengthen different subgraphs over time.
         self._apply_lateral_inhibition()
+
+        # NOTE: competitive learning is implemented but disabled —
+        # with fully-connected initialization all nodes receive the
+        # same signal, so one node always dominates. Needs sparse
+        # initial connectivity to work. See _competitive_learning().
 
         # Store original text for retrieval/verbalization
         step_num = step_result.get("global_step", len(self.text_store))

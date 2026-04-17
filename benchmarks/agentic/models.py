@@ -37,8 +37,8 @@ MODELS: dict[str, ModelConfig] = {
         "Qwen3.5-27B Q4", 17.0, context_window=32768,
     ),
     "reasoning": ModelConfig(
-        "phi4-reasoning:14b-q8_0",
-        "Phi-4 Reasoning 14B Q8", 17.0, context_window=32768,
+        "qwen3:14b-q8_0",
+        "Qwen3-14B Q8", 15.0, context_window=32768,
     ),
     "mid": ModelConfig(
         "qwen3.5:9b-q8_0",

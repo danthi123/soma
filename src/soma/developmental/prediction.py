@@ -143,6 +143,39 @@ class PredictiveSOMA(nn.Module):
 
         return fp
 
+    def _modulate_growth_rates(self) -> None:
+        """Adjust SOMA config growth rates based on prediction error.
+
+        High prediction error means the graph lacks structure for the
+        current input pattern — increase synaptogenesis and neurogenesis
+        rates.  Low error means the pattern is well-learned — reduce
+        growth to prevent over-connection.
+
+        This replaces static config tuning with self-regulation.
+        """
+        if len(self.error_history) < 10:
+            return  # not enough data yet
+
+        recent = list(self.error_history)[-10:]
+        avg_error = sum(recent) / len(recent)
+
+        # Scale synaptogenesis rate: baseline * (1 + 10 * error)
+        # At error=0.005 (typical early): rate = 2.0 * 1.05 = 2.1
+        # At error=0.0001 (well-learned): rate = 2.0 * 1.001 ≈ 2.0
+        # At error=0.01 (novel input): rate = 2.0 * 1.1 = 2.2
+        base_syn = 2.0
+        self.config.synaptogenesis_rate = base_syn * (1.0 + 10.0 * avg_error)
+
+        # Scale pruning: more aggressive when error is low (well-learned
+        # patterns don't need all those edges).
+        # Low error → shorter pruning interval → more pruning
+        if avg_error < 0.0001:
+            self.config.pruning_interval = 50  # aggressive
+        elif avg_error < 0.001:
+            self.config.pruning_interval = 100
+        else:
+            self.config.pruning_interval = 200  # default
+
     def _diversify_activations(self, input_tensor: torch.Tensor) -> None:
         """Modulate each associator's activation by its unique input view.
 
@@ -425,6 +458,11 @@ class PredictiveSOMA(nn.Module):
         if targets is None:
             out_modality = self.config.output_modalities[0]
             targets = {out_modality: input_tensor.detach()}
+
+        # Dynamic config: modulate growth rates by prediction error.
+        # High error → more wiring (the graph lacks structure).
+        # Low error → less growth (the graph has learned this pattern).
+        self._modulate_growth_rates()
 
         step_result = self.soma.step(inputs, targets=targets)
 

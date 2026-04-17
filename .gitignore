@@ -62,3 +62,6 @@ artifacts/
 # Embedding caches for enterprise-scale benchmarks (can be 100s of MB to GB).
 # Regenerate on demand via the benchmark scripts.
 benchmarks/datasets/scale_cache/
+
+# CL benchmark data (downloaded by torchvision)
+research/cl/data/

@@ -50,6 +50,10 @@ class PredictiveSOMA(nn.Module):
         self.error_history: deque[float] = deque(maxlen=error_history_size)
         # Text store: maps step → original text for verbalization
         self.text_store: dict[int, str] = {}
+        # Activation fingerprints: maps step → output activation vector
+        # Used for graph-driven retrieval (cosine sim between query
+        # activation and stored activations)
+        self._activation_store: dict[int, torch.Tensor] = {}
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -72,6 +76,49 @@ class PredictiveSOMA(nn.Module):
             return summary.to(self.device)
 
         return torch.zeros(dim, device=self.device)
+
+    def retrieve_by_graph(
+        self,
+        query_tensor: torch.Tensor,
+        top_k: int = 5,
+    ) -> list[tuple[int, str, float]]:
+        """Retrieve stored texts by graph activation similarity.
+
+        Processes *query_tensor* through SOMA's graph (eval mode, no
+        learning), compares the resulting activation to stored activation
+        fingerprints, and returns the top-k most similar texts.
+
+        Returns list of (step, text, similarity) tuples.
+        """
+        if not self._activation_store:
+            return []
+
+        query_tensor = query_tensor.to(self.device)
+        modality = self.config.input_modalities[0]
+
+        # Run query through graph WITHOUT learning
+        step_result = self.soma.step(
+            {modality: query_tensor}, eval_mode=True,
+        )
+        query_act = self._get_activation_summary(step_result)
+
+        # Cosine similarity against stored activations
+        scored: list[tuple[float, int]] = []
+        for step, stored_act in self._activation_store.items():
+            sim = float(torch.nn.functional.cosine_similarity(
+                query_act.unsqueeze(0),
+                stored_act.unsqueeze(0),
+            ).item())
+            scored.append((sim, step))
+
+        scored.sort(key=lambda t: -t[0])
+
+        results: list[tuple[int, str, float]] = []
+        for sim, step in scored[:top_k]:
+            text = self.text_store.get(step, "")
+            if text:
+                results.append((step, text, sim))
+        return results
 
     # ------------------------------------------------------------------
     # Public API
@@ -119,6 +166,10 @@ class PredictiveSOMA(nn.Module):
             self.text_store[step_num] = source_text
 
         current_summary = self._get_activation_summary(step_result)
+
+        # Store activation fingerprint for graph-driven retrieval
+        if source_text is not None:
+            self._activation_store[step_num] = current_summary.detach().clone()
 
         # Train prediction head: re-predict from last summary,
         # compare to current summary, backprop.

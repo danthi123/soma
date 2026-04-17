@@ -101,14 +101,16 @@ class AblationHarness:
         without_soma: list[str] = []
         soma_states: list[str] = []
 
-        text_store = self.loop.predictive_soma.text_store
-
         for question in inputs:
-            # Query-driven state: retrieve memories relevant to the question
+            # Graph-driven retrieval: encode question, find matching
+            # activation patterns in stored memories
+            query_vec = self.loop.encode_text(question)
+            recalled = self.loop.predictive_soma.retrieve_by_graph(
+                query_vec, top_k=5,
+            )
             state_text = verbalize_state(
                 self.loop.predictive_soma.soma,
-                query=question,
-                text_store=text_store,
+                recalled=recalled,
             )
             soma_states.append(state_text)
 

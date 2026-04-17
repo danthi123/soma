@@ -120,10 +120,15 @@ class InteractionLoop:
         result = self.predictive_soma.process_input(
             input_vec, source_text=text,
         )
+
+        # Graph-driven retrieval: process query through SOMA's graph
+        # and find stored texts with similar activation patterns.
+        # The quality of retrieval depends on SOMA's structural development.
+        recalled = self.predictive_soma.retrieve_by_graph(input_vec, top_k=5)
+
         soma_state = verbalize_state(
             self.predictive_soma.soma,
-            query=text,
-            text_store=self.predictive_soma.text_store,
+            recalled=recalled,
         )
 
         soma = self.predictive_soma.soma

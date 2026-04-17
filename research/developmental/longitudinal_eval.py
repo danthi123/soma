@@ -116,14 +116,14 @@ def evaluate_qa(
     """Evaluate QA ability at current developmental state."""
     from benchmarks.industry.longmemeval.metrics import token_f1
 
-    text_store = loop.predictive_soma.text_store
     soma = loop.predictive_soma.soma
 
     results = []
     for question, reference in questions:
-        state = verbalize_state(
-            soma, query=question, text_store=text_store,
-        )
+        # Graph-driven retrieval
+        query_vec = loop.encode_text(question)
+        recalled = loop.predictive_soma.retrieve_by_graph(query_vec, top_k=5)
+        state = verbalize_state(soma, recalled=recalled)
         hypothesis = _call_llm(question, state, api_base, model)
         f1 = token_f1(hypothesis, reference)
         results.append({

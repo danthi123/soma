@@ -87,72 +87,28 @@ def _format_growth_log(soma: SOMA, recent: int = 5) -> str:
     return "\n".join(lines)
 
 
-_SBERT = None
-_EMBED_CACHE: dict[str, torch.Tensor] = {}
-
-
-def _get_sbert():
-    """Lazy-load sentence-transformers model."""
-    global _SBERT
-    if _SBERT is None:
-        from sentence_transformers import SentenceTransformer
-
-        _SBERT = SentenceTransformer("all-MiniLM-L6-v2")
-    return _SBERT
-
-
-def _embed(text: str) -> torch.Tensor:
-    """Embed text with caching to avoid redundant encoding."""
-    if text not in _EMBED_CACHE:
-        _EMBED_CACHE[text] = _get_sbert().encode(
-            text, convert_to_tensor=True,
-        )
-    return _EMBED_CACHE[text]
-
-
 def _format_recalled_memories(
-    text_store: dict[int, str] | None,
-    query: str | None = None,
-    top_k: int = 5,
+    recalled: list[tuple[int, str, float]],
 ) -> str:
-    """Format recalled memories from the text store.
+    """Format pre-retrieved memories for the LLM.
 
-    If *query* is given, rank stored texts by semantic similarity
-    using sentence-transformers embeddings.  Otherwise show the
-    most recent entries.
+    Each entry is ``(step, text, similarity)``, as returned by
+    ``PredictiveSOMA.retrieve_by_graph()``.
     """
-    if not text_store:
-        return "  (no memories)"
-
-    if query is not None:
-        query_emb = _embed(query)
-        scored: list[tuple[float, int, str]] = []
-        for step, text in text_store.items():
-            text_emb = _embed(text)
-            sim = float(torch.nn.functional.cosine_similarity(
-                query_emb.unsqueeze(0), text_emb.unsqueeze(0),
-            ).item())
-            scored.append((sim, step, text))
-        scored.sort(key=lambda t: (-t[0], -t[1]))
-        selected = scored[:top_k]
-    else:
-        # Most recent
-        items = sorted(text_store.items(), key=lambda t: -t[0])
-        selected = [(0.0, step, text) for step, text in items[:top_k]]
+    if not recalled:
+        return "  (no memories recalled)"
 
     lines: list[str] = []
-    for _score, step, text in selected:
-        # Truncate long entries
+    for step, text, sim in recalled:
         display = text[:150] + "..." if len(text) > 150 else text
-        lines.append(f"  - [step {step}] {display}")
+        lines.append(f"  - [step {step}, relevance={sim:.2f}] {display}")
     return "\n".join(lines)
 
 
 def verbalize_state(
     soma: SOMA,
     *,
-    query: str | None = None,
-    text_store: dict[int, str] | None = None,
+    recalled: list[tuple[int, str, float]] | None = None,
 ) -> str:
     """Assemble a structured text snapshot of SOMA's internal state.
 
@@ -160,13 +116,11 @@ def verbalize_state(
     ----------
     soma:
         The SOMA system to introspect.
-    query:
-        Optional query string — if provided, recalled memories are
-        ranked by keyword relevance to this query.
-    text_store:
-        Mapping of step → original text, used to populate the
-        "Recalled Memories" section.  Typically comes from
-        ``PredictiveSOMA.text_store``.
+    recalled:
+        Pre-retrieved memories as ``(step, text, similarity)`` tuples,
+        typically from ``PredictiveSOMA.retrieve_by_graph()``.
+        Graph-driven retrieval means the quality of recalled memories
+        depends on SOMA's structural development.
 
     Returns a multi-line string suitable for injection into an LLM prompt.
     """
@@ -201,14 +155,11 @@ def verbalize_state(
         f"Episodic Memory: {ep_stored}/{ep_capacity} experiences stored",
     ]
 
-    # Include recalled memories if text_store is available
-    if text_store:
+    if recalled:
         sections.extend([
             "",
-            "Recalled Memories (most relevant):"
-            if query
-            else "Recalled Memories (most recent):",
-            _format_recalled_memories(text_store, query=query),
+            "Recalled Memories (graph-driven retrieval):",
+            _format_recalled_memories(recalled),
         ])
 
     return "\n".join(sections)

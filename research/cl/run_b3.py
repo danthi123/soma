@@ -143,24 +143,35 @@ ABLATIONS = [
         "frozen": False,
         "enable_consolidation": True,
         "disable_critical_periods": False,
+        "head_replay": False,
     },
     {
         "name": "soma-frozen",
         "frozen": True,
         "enable_consolidation": False,
         "disable_critical_periods": False,
+        "head_replay": False,
     },
     {
         "name": "soma-no-consolidation",
         "frozen": False,
         "enable_consolidation": False,
         "disable_critical_periods": False,
+        "head_replay": False,
     },
     {
         "name": "soma-no-critical-periods",
         "frozen": False,
         "enable_consolidation": True,
         "disable_critical_periods": True,
+        "head_replay": False,
+    },
+    {
+        "name": "soma-head-replay",
+        "frozen": True,
+        "enable_consolidation": False,
+        "disable_critical_periods": False,
+        "head_replay": True,
     },
 ]
 
@@ -278,6 +289,7 @@ def main() -> None:
             disable_critical_periods=ablation["disable_critical_periods"],
             seed=args.seed,
             integrator_count=args.integrators,
+            head_replay=ablation.get("head_replay", False),
         )
         result = _run_benchmark(
             f"{ablation['name']} (Permuted-MNIST)",

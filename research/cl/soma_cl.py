@@ -268,12 +268,20 @@ class SomaCLAdapter:
         enable_consolidation: bool = True,
         disable_critical_periods: bool = False,
         consolidation_replay_steps: int = 50,
+        head_replay: bool = False,
+        replay_buffer_size: int = 200,
+        replay_mix_ratio: float = 0.5,
     ) -> None:
         self.frozen = frozen
         self.enable_consolidation = enable_consolidation
         self.disable_critical_periods = disable_critical_periods
         self.consolidation_replay_steps = consolidation_replay_steps
+        self.head_replay = head_replay
+        self.replay_buffer_size = replay_buffer_size
+        self.replay_mix_ratio = replay_mix_ratio
         self._model: SomaClassifier | None = None
+        # Replay buffer: list of (x_batch, y_batch) from past tasks
+        self._replay_buffer: list[tuple[torch.Tensor, torch.Tensor]] = []
 
     def train_one_epoch(
         self,
@@ -282,7 +290,12 @@ class SomaCLAdapter:
         loader: DataLoader,
         device: torch.device,
     ) -> float:
-        """Train one epoch: SOMA does Hebbian, head does SGD."""
+        """Train one epoch: SOMA does Hebbian, head does SGD.
+
+        When ``head_replay=True``, each batch also replays a random
+        subset of past-task samples through the head, mixing the
+        current-task loss with replay loss to prevent forgetting.
+        """
         model.train(True)
         criterion = nn.CrossEntropyLoss()
         total_loss = 0.0
@@ -293,12 +306,34 @@ class SomaCLAdapter:
             optimizer.zero_grad()
             logits = model(x)
             loss = criterion(logits, y)
+
+            # Mix in replay loss from past tasks
+            if self.head_replay and self._replay_buffer:
+                replay_x, replay_y = self._sample_replay(
+                    x.size(0), device
+                )
+                replay_logits = model(replay_x)
+                replay_loss = criterion(replay_logits, replay_y)
+                # Weighted combination: current + replay
+                ratio = self.replay_mix_ratio
+                loss = (1.0 - ratio) * loss + ratio * replay_loss
+
             loss.backward()
             optimizer.step()
             total_loss += loss.item()
             n_batches += 1
 
         return total_loss / max(n_batches, 1)
+
+    def _sample_replay(
+        self, batch_size: int, device: torch.device
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Sample a batch from the replay buffer (uniform across tasks)."""
+        all_x = torch.cat([x for x, _y in self._replay_buffer], dim=0)
+        all_y = torch.cat([_y for _x, _y in self._replay_buffer], dim=0)
+        n = all_x.size(0)
+        idx = torch.randint(0, n, (min(batch_size, n),))
+        return all_x[idx].to(device), all_y[idx].to(device)
 
     def on_task_end(
         self,
@@ -307,9 +342,33 @@ class SomaCLAdapter:
         train_loader: DataLoader,
         device: torch.device,
     ) -> None:
-        """Post-task hook: run consolidation cycle."""
+        """Post-task hook: run consolidation + update replay buffer."""
         if isinstance(model, SomaClassifier):
             model.consolidate()
+
+        # Store samples from this task for future replay
+        if self.head_replay:
+            self._update_replay_buffer(train_loader)
+
+    def _update_replay_buffer(self, train_loader: DataLoader) -> None:
+        """Add a random subset of this task's data to the replay buffer.
+
+        Keeps ``replay_buffer_size`` samples per task. Stored on CPU
+        to avoid GPU memory growth across tasks.
+        """
+        all_x = []
+        all_y = []
+        for x, y in train_loader:
+            all_x.append(x)
+            all_y.append(y)
+        all_x = torch.cat(all_x, dim=0)
+        all_y = torch.cat(all_y, dim=0)
+
+        n = all_x.size(0)
+        k = min(self.replay_buffer_size, n)
+        idx = torch.randperm(n)[:k]
+        # Store on CPU to avoid VRAM accumulation
+        self._replay_buffer.append((all_x[idx].cpu(), all_y[idx].cpu()))
 
 
 def make_soma_cl_components(
@@ -320,6 +379,9 @@ def make_soma_cl_components(
     disable_critical_periods: bool = False,
     seed: int = 42,
     integrator_count: int = 8,
+    head_replay: bool = False,
+    replay_buffer_size: int = 200,
+    replay_mix_ratio: float = 0.5,
 ) -> tuple[
     Callable[[torch.device], tuple[nn.Module, Optimizer]],
     Callable[..., float],
@@ -341,6 +403,13 @@ def make_soma_cl_components(
         Random seed for SOMA construction.
     integrator_count:
         Number of initial integrator nodes. Associators = 2x this.
+    head_replay:
+        If True, mix past-task replay into each training batch to
+        prevent head forgetting. Uses SOMA's episodic buffer concept.
+    replay_buffer_size:
+        Samples stored per past task for replay (default 200).
+    replay_mix_ratio:
+        Fraction of loss from replay vs current task (default 0.5).
     """
 
     config_fn = _mnist_soma_config if dataset == "mnist" else _cifar_soma_config
@@ -358,6 +427,9 @@ def make_soma_cl_components(
         frozen=frozen,
         enable_consolidation=enable_consolidation,
         disable_critical_periods=disable_critical_periods,
+        head_replay=head_replay,
+        replay_buffer_size=replay_buffer_size,
+        replay_mix_ratio=replay_mix_ratio,
     )
 
     def model_factory(device: torch.device) -> tuple[nn.Module, Optimizer]:

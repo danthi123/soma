@@ -76,6 +76,7 @@ For the end-to-end agent flow — `soma serve`, JWT issue + revoke, `Conversatio
 | Pluggable vector backends (adapter protocol)   | no     | no         | no       | **yes** (InProc + Qdrant + LanceDB + Chroma + pgvector) |
 | Bundles on S3 / GCS (scale-to-zero ready)      | no     | no         | no       | **yes** (`s3://` / `gs://` URLs) |
 | GDPR-grade forgetting with audit trail         | no     | no         | no       | **yes** (`POST /forget` + `docs/gdpr.md`) |
+| Typed schemas (31 built-in, extensible)        | no     | no         | no       | **yes** (8 domains, context packer) |
 
 \* substrate ships; current memory workload doesn't trigger growth/pruning thresholds — see `benchmarks/reports/paper-draft.md` §5 for the research agenda to activate it.
 
@@ -168,7 +169,8 @@ mypy src/soma/
 
 - **[Quickstart](docs/quickstart.md)** — end-to-end agent-memory flow (install → serve → JWT → ConversationalMemory → Grafana).
 - **[Comparison](docs/comparison.md)** — SOMA vs Chroma / Mem0 / Letta / Zep / Pinecone.
-- **[Cookbook](docs/cookbook.md)** — recipes for hybrid retrieval, rerank, multi-tenant REST, ConversationalMemory (sync/async/batch), multi-user, migrations, streaming chat, cloud bundles.
+- **[Cookbook](docs/cookbook.md)** — recipes for hybrid retrieval, rerank, multi-tenant REST, ConversationalMemory (sync/async/batch), multi-user, migrations, streaming chat, cloud bundles, typed schemas, context packing.
+- **[Typed Schemas](docs/schemas.md)** — define, store, retrieve, extend, and pack typed memory entries (31 built-in schemas across 8 domains).
 - **[Auth](docs/auth.md)** — per-bundle JWTs, RS256 split, revocation, rotation.
 - **[Observability](docs/observability.md)** — Prometheus metrics, JSON logs, OTel, Grafana dashboards.
 - **[Backends](docs/backends.md)** — InProc / Qdrant / LanceDB / Chroma / pgvector adapter tradeoffs.

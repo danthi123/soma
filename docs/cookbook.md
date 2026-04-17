@@ -676,6 +676,180 @@ Over REST: `POST /forget` with `{"text_matches": "gardening",
 "dry_run": true}` — requires `write` scope. Full docs including the
 compliance posture at [`docs/gdpr.md`](gdpr.md).
 
+## 24. Agent workflow with typed schemas
+
+Use built-in schemas to store structured agent state alongside
+free-text memory. `store_typed` validates fields and embeds
+searchable text automatically; `retrieve_typed` reconstructs typed
+instances with filter safety.
+
+```python
+from soma.memory import MemoryLayer
+from soma.schemas.builtin.agent import Decision, Observation, TaskState
+
+mem = MemoryLayer.with_sbert()
+
+# Track task lifecycle
+task = TaskState(
+    task_id="deploy-v2",
+    status="active",
+    step=1,
+    plan_summary="migrate DB, deploy backend, run smoke tests",
+)
+mem.store_typed(task)
+
+# Record observations from tool calls
+mem.store_typed(Observation(
+    task_id="deploy-v2",
+    source="tool",
+    content="migration completed in 12s, 3 tables altered",
+))
+
+# Record a decision
+mem.store_typed(Decision(
+    task_id="deploy-v2",
+    choice="blue-green deploy",
+    rationale="zero-downtime requirement from SLA",
+    alternatives="rolling, canary",
+))
+
+# Retrieve all active tasks
+active = mem.retrieve_typed(
+    TaskState,
+    query="deploy",
+    k=10,
+    status="active",
+)
+
+# Retrieve decisions for a specific task
+decisions = mem.retrieve_typed(
+    Decision,
+    query="deploy strategy",
+    k=5,
+    task_id="deploy-v2",
+)
+```
+
+Mix typed and untyped entries freely -- `retrieve()` still works on
+everything in the store.
+
+## 25. Custom schema extension
+
+Define domain-specific schemas in your package. Registration happens
+at import time -- no config, no plugin system.
+
+```python
+# myagent/schemas.py
+from soma.schemas import schema, field
+
+@schema("devops.deploy")
+class Deploy:
+    """Track a deployment with rollback info."""
+    service: str = field(filterable=True, searchable=True)
+    version: str = field(filterable=True)
+    environment: str = field(
+        filterable=True,
+        choices=["dev", "staging", "prod"],
+    )
+    status: str = field(
+        filterable=True,
+        choices=["pending", "rolling", "live", "rolled_back"],
+        default="pending",
+    )
+    rollback_to: str | None = field(default=None)
+    notes: str = field(searchable=True, default="")
+
+    class Meta:
+        context_priority = 0.9  # high priority in context packing
+        ttl_seconds = 86400 * 7  # expire after 1 week
+```
+
+```python
+# myagent/main.py
+import myagent.schemas  # auto-registers Deploy
+
+from soma.memory import MemoryLayer
+from soma.schemas import get_schema, list_schemas
+
+mem = MemoryLayer.with_sbert()
+
+# Verify registration
+assert "devops.deploy" in list_schemas()
+assert get_schema("devops.deploy") is myagent.schemas.Deploy
+
+# Use it
+from myagent.schemas import Deploy
+
+mem.store_typed(Deploy(
+    service="api-gateway",
+    version="2.4.1",
+    environment="prod",
+    notes="includes fix for auth timeout",
+))
+
+deploys = mem.retrieve_typed(
+    Deploy,
+    query="auth fix",
+    k=5,
+    environment="prod",
+    status="live",
+)
+```
+
+For third-party packages: put `import .schemas` in your package's
+`__init__.py` so callers just `import mypackage` and schemas
+register.
+
+## 26. Context packing for LLM prompts
+
+`pack_context` assembles a token-budgeted context string from memory,
+mixing recent entries, semantically relevant hits, active tasks,
+decisions, and preferences.
+
+```python
+from soma.memory import MemoryLayer
+from soma.schemas.packing import pack_context
+
+mem = MemoryLayer.with_sbert()
+# ... store some typed and untyped entries ...
+
+# Default mix (50% relevant, 15% recent, 10% tasks, 10% decisions, 15% prefs)
+context = pack_context(mem, query="what should I deploy next?")
+
+# Custom mix -- shift budget toward decisions and code incidents
+context = pack_context(
+    mem,
+    query="what went wrong last week?",
+    max_tokens=2000,
+    mix={
+        "relevant": 0.4,
+        "recency": 0.1,
+        "decisions": 0.2,
+        "code.incident": 0.3,  # any schema type name works as a slot
+    },
+)
+
+# Restrict to specific domains
+context = pack_context(
+    mem,
+    query="customer complaints",
+    types=["customer.*", "collab.*"],
+)
+
+# Use in an LLM prompt
+prompt = f"""\
+You are a helpful assistant. Use the context below to answer.
+
+Context:
+{context}
+
+Question: What should I deploy next?
+"""
+```
+
+Each entry is formatted as `[type_name] text`, one per line. The
+packer deduplicates across slots so no entry appears twice.
+
 ---
 
 Missing a recipe you want? Open an issue with the use case — most

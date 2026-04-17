@@ -117,8 +117,14 @@ class InteractionLoop:
         ``prediction_error``, ``novelty``, ``global_step``.
         """
         input_vec = self.encode_text(text)
-        result = self.predictive_soma.process_input(input_vec)
-        soma_state = verbalize_state(self.predictive_soma.soma)
+        result = self.predictive_soma.process_input(
+            input_vec, source_text=text,
+        )
+        soma_state = verbalize_state(
+            self.predictive_soma.soma,
+            query=text,
+            text_store=self.predictive_soma.text_store,
+        )
 
         soma = self.predictive_soma.soma
         wm_occupancy = int((soma.working_memory.usage > 0.1).sum().item())

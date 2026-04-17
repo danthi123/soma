@@ -44,6 +44,8 @@ class PredictiveSOMA(nn.Module):
         self._last_prediction: torch.Tensor | None = None
         self.prediction_error: float = 0.0
         self.error_history: deque[float] = deque(maxlen=error_history_size)
+        # Text store: maps step → original text for verbalization
+        self.text_store: dict[int, str] = {}
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -76,6 +78,7 @@ class PredictiveSOMA(nn.Module):
         input_tensor: torch.Tensor,
         *,
         targets: dict[str, torch.Tensor] | None = None,
+        source_text: str | None = None,
     ) -> dict[str, Any]:
         """Run one prediction-loop step.
 
@@ -83,6 +86,8 @@ class PredictiveSOMA(nn.Module):
         ----------
         input_tensor:
             Raw input (e.g. token IDs or embedding vector).
+        source_text:
+            Original text (stored for retrieval/verbalization).
         targets:
             Optional supervision targets forwarded to ``SOMA.step``.
 
@@ -103,6 +108,11 @@ class PredictiveSOMA(nn.Module):
             targets = {out_modality: input_tensor.detach()}
 
         step_result = self.soma.step(inputs, targets=targets)
+
+        # Store original text for retrieval/verbalization
+        step_num = step_result.get("global_step", len(self.text_store))
+        if source_text is not None:
+            self.text_store[step_num] = source_text
 
         current_summary = self._get_activation_summary(step_result)
 

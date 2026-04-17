@@ -74,25 +74,42 @@ class AblationHarness:
     # Main entry point
     # ------------------------------------------------------------------
 
+    def develop(self, texts: list[str]) -> None:
+        """Feed texts through SOMA for development (no LLM calls)."""
+        for text in texts:
+            self.loop.process_input(text, call_llm=False)
+
     def run(
         self,
         inputs: list[str],
         references: list[str] | None = None,
     ) -> dict[str, Any]:
-        """Run the ablation over *inputs*.
+        """Run the ablation over *inputs* (questions asked of SOMA).
+
+        Each question generates a query-driven verbalization of SOMA's
+        state (with relevant recalled memories) vs a blank state.
+
+        Call :meth:`develop` first to feed development data through SOMA.
 
         Returns a dict with keys ``with_soma``, ``without_soma``,
         ``soma_states``, and ``delta``.  If *references* are provided
         token-F1 is computed for both conditions.
         """
+        from soma.developmental.verbalize import verbalize_state
+
         with_soma: list[str] = []
         without_soma: list[str] = []
         soma_states: list[str] = []
 
-        for text in inputs:
-            # Process through SOMA (no LLM call — we call it ourselves)
-            result = self.loop.process_input(text, call_llm=False)
-            state_text = result["soma_state"]
+        text_store = self.loop.predictive_soma.text_store
+
+        for question in inputs:
+            # Query-driven state: retrieve memories relevant to the question
+            state_text = verbalize_state(
+                self.loop.predictive_soma.soma,
+                query=question,
+                text_store=text_store,
+            )
             soma_states.append(state_text)
 
             with_resp = self._call_llm(state_text)

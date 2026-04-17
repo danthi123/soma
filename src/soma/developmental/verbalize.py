@@ -86,8 +86,61 @@ def _format_growth_log(soma: SOMA, recent: int = 5) -> str:
     return "\n".join(lines)
 
 
-def verbalize_state(soma: SOMA) -> str:
+def _format_recalled_memories(
+    text_store: dict[int, str] | None,
+    query: str | None = None,
+    top_k: int = 5,
+) -> str:
+    """Format recalled memories from the text store.
+
+    If *query* is given, do simple keyword matching to find the most
+    relevant stored texts.  Otherwise show the most recent entries.
+    """
+    if not text_store:
+        return "  (no memories)"
+
+    if query is not None:
+        # Simple keyword relevance: count query-word overlap
+        query_words = set(query.lower().split())
+        scored: list[tuple[float, int, str]] = []
+        for step, text in text_store.items():
+            text_words = set(text.lower().split())
+            overlap = len(query_words & text_words)
+            scored.append((overlap, step, text))
+        scored.sort(key=lambda t: (-t[0], -t[1]))
+        selected = scored[:top_k]
+    else:
+        # Most recent
+        items = sorted(text_store.items(), key=lambda t: -t[0])
+        selected = [(0, step, text) for step, text in items[:top_k]]
+
+    lines: list[str] = []
+    for _score, step, text in selected:
+        # Truncate long entries
+        display = text[:150] + "..." if len(text) > 150 else text
+        lines.append(f"  - [step {step}] {display}")
+    return "\n".join(lines)
+
+
+def verbalize_state(
+    soma: SOMA,
+    *,
+    query: str | None = None,
+    text_store: dict[int, str] | None = None,
+) -> str:
     """Assemble a structured text snapshot of SOMA's internal state.
+
+    Parameters
+    ----------
+    soma:
+        The SOMA system to introspect.
+    query:
+        Optional query string — if provided, recalled memories are
+        ranked by keyword relevance to this query.
+    text_store:
+        Mapping of step → original text, used to populate the
+        "Recalled Memories" section.  Typically comes from
+        ``PredictiveSOMA.text_store``.
 
     Returns a multi-line string suitable for injection into an LLM prompt.
     """
@@ -121,5 +174,15 @@ def verbalize_state(soma: SOMA) -> str:
         "",
         f"Episodic Memory: {ep_stored}/{ep_capacity} experiences stored",
     ]
+
+    # Include recalled memories if text_store is available
+    if text_store:
+        sections.extend([
+            "",
+            "Recalled Memories (most relevant):"
+            if query
+            else "Recalled Memories (most recent):",
+            _format_recalled_memories(text_store, query=query),
+        ])
 
     return "\n".join(sections)

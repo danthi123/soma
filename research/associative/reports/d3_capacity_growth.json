@@ -1,0 +1,3159 @@
+{
+  "exp1_scaler_comparison": {
+    "n_patterns": 10,
+    "dim": 50,
+    "mean_abs_output": 0.13988147675991058,
+    "mean_abs_pattern": 1.0,
+    "raw": {
+      "exact_rate": 0.0,
+      "nearest_rate": 1.0,
+      "per_bit_acc": 0.9
+    },
+    "zscore": {
+      "exact_rate": 0.0,
+      "nearest_rate": 1.0,
+      "per_bit_acc": 0.864
+    },
+    "learned": {
+      "exact_rate": 0.1,
+      "nearest_rate": 1.0,
+      "per_bit_acc": 0.914
+    }
+  },
+  "exp2_capacity_sweep": [
+    {
+      "n_patterns": 1,
+      "ratio": 0.02,
+      "raw_exact": 0.0,
+      "raw_nearest": 1.0,
+      "zscore_exact": 0.0,
+      "zscore_nearest": 1.0,
+      "learned_exact": 1.0,
+      "learned_nearest": 1.0,
+      "raw_bits": 0.84,
+      "zscore_bits": 0.0,
+      "learned_bits": 1.0
+    },
+    {
+      "n_patterns": 2,
+      "ratio": 0.04,
+      "raw_exact": 0.0,
+      "raw_nearest": 1.0,
+      "zscore_exact": 0.0,
+      "zscore_nearest": 1.0,
+      "learned_exact": 0.0,
+      "learned_nearest": 1.0,
+      "raw_bits": 0.81,
+      "zscore_bits": 0.56,
+      "learned_bits": 0.93
+    },
+    {
+      "n_patterns": 3,
+      "ratio": 0.06,
+      "raw_exact": 0.0,
+      "raw_nearest": 1.0,
+      "zscore_exact": 0.0,
+      "zscore_nearest": 1.0,
+      "learned_exact": 0.0,
+      "learned_nearest": 1.0,
+      "raw_bits": 0.86,
+      "zscore_bits": 0.7333333333333333,
+      "learned_bits": 0.9133333333333333
+    },
+    {
+      "n_patterns": 5,
+      "ratio": 0.1,
+      "raw_exact": 0.0,
+      "raw_nearest": 1.0,
+      "zscore_exact": 0.0,
+      "zscore_nearest": 1.0,
+      "learned_exact": 0.0,
+      "learned_nearest": 1.0,
+      "raw_bits": 0.884,
+      "zscore_bits": 0.848,
+      "learned_bits": 0.884
+    },
+    {
+      "n_patterns": 7,
+      "ratio": 0.14,
+      "raw_exact": 0.0,
+      "raw_nearest": 1.0,
+      "zscore_exact": 0.0,
+      "zscore_nearest": 1.0,
+      "learned_exact": 0.0,
+      "learned_nearest": 1.0,
+      "raw_bits": 0.9057142857142857,
+      "zscore_bits": 0.8714285714285714,
+      "learned_bits": 0.8942857142857142
+    },
+    {
+      "n_patterns": 10,
+      "ratio": 0.2,
+      "raw_exact": 0.0,
+      "raw_nearest": 1.0,
+      "zscore_exact": 0.0,
+      "zscore_nearest": 1.0,
+      "learned_exact": 0.1,
+      "learned_nearest": 1.0,
+      "raw_bits": 0.9,
+      "zscore_bits": 0.864,
+      "learned_bits": 0.914
+    },
+    {
+      "n_patterns": 12,
+      "ratio": 0.24,
+      "raw_exact": 0.08333333333333333,
+      "raw_nearest": 1.0,
+      "zscore_exact": 0.0,
+      "zscore_nearest": 1.0,
+      "learned_exact": 0.0,
+      "learned_nearest": 1.0,
+      "raw_bits": 0.9083333333333333,
+      "zscore_bits": 0.89,
+      "learned_bits": 0.9183333333333333
+    },
+    {
+      "n_patterns": 15,
+      "ratio": 0.3,
+      "raw_exact": 0.0,
+      "raw_nearest": 1.0,
+      "zscore_exact": 0.0,
+      "zscore_nearest": 1.0,
+      "learned_exact": 0.0,
+      "learned_nearest": 1.0,
+      "raw_bits": 0.912,
+      "zscore_bits": 0.8706666666666667,
+      "learned_bits": 0.936
+    },
+    {
+      "n_patterns": 20,
+      "ratio": 0.4,
+      "raw_exact": 0.05,
+      "raw_nearest": 1.0,
+      "zscore_exact": 0.0,
+      "zscore_nearest": 1.0,
+      "learned_exact": 0.0,
+      "learned_nearest": 1.0,
+      "raw_bits": 0.891,
+      "zscore_bits": 0.883,
+      "learned_bits": 0.916
+    },
+    {
+      "n_patterns": 25,
+      "ratio": 0.5,
+      "raw_exact": 0.0,
+      "raw_nearest": 1.0,
+      "zscore_exact": 0.0,
+      "zscore_nearest": 1.0,
+      "learned_exact": 0.0,
+      "learned_nearest": 1.0,
+      "raw_bits": 0.904,
+      "zscore_bits": 0.8848,
+      "learned_bits": 0.9016
+    },
+    {
+      "n_patterns": 30,
+      "ratio": 0.6,
+      "raw_exact": 0.03333333333333333,
+      "raw_nearest": 1.0,
+      "zscore_exact": 0.03333333333333333,
+      "zscore_nearest": 1.0,
+      "learned_exact": 0.0,
+      "learned_nearest": 1.0,
+      "raw_bits": 0.8953333333333333,
+      "zscore_bits": 0.896,
+      "learned_bits": 0.902
+    },
+    {
+      "n_patterns": 40,
+      "ratio": 0.8,
+      "raw_exact": 0.0,
+      "raw_nearest": 1.0,
+      "zscore_exact": 0.0,
+      "zscore_nearest": 1.0,
+      "learned_exact": 0.0,
+      "learned_nearest": 1.0,
+      "raw_bits": 0.889,
+      "zscore_bits": 0.886,
+      "learned_bits": 0.895
+    },
+    {
+      "n_patterns": 50,
+      "ratio": 1.0,
+      "raw_exact": 0.0,
+      "raw_nearest": 1.0,
+      "zscore_exact": 0.0,
+      "zscore_nearest": 1.0,
+      "learned_exact": 0.0,
+      "learned_nearest": 1.0,
+      "raw_bits": 0.8948,
+      "zscore_bits": 0.888,
+      "learned_bits": 0.892
+    },
+    {
+      "n_patterns": 60,
+      "ratio": 1.2,
+      "raw_exact": 0.016666666666666666,
+      "raw_nearest": 1.0,
+      "zscore_exact": 0.03333333333333333,
+      "zscore_nearest": 1.0,
+      "learned_exact": 0.016666666666666666,
+      "learned_nearest": 1.0,
+      "raw_bits": 0.9006666666666666,
+      "zscore_bits": 0.9003333333333333,
+      "learned_bits": 0.905
+    },
+    {
+      "n_patterns": 75,
+      "ratio": 1.5,
+      "raw_exact": 0.013333333333333334,
+      "raw_nearest": 1.0,
+      "zscore_exact": 0.0,
+      "zscore_nearest": 1.0,
+      "learned_exact": 0.0,
+      "learned_nearest": 1.0,
+      "raw_bits": 0.9088,
+      "zscore_bits": 0.9,
+      "learned_bits": 0.8962666666666667
+    },
+    {
+      "n_patterns": 100,
+      "ratio": 2.0,
+      "raw_exact": 0.0,
+      "raw_nearest": 1.0,
+      "zscore_exact": 0.02,
+      "zscore_nearest": 1.0,
+      "learned_exact": 0.01,
+      "learned_nearest": 1.0,
+      "raw_bits": 0.9014,
+      "zscore_bits": 0.8944,
+      "learned_bits": 0.8946
+    },
+    {
+      "n_patterns": 125,
+      "ratio": 2.5,
+      "raw_exact": 0.0,
+      "raw_nearest": 1.0,
+      "zscore_exact": 0.008,
+      "zscore_nearest": 1.0,
+      "learned_exact": 0.008,
+      "learned_nearest": 1.0,
+      "raw_bits": 0.89504,
+      "zscore_bits": 0.89024,
+      "learned_bits": 0.896
+    },
+    {
+      "n_patterns": 150,
+      "ratio": 3.0,
+      "raw_exact": 0.006666666666666667,
+      "raw_nearest": 1.0,
+      "zscore_exact": 0.006666666666666667,
+      "zscore_nearest": 1.0,
+      "learned_exact": 0.0,
+      "learned_nearest": 1.0,
+      "raw_bits": 0.8925333333333333,
+      "zscore_bits": 0.8929333333333334,
+      "learned_bits": 0.8904
+    }
+  ],
+  "exp3_structural_plasticity": {
+    "dim": 50,
+    "max_patterns": 60,
+    "start_topology": {
+      "associators": 8,
+      "integrators": 4
+    },
+    "recall_threshold": 0.8,
+    "growth_nodes_per_event": 2,
+    "conditions": {
+      "fixed": [
+        {
+          "pattern_idx": 0,
+          "n_stored": 1,
+          "exact_rate": 0.0,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.0,
+          "total_nodes": 14,
+          "total_edges": 24,
+          "grew": false,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 8,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 1,
+          "n_stored": 2,
+          "exact_rate": 0.0,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.63,
+          "total_nodes": 14,
+          "total_edges": 24,
+          "grew": false,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 8,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 2,
+          "n_stored": 3,
+          "exact_rate": 0.0,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.7533333333333333,
+          "total_nodes": 14,
+          "total_edges": 24,
+          "grew": false,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 8,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 3,
+          "n_stored": 4,
+          "exact_rate": 0.0,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.815,
+          "total_nodes": 14,
+          "total_edges": 24,
+          "grew": false,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 8,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 4,
+          "n_stored": 5,
+          "exact_rate": 0.0,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.88,
+          "total_nodes": 14,
+          "total_edges": 24,
+          "grew": false,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 8,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 5,
+          "n_stored": 6,
+          "exact_rate": 0.0,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.88,
+          "total_nodes": 14,
+          "total_edges": 24,
+          "grew": false,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 8,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 6,
+          "n_stored": 7,
+          "exact_rate": 0.0,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.8857142857142857,
+          "total_nodes": 14,
+          "total_edges": 24,
+          "grew": false,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 8,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 7,
+          "n_stored": 8,
+          "exact_rate": 0.0,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.895,
+          "total_nodes": 14,
+          "total_edges": 24,
+          "grew": false,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 8,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 8,
+          "n_stored": 9,
+          "exact_rate": 0.0,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.8888888888888888,
+          "total_nodes": 14,
+          "total_edges": 24,
+          "grew": false,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 8,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 9,
+          "n_stored": 10,
+          "exact_rate": 0.0,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.896,
+          "total_nodes": 14,
+          "total_edges": 24,
+          "grew": false,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 8,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 10,
+          "n_stored": 11,
+          "exact_rate": 0.0,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.8818181818181818,
+          "total_nodes": 14,
+          "total_edges": 24,
+          "grew": false,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 8,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 11,
+          "n_stored": 12,
+          "exact_rate": 0.0,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.8683333333333333,
+          "total_nodes": 14,
+          "total_edges": 24,
+          "grew": false,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 8,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 12,
+          "n_stored": 13,
+          "exact_rate": 0.0,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.8753846153846154,
+          "total_nodes": 14,
+          "total_edges": 24,
+          "grew": false,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 8,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 13,
+          "n_stored": 14,
+          "exact_rate": 0.0,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.8757142857142857,
+          "total_nodes": 14,
+          "total_edges": 24,
+          "grew": false,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 8,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 14,
+          "n_stored": 15,
+          "exact_rate": 0.0,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.8786666666666667,
+          "total_nodes": 14,
+          "total_edges": 24,
+          "grew": false,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 8,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 15,
+          "n_stored": 16,
+          "exact_rate": 0.0,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.88125,
+          "total_nodes": 14,
+          "total_edges": 24,
+          "grew": false,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 8,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 16,
+          "n_stored": 17,
+          "exact_rate": 0.0,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.8811764705882353,
+          "total_nodes": 14,
+          "total_edges": 24,
+          "grew": false,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 8,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 17,
+          "n_stored": 18,
+          "exact_rate": 0.0,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.8822222222222222,
+          "total_nodes": 14,
+          "total_edges": 24,
+          "grew": false,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 8,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 18,
+          "n_stored": 19,
+          "exact_rate": 0.0,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.8873684210526316,
+          "total_nodes": 14,
+          "total_edges": 24,
+          "grew": false,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 8,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 19,
+          "n_stored": 20,
+          "exact_rate": 0.0,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.885,
+          "total_nodes": 14,
+          "total_edges": 24,
+          "grew": false,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 8,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 20,
+          "n_stored": 21,
+          "exact_rate": 0.0,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.8933333333333333,
+          "total_nodes": 14,
+          "total_edges": 24,
+          "grew": false,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 8,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 21,
+          "n_stored": 22,
+          "exact_rate": 0.0,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.8936363636363637,
+          "total_nodes": 14,
+          "total_edges": 24,
+          "grew": false,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 8,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 22,
+          "n_stored": 23,
+          "exact_rate": 0.0,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.8939130434782608,
+          "total_nodes": 14,
+          "total_edges": 24,
+          "grew": false,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 8,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 23,
+          "n_stored": 24,
+          "exact_rate": 0.0,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.8966666666666666,
+          "total_nodes": 14,
+          "total_edges": 24,
+          "grew": false,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 8,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 24,
+          "n_stored": 25,
+          "exact_rate": 0.0,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.8976,
+          "total_nodes": 14,
+          "total_edges": 24,
+          "grew": false,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 8,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 25,
+          "n_stored": 26,
+          "exact_rate": 0.0,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.8976923076923077,
+          "total_nodes": 14,
+          "total_edges": 24,
+          "grew": false,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 8,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 26,
+          "n_stored": 27,
+          "exact_rate": 0.0,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.9007407407407407,
+          "total_nodes": 14,
+          "total_edges": 24,
+          "grew": false,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 8,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 27,
+          "n_stored": 28,
+          "exact_rate": 0.0,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.9,
+          "total_nodes": 14,
+          "total_edges": 24,
+          "grew": false,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 8,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 28,
+          "n_stored": 29,
+          "exact_rate": 0.0,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.896551724137931,
+          "total_nodes": 14,
+          "total_edges": 24,
+          "grew": false,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 8,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 29,
+          "n_stored": 30,
+          "exact_rate": 0.0,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.8973333333333333,
+          "total_nodes": 14,
+          "total_edges": 24,
+          "grew": false,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 8,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 30,
+          "n_stored": 31,
+          "exact_rate": 0.0,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.895483870967742,
+          "total_nodes": 14,
+          "total_edges": 24,
+          "grew": false,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 8,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 31,
+          "n_stored": 32,
+          "exact_rate": 0.0,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.896875,
+          "total_nodes": 14,
+          "total_edges": 24,
+          "grew": false,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 8,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 32,
+          "n_stored": 33,
+          "exact_rate": 0.0,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.8963636363636364,
+          "total_nodes": 14,
+          "total_edges": 24,
+          "grew": false,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 8,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 33,
+          "n_stored": 34,
+          "exact_rate": 0.029411764705882353,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.8994117647058824,
+          "total_nodes": 14,
+          "total_edges": 24,
+          "grew": false,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 8,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 34,
+          "n_stored": 35,
+          "exact_rate": 0.02857142857142857,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.9011428571428571,
+          "total_nodes": 14,
+          "total_edges": 24,
+          "grew": false,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 8,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 35,
+          "n_stored": 36,
+          "exact_rate": 0.027777777777777776,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.9011111111111111,
+          "total_nodes": 14,
+          "total_edges": 24,
+          "grew": false,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 8,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 36,
+          "n_stored": 37,
+          "exact_rate": 0.02702702702702703,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.9005405405405406,
+          "total_nodes": 14,
+          "total_edges": 24,
+          "grew": false,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 8,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 37,
+          "n_stored": 38,
+          "exact_rate": 0.02631578947368421,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.9026315789473685,
+          "total_nodes": 14,
+          "total_edges": 24,
+          "grew": false,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 8,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 38,
+          "n_stored": 39,
+          "exact_rate": 0.02564102564102564,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.9015384615384615,
+          "total_nodes": 14,
+          "total_edges": 24,
+          "grew": false,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 8,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 39,
+          "n_stored": 40,
+          "exact_rate": 0.025,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.9025,
+          "total_nodes": 14,
+          "total_edges": 24,
+          "grew": false,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 8,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 40,
+          "n_stored": 41,
+          "exact_rate": 0.024390243902439025,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.9024390243902439,
+          "total_nodes": 14,
+          "total_edges": 24,
+          "grew": false,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 8,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 41,
+          "n_stored": 42,
+          "exact_rate": 0.0,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.8990476190476191,
+          "total_nodes": 14,
+          "total_edges": 24,
+          "grew": false,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 8,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 42,
+          "n_stored": 43,
+          "exact_rate": 0.0,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.9027906976744186,
+          "total_nodes": 14,
+          "total_edges": 24,
+          "grew": false,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 8,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 43,
+          "n_stored": 44,
+          "exact_rate": 0.0,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.9,
+          "total_nodes": 14,
+          "total_edges": 24,
+          "grew": false,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 8,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 44,
+          "n_stored": 45,
+          "exact_rate": 0.0,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.9,
+          "total_nodes": 14,
+          "total_edges": 24,
+          "grew": false,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 8,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 45,
+          "n_stored": 46,
+          "exact_rate": 0.0,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.8995652173913044,
+          "total_nodes": 14,
+          "total_edges": 24,
+          "grew": false,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 8,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 46,
+          "n_stored": 47,
+          "exact_rate": 0.02127659574468085,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.9004255319148936,
+          "total_nodes": 14,
+          "total_edges": 24,
+          "grew": false,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 8,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 47,
+          "n_stored": 48,
+          "exact_rate": 0.020833333333333332,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.8995833333333333,
+          "total_nodes": 14,
+          "total_edges": 24,
+          "grew": false,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 8,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 48,
+          "n_stored": 49,
+          "exact_rate": 0.02040816326530612,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.8983673469387755,
+          "total_nodes": 14,
+          "total_edges": 24,
+          "grew": false,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 8,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 49,
+          "n_stored": 50,
+          "exact_rate": 0.02,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.8976,
+          "total_nodes": 14,
+          "total_edges": 24,
+          "grew": false,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 8,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 50,
+          "n_stored": 51,
+          "exact_rate": 0.0392156862745098,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.9007843137254902,
+          "total_nodes": 14,
+          "total_edges": 24,
+          "grew": false,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 8,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 51,
+          "n_stored": 52,
+          "exact_rate": 0.019230769230769232,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.9011538461538462,
+          "total_nodes": 14,
+          "total_edges": 24,
+          "grew": false,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 8,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 52,
+          "n_stored": 53,
+          "exact_rate": 0.018867924528301886,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.8996226415094339,
+          "total_nodes": 14,
+          "total_edges": 24,
+          "grew": false,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 8,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 53,
+          "n_stored": 54,
+          "exact_rate": 0.018518518518518517,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.9007407407407407,
+          "total_nodes": 14,
+          "total_edges": 24,
+          "grew": false,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 8,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 54,
+          "n_stored": 55,
+          "exact_rate": 0.03636363636363636,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.9014545454545455,
+          "total_nodes": 14,
+          "total_edges": 24,
+          "grew": false,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 8,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 55,
+          "n_stored": 56,
+          "exact_rate": 0.017857142857142856,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.9010714285714285,
+          "total_nodes": 14,
+          "total_edges": 24,
+          "grew": false,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 8,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 56,
+          "n_stored": 57,
+          "exact_rate": 0.017543859649122806,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.9010526315789473,
+          "total_nodes": 14,
+          "total_edges": 24,
+          "grew": false,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 8,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 57,
+          "n_stored": 58,
+          "exact_rate": 0.017241379310344827,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.9020689655172414,
+          "total_nodes": 14,
+          "total_edges": 24,
+          "grew": false,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 8,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 58,
+          "n_stored": 59,
+          "exact_rate": 0.03389830508474576,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.9,
+          "total_nodes": 14,
+          "total_edges": 24,
+          "grew": false,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 8,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 59,
+          "n_stored": 60,
+          "exact_rate": 0.03333333333333333,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.9,
+          "total_nodes": 14,
+          "total_edges": 24,
+          "grew": false,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 8,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        }
+      ],
+      "grow_on_saturation": [
+        {
+          "pattern_idx": 0,
+          "n_stored": 1,
+          "exact_rate": 0.0,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.0,
+          "total_nodes": 14,
+          "total_edges": 24,
+          "grew": false,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 8,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 1,
+          "n_stored": 2,
+          "exact_rate": 0.0,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.63,
+          "total_nodes": 14,
+          "total_edges": 24,
+          "grew": false,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 8,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 2,
+          "n_stored": 3,
+          "exact_rate": 0.0,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.7533333333333333,
+          "total_nodes": 14,
+          "total_edges": 24,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 8,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 3,
+          "n_stored": 4,
+          "exact_rate": 0.0,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.815,
+          "total_nodes": 16,
+          "total_edges": 44,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 10,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 4,
+          "n_stored": 5,
+          "exact_rate": 0.0,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.88,
+          "total_nodes": 18,
+          "total_edges": 64,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 12,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 5,
+          "n_stored": 6,
+          "exact_rate": 0.0,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.88,
+          "total_nodes": 20,
+          "total_edges": 84,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 14,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 6,
+          "n_stored": 7,
+          "exact_rate": 0.0,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.8857142857142857,
+          "total_nodes": 22,
+          "total_edges": 104,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 16,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 7,
+          "n_stored": 8,
+          "exact_rate": 0.0,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.8825,
+          "total_nodes": 24,
+          "total_edges": 124,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 18,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 8,
+          "n_stored": 9,
+          "exact_rate": 0.0,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.8755555555555555,
+          "total_nodes": 26,
+          "total_edges": 144,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 20,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 9,
+          "n_stored": 10,
+          "exact_rate": 0.0,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.874,
+          "total_nodes": 28,
+          "total_edges": 164,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 22,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 10,
+          "n_stored": 11,
+          "exact_rate": 0.0,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.8709090909090909,
+          "total_nodes": 30,
+          "total_edges": 184,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 24,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 11,
+          "n_stored": 12,
+          "exact_rate": 0.0,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.8633333333333333,
+          "total_nodes": 32,
+          "total_edges": 204,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 26,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 12,
+          "n_stored": 13,
+          "exact_rate": 0.0,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.8738461538461538,
+          "total_nodes": 34,
+          "total_edges": 224,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 28,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 13,
+          "n_stored": 14,
+          "exact_rate": 0.0,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.8628571428571429,
+          "total_nodes": 36,
+          "total_edges": 244,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 30,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 14,
+          "n_stored": 15,
+          "exact_rate": 0.0,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.8693333333333333,
+          "total_nodes": 38,
+          "total_edges": 264,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 32,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 15,
+          "n_stored": 16,
+          "exact_rate": 0.0,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.8675,
+          "total_nodes": 40,
+          "total_edges": 284,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 34,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 16,
+          "n_stored": 17,
+          "exact_rate": 0.0,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.8717647058823529,
+          "total_nodes": 42,
+          "total_edges": 304,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 36,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 17,
+          "n_stored": 18,
+          "exact_rate": 0.0,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.8744444444444445,
+          "total_nodes": 44,
+          "total_edges": 324,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 38,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 18,
+          "n_stored": 19,
+          "exact_rate": 0.0,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.8778947368421053,
+          "total_nodes": 46,
+          "total_edges": 344,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 40,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 19,
+          "n_stored": 20,
+          "exact_rate": 0.0,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.886,
+          "total_nodes": 48,
+          "total_edges": 364,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 42,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 20,
+          "n_stored": 21,
+          "exact_rate": 0.0,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.8819047619047619,
+          "total_nodes": 50,
+          "total_edges": 384,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 44,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 21,
+          "n_stored": 22,
+          "exact_rate": 0.0,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.8781818181818182,
+          "total_nodes": 52,
+          "total_edges": 404,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 46,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 22,
+          "n_stored": 23,
+          "exact_rate": 0.0,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.8878260869565218,
+          "total_nodes": 54,
+          "total_edges": 424,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 48,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 23,
+          "n_stored": 24,
+          "exact_rate": 0.0,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.8875,
+          "total_nodes": 56,
+          "total_edges": 444,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 50,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 24,
+          "n_stored": 25,
+          "exact_rate": 0.0,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.8872,
+          "total_nodes": 58,
+          "total_edges": 464,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 52,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 25,
+          "n_stored": 26,
+          "exact_rate": 0.0,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.89,
+          "total_nodes": 60,
+          "total_edges": 484,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 54,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 26,
+          "n_stored": 27,
+          "exact_rate": 0.0,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.8903703703703704,
+          "total_nodes": 62,
+          "total_edges": 504,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 56,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 27,
+          "n_stored": 28,
+          "exact_rate": 0.0,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.8985714285714286,
+          "total_nodes": 64,
+          "total_edges": 524,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 58,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 28,
+          "n_stored": 29,
+          "exact_rate": 0.0,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.8910344827586207,
+          "total_nodes": 66,
+          "total_edges": 544,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 60,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 29,
+          "n_stored": 30,
+          "exact_rate": 0.0,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.8953333333333333,
+          "total_nodes": 68,
+          "total_edges": 564,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 62,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 30,
+          "n_stored": 31,
+          "exact_rate": 0.0,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.8903225806451613,
+          "total_nodes": 70,
+          "total_edges": 584,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 64,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 31,
+          "n_stored": 32,
+          "exact_rate": 0.0,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.894375,
+          "total_nodes": 72,
+          "total_edges": 604,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 66,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 32,
+          "n_stored": 33,
+          "exact_rate": 0.0,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.8975757575757576,
+          "total_nodes": 74,
+          "total_edges": 624,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 68,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 33,
+          "n_stored": 34,
+          "exact_rate": 0.029411764705882353,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.9,
+          "total_nodes": 76,
+          "total_edges": 644,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 70,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 34,
+          "n_stored": 35,
+          "exact_rate": 0.02857142857142857,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.9005714285714286,
+          "total_nodes": 78,
+          "total_edges": 664,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 72,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 35,
+          "n_stored": 36,
+          "exact_rate": 0.027777777777777776,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.8983333333333333,
+          "total_nodes": 80,
+          "total_edges": 684,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 74,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 36,
+          "n_stored": 37,
+          "exact_rate": 0.02702702702702703,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.8978378378378379,
+          "total_nodes": 82,
+          "total_edges": 704,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 76,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 37,
+          "n_stored": 38,
+          "exact_rate": 0.02631578947368421,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.8978947368421053,
+          "total_nodes": 84,
+          "total_edges": 724,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 78,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 38,
+          "n_stored": 39,
+          "exact_rate": 0.02564102564102564,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.901025641025641,
+          "total_nodes": 86,
+          "total_edges": 744,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 80,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 39,
+          "n_stored": 40,
+          "exact_rate": 0.025,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.9015,
+          "total_nodes": 88,
+          "total_edges": 764,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 82,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 40,
+          "n_stored": 41,
+          "exact_rate": 0.024390243902439025,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.9039024390243903,
+          "total_nodes": 90,
+          "total_edges": 784,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 84,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 41,
+          "n_stored": 42,
+          "exact_rate": 0.023809523809523808,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.8990476190476191,
+          "total_nodes": 92,
+          "total_edges": 804,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 86,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 42,
+          "n_stored": 43,
+          "exact_rate": 0.023255813953488372,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.8990697674418605,
+          "total_nodes": 94,
+          "total_edges": 824,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 88,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 43,
+          "n_stored": 44,
+          "exact_rate": 0.022727272727272728,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.9004545454545455,
+          "total_nodes": 96,
+          "total_edges": 844,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 90,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 44,
+          "n_stored": 45,
+          "exact_rate": 0.022222222222222223,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.9017777777777778,
+          "total_nodes": 98,
+          "total_edges": 864,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 92,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 45,
+          "n_stored": 46,
+          "exact_rate": 0.021739130434782608,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.9013043478260869,
+          "total_nodes": 100,
+          "total_edges": 884,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 94,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 46,
+          "n_stored": 47,
+          "exact_rate": 0.02127659574468085,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.9029787234042553,
+          "total_nodes": 102,
+          "total_edges": 904,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 96,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 47,
+          "n_stored": 48,
+          "exact_rate": 0.020833333333333332,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.9,
+          "total_nodes": 104,
+          "total_edges": 924,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 98,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 48,
+          "n_stored": 49,
+          "exact_rate": 0.02040816326530612,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.8987755102040816,
+          "total_nodes": 106,
+          "total_edges": 944,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 100,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 49,
+          "n_stored": 50,
+          "exact_rate": 0.02,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.9,
+          "total_nodes": 108,
+          "total_edges": 964,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 102,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 50,
+          "n_stored": 51,
+          "exact_rate": 0.0196078431372549,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.9023529411764706,
+          "total_nodes": 110,
+          "total_edges": 984,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 104,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 51,
+          "n_stored": 52,
+          "exact_rate": 0.038461538461538464,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.9038461538461539,
+          "total_nodes": 112,
+          "total_edges": 1004,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 106,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 52,
+          "n_stored": 53,
+          "exact_rate": 0.03773584905660377,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.9011320754716982,
+          "total_nodes": 114,
+          "total_edges": 1024,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 108,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 53,
+          "n_stored": 54,
+          "exact_rate": 0.037037037037037035,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.9044444444444445,
+          "total_nodes": 116,
+          "total_edges": 1044,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 110,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 54,
+          "n_stored": 55,
+          "exact_rate": 0.03636363636363636,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.9054545454545454,
+          "total_nodes": 118,
+          "total_edges": 1064,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 112,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 55,
+          "n_stored": 56,
+          "exact_rate": 0.0,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.9039285714285714,
+          "total_nodes": 120,
+          "total_edges": 1084,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 114,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 56,
+          "n_stored": 57,
+          "exact_rate": 0.017543859649122806,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.9007017543859649,
+          "total_nodes": 122,
+          "total_edges": 1104,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 116,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 57,
+          "n_stored": 58,
+          "exact_rate": 0.017241379310344827,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.9037931034482759,
+          "total_nodes": 124,
+          "total_edges": 1124,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 118,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 58,
+          "n_stored": 59,
+          "exact_rate": 0.03389830508474576,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.9027118644067796,
+          "total_nodes": 126,
+          "total_edges": 1144,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 120,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 59,
+          "n_stored": 60,
+          "exact_rate": 0.0,
+          "nearest_rate": 0.0,
+          "per_bit_acc": 0.277,
+          "total_nodes": 128,
+          "total_edges": 1164,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 122,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        }
+      ],
+      "grow_random": [
+        {
+          "pattern_idx": 0,
+          "n_stored": 1,
+          "exact_rate": 0.0,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.0,
+          "total_nodes": 14,
+          "total_edges": 24,
+          "grew": false,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 8,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 1,
+          "n_stored": 2,
+          "exact_rate": 0.0,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.63,
+          "total_nodes": 14,
+          "total_edges": 24,
+          "grew": false,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 8,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 2,
+          "n_stored": 3,
+          "exact_rate": 0.0,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.7533333333333333,
+          "total_nodes": 14,
+          "total_edges": 24,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 8,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 3,
+          "n_stored": 4,
+          "exact_rate": 0.0,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.815,
+          "total_nodes": 16,
+          "total_edges": 44,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 10,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 4,
+          "n_stored": 5,
+          "exact_rate": 0.0,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.88,
+          "total_nodes": 18,
+          "total_edges": 64,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 12,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 5,
+          "n_stored": 6,
+          "exact_rate": 0.0,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.88,
+          "total_nodes": 20,
+          "total_edges": 84,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 14,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 6,
+          "n_stored": 7,
+          "exact_rate": 0.0,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.8857142857142857,
+          "total_nodes": 22,
+          "total_edges": 104,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 16,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 7,
+          "n_stored": 8,
+          "exact_rate": 0.0,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.895,
+          "total_nodes": 24,
+          "total_edges": 124,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 18,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 8,
+          "n_stored": 9,
+          "exact_rate": 0.0,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.8888888888888888,
+          "total_nodes": 26,
+          "total_edges": 144,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 20,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 9,
+          "n_stored": 10,
+          "exact_rate": 0.0,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.894,
+          "total_nodes": 28,
+          "total_edges": 164,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 22,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 10,
+          "n_stored": 11,
+          "exact_rate": 0.0,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.8854545454545455,
+          "total_nodes": 30,
+          "total_edges": 184,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 24,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 11,
+          "n_stored": 12,
+          "exact_rate": 0.0,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.8616666666666667,
+          "total_nodes": 32,
+          "total_edges": 204,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 26,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 12,
+          "n_stored": 13,
+          "exact_rate": 0.0,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.8753846153846154,
+          "total_nodes": 34,
+          "total_edges": 224,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 28,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 13,
+          "n_stored": 14,
+          "exact_rate": 0.0,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.8757142857142857,
+          "total_nodes": 36,
+          "total_edges": 244,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 30,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 14,
+          "n_stored": 15,
+          "exact_rate": 0.0,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.8773333333333333,
+          "total_nodes": 38,
+          "total_edges": 264,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 32,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 15,
+          "n_stored": 16,
+          "exact_rate": 0.0,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.88125,
+          "total_nodes": 40,
+          "total_edges": 284,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 34,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 16,
+          "n_stored": 17,
+          "exact_rate": 0.0,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.8788235294117647,
+          "total_nodes": 42,
+          "total_edges": 304,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 36,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 17,
+          "n_stored": 18,
+          "exact_rate": 0.0,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.8811111111111111,
+          "total_nodes": 44,
+          "total_edges": 324,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 38,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 18,
+          "n_stored": 19,
+          "exact_rate": 0.0,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.8863157894736842,
+          "total_nodes": 46,
+          "total_edges": 344,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 40,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 19,
+          "n_stored": 20,
+          "exact_rate": 0.0,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.887,
+          "total_nodes": 48,
+          "total_edges": 364,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 42,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 20,
+          "n_stored": 21,
+          "exact_rate": 0.0,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.8923809523809524,
+          "total_nodes": 50,
+          "total_edges": 384,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 44,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 21,
+          "n_stored": 22,
+          "exact_rate": 0.0,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.8927272727272727,
+          "total_nodes": 52,
+          "total_edges": 404,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 46,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 22,
+          "n_stored": 23,
+          "exact_rate": 0.0,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.8930434782608696,
+          "total_nodes": 54,
+          "total_edges": 424,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 48,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 23,
+          "n_stored": 24,
+          "exact_rate": 0.0,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.8958333333333334,
+          "total_nodes": 56,
+          "total_edges": 444,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 50,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 24,
+          "n_stored": 25,
+          "exact_rate": 0.0,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.8968,
+          "total_nodes": 58,
+          "total_edges": 464,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 52,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 25,
+          "n_stored": 26,
+          "exact_rate": 0.0,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.8961538461538462,
+          "total_nodes": 60,
+          "total_edges": 484,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 54,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 26,
+          "n_stored": 27,
+          "exact_rate": 0.0,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.8985185185185185,
+          "total_nodes": 62,
+          "total_edges": 504,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 56,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 27,
+          "n_stored": 28,
+          "exact_rate": 0.0,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.9014285714285715,
+          "total_nodes": 64,
+          "total_edges": 524,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 58,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 28,
+          "n_stored": 29,
+          "exact_rate": 0.0,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.8972413793103449,
+          "total_nodes": 66,
+          "total_edges": 544,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 60,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 29,
+          "n_stored": 30,
+          "exact_rate": 0.0,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.8946666666666667,
+          "total_nodes": 68,
+          "total_edges": 564,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 62,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 30,
+          "n_stored": 31,
+          "exact_rate": 0.0,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.896774193548387,
+          "total_nodes": 70,
+          "total_edges": 584,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 64,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 31,
+          "n_stored": 32,
+          "exact_rate": 0.0,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.895625,
+          "total_nodes": 72,
+          "total_edges": 604,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 66,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 32,
+          "n_stored": 33,
+          "exact_rate": 0.0,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.8987878787878788,
+          "total_nodes": 74,
+          "total_edges": 624,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 68,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 33,
+          "n_stored": 34,
+          "exact_rate": 0.029411764705882353,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.8994117647058824,
+          "total_nodes": 76,
+          "total_edges": 644,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 70,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 34,
+          "n_stored": 35,
+          "exact_rate": 0.02857142857142857,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.8948571428571429,
+          "total_nodes": 78,
+          "total_edges": 664,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 72,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 35,
+          "n_stored": 36,
+          "exact_rate": 0.027777777777777776,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.8988888888888888,
+          "total_nodes": 80,
+          "total_edges": 684,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 74,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 36,
+          "n_stored": 37,
+          "exact_rate": 0.02702702702702703,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.8962162162162162,
+          "total_nodes": 82,
+          "total_edges": 704,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 76,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 37,
+          "n_stored": 38,
+          "exact_rate": 0.02631578947368421,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.9010526315789473,
+          "total_nodes": 84,
+          "total_edges": 724,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 78,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 38,
+          "n_stored": 39,
+          "exact_rate": 0.02564102564102564,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.9005128205128206,
+          "total_nodes": 86,
+          "total_edges": 744,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 80,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 39,
+          "n_stored": 40,
+          "exact_rate": 0.025,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.898,
+          "total_nodes": 88,
+          "total_edges": 764,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 82,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 40,
+          "n_stored": 41,
+          "exact_rate": 0.024390243902439025,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.9024390243902439,
+          "total_nodes": 90,
+          "total_edges": 784,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 84,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 41,
+          "n_stored": 42,
+          "exact_rate": 0.023809523809523808,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.8995238095238095,
+          "total_nodes": 92,
+          "total_edges": 804,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 86,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 42,
+          "n_stored": 43,
+          "exact_rate": 0.023255813953488372,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.8972093023255814,
+          "total_nodes": 94,
+          "total_edges": 824,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 88,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 43,
+          "n_stored": 44,
+          "exact_rate": 0.022727272727272728,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.8995454545454545,
+          "total_nodes": 96,
+          "total_edges": 844,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 90,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 44,
+          "n_stored": 45,
+          "exact_rate": 0.022222222222222223,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.9,
+          "total_nodes": 98,
+          "total_edges": 864,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 92,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 45,
+          "n_stored": 46,
+          "exact_rate": 0.021739130434782608,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.9030434782608696,
+          "total_nodes": 100,
+          "total_edges": 884,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 94,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 46,
+          "n_stored": 47,
+          "exact_rate": 0.02127659574468085,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.902127659574468,
+          "total_nodes": 102,
+          "total_edges": 904,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 96,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 47,
+          "n_stored": 48,
+          "exact_rate": 0.020833333333333332,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.9,
+          "total_nodes": 104,
+          "total_edges": 924,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 98,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 48,
+          "n_stored": 49,
+          "exact_rate": 0.0,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.8987755102040816,
+          "total_nodes": 106,
+          "total_edges": 944,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 100,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 49,
+          "n_stored": 50,
+          "exact_rate": 0.02,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.9004,
+          "total_nodes": 108,
+          "total_edges": 964,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 102,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 50,
+          "n_stored": 51,
+          "exact_rate": 0.0392156862745098,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.8956862745098039,
+          "total_nodes": 110,
+          "total_edges": 984,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 104,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 51,
+          "n_stored": 52,
+          "exact_rate": 0.0,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.8965384615384615,
+          "total_nodes": 112,
+          "total_edges": 1004,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 106,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 52,
+          "n_stored": 53,
+          "exact_rate": 0.0,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.8947169811320754,
+          "total_nodes": 114,
+          "total_edges": 1024,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 108,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 53,
+          "n_stored": 54,
+          "exact_rate": 0.0,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.8966666666666666,
+          "total_nodes": 116,
+          "total_edges": 1044,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 110,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 54,
+          "n_stored": 55,
+          "exact_rate": 0.0,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.9,
+          "total_nodes": 118,
+          "total_edges": 1064,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 112,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 55,
+          "n_stored": 56,
+          "exact_rate": 0.0,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.9010714285714285,
+          "total_nodes": 120,
+          "total_edges": 1084,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 114,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 56,
+          "n_stored": 57,
+          "exact_rate": 0.017543859649122806,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.8971929824561403,
+          "total_nodes": 122,
+          "total_edges": 1104,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 116,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 57,
+          "n_stored": 58,
+          "exact_rate": 0.034482758620689655,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.9024137931034483,
+          "total_nodes": 124,
+          "total_edges": 1124,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 118,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 58,
+          "n_stored": 59,
+          "exact_rate": 0.01694915254237288,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.8993220338983051,
+          "total_nodes": 126,
+          "total_edges": 1144,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 120,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        },
+        {
+          "pattern_idx": 59,
+          "n_stored": 60,
+          "exact_rate": 0.016666666666666666,
+          "nearest_rate": 1.0,
+          "per_bit_acc": 0.8996666666666666,
+          "total_nodes": 128,
+          "total_edges": 1164,
+          "grew": true,
+          "node_counts": {
+            "SENSOR": 1,
+            "ASSOCIATOR": 122,
+            "INTEGRATOR": 4,
+            "OUTPUT": 1
+          }
+        }
+      ]
+    }
+  },
+  "wall_clock_s": 1488.6389210224152,
+  "device": "cpu"
+}

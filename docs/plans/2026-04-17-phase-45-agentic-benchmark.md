@@ -16,7 +16,8 @@ Max total VRAM: 22 GB (2 GB headroom on the 24 GB 3090).
 
 | Config | Model | Quant | ~Model VRAM | +SOMA (~3GB) | Total |
 |---|---|---|---|---|---|
-| SOTA-max | Qwen3.5-9B | FP16 | ~18GB | 3GB | **~21GB** |
+| SOTA-max | Qwen3.5-27B | Q4_K_M | ~16GB | 3GB | **~19GB** |
+| SOTA-high | Qwen3.5-9B | FP16 | ~18GB | 3GB | ~21GB |
 | SOTA-mid | Qwen3.5-9B | Q8_0 | ~9GB | 3GB | ~12GB |
 | SOTA-min | Qwen3.5-9B | Q4_K_M | ~6GB | 3GB | ~9GB |
 | Reasoning | Phi-4 Reasoning 14B | Q4_K_M | ~9GB | 3GB | ~12GB |
@@ -28,13 +29,14 @@ SOMA footprint includes sbert (all-MiniLM-L6-v2 ~0.5 GB) + PyTorch
 + MemoryLayer working set. All served via Ollama on the same RTX 3090.
 
 **Key comparisons enabled by the range:**
-- Does Qwen3.5-4B FP16 + SOMA beat Qwen3.5-9B Q4 alone? (Higher-
-  quality small model with memory vs lower-quality large model
-  without — the pitch.)
+- Does Qwen3.5-4B FP16 + SOMA beat Qwen3.5-27B Q4 alone? (The
+  extreme pitch: 4B with memory outperforms 27B without.)
+- Does Qwen3.5-4B FP16 + SOMA beat Qwen3.5-9B Q4 alone? (More
+  realistic crossover question.)
 - Does quantization quality matter more or less when SOMA
   compensates for context-window limitations?
 - At what VRAM point does "more model" stop beating "smaller model +
-  SOMA"? (The crossover point.)
+  SOMA"? (The crossover curve.)
 
 ---
 
@@ -144,7 +146,7 @@ retrieves relevant context when working on dependent files.
 ## Evaluation matrix
 
 ```
-7 model configs × 2 agent types × 5 tasks × 3 seeds = 210 runs
+8 model configs × 2 agent types × 5 tasks × 3 seeds = 240 runs
 ```
 
 Each run is scored on:

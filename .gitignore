@@ -65,3 +65,6 @@ benchmarks/datasets/scale_cache/
 
 # CL benchmark data (downloaded by torchvision)
 research/cl/data/
+
+# Associative-memory benchmark data (downloaded by torchvision)
+research/associative/data/

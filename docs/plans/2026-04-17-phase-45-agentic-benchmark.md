@@ -9,17 +9,32 @@ tasks. If that holds, it's the strongest possible product pitch.
 
 **Depends on:** Phase 43 (built-in agent.* schemas + context packer).
 
-**Model tiers (April 2026 SOTA — verified via web search):**
+**Model configs (April 2026 SOTA — verified via web search):**
 
-| Tier | Primary model | Fallback | VRAM (Q4) | Rationale |
-|---|---|---|---|---|
-| SOTA | Qwen3.5-9B Q4_K_M | Phi-4 Reasoning Q4 | ~6GB | Best AA Index score; strong tool calling |
-| Small | Qwen3.5-4B Q4_K_M | SmolLM3-3B | ~3GB | 97.5% tool-call accuracy at 4B |
-| Ultralight | Qwen3-0.6B Q4 | — | ~0.5GB | Control: shows SOMA benefit at extreme small scale |
+Test across a range of VRAM utilizations, not just Q4 everything.
+Max total VRAM: 22 GB (2 GB headroom on the 24 GB 3090).
 
-All served via Ollama on the same RTX 3090. SOMA's memory footprint
-(RAM-based MemoryLayer + sbert embedder) is ~2-3 GB including the
-sbert model, leaving 15+ GB free for the LLM.
+| Config | Model | Quant | ~Model VRAM | +SOMA (~3GB) | Total |
+|---|---|---|---|---|---|
+| SOTA-max | Qwen3.5-9B | FP16 | ~18GB | 3GB | **~21GB** |
+| SOTA-mid | Qwen3.5-9B | Q8_0 | ~9GB | 3GB | ~12GB |
+| SOTA-min | Qwen3.5-9B | Q4_K_M | ~6GB | 3GB | ~9GB |
+| Reasoning | Phi-4 Reasoning 14B | Q4_K_M | ~9GB | 3GB | ~12GB |
+| Small-max | Qwen3.5-4B | FP16 | ~8GB | 3GB | ~11GB |
+| Small-min | Qwen3.5-4B | Q4_K_M | ~3GB | 3GB | ~6GB |
+| Ultralight | Qwen3-0.6B | FP16 | ~1.2GB | 3GB | ~4.2GB |
+
+SOMA footprint includes sbert (all-MiniLM-L6-v2 ~0.5 GB) + PyTorch
++ MemoryLayer working set. All served via Ollama on the same RTX 3090.
+
+**Key comparisons enabled by the range:**
+- Does Qwen3.5-4B FP16 + SOMA beat Qwen3.5-9B Q4 alone? (Higher-
+  quality small model with memory vs lower-quality large model
+  without — the pitch.)
+- Does quantization quality matter more or less when SOMA
+  compensates for context-window limitations?
+- At what VRAM point does "more model" stop beating "smaller model +
+  SOMA"? (The crossover point.)
 
 ---
 
@@ -129,7 +144,7 @@ retrieves relevant context when working on dependent files.
 ## Evaluation matrix
 
 ```
-3 model tiers × 2 agent types × 5 tasks × 3 seeds = 90 runs
+7 model configs × 2 agent types × 5 tasks × 3 seeds = 210 runs
 ```
 
 Each run is scored on:

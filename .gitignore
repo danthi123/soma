@@ -68,3 +68,6 @@ research/cl/data/
 
 # Associative-memory benchmark data (downloaded by torchvision)
 research/associative/data/
+
+# LongMemEval dataset files (downloaded from HuggingFace, 15-300 MB each)
+benchmarks/industry/longmemeval/data/*.json

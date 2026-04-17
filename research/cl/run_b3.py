@@ -138,6 +138,7 @@ def _result_summary(result: dict) -> dict:
 # ------------------------------------------------------------------
 
 ABLATIONS = [
+    # -- Baselines (no CL mechanism) --
     {
         "name": "soma-plastic",
         "frozen": False,
@@ -166,12 +167,104 @@ ABLATIONS = [
         "disable_critical_periods": True,
         "head_replay": False,
     },
+    # -- Head replay (baseline: random, buf=200, ratio=0.5) --
     {
         "name": "soma-head-replay",
         "frozen": True,
         "enable_consolidation": False,
         "disable_critical_periods": False,
         "head_replay": True,
+    },
+    # -- Buffer size sweep (isolate buffer effect) --
+    {
+        "name": "replay-buf100",
+        "frozen": True,
+        "enable_consolidation": False,
+        "disable_critical_periods": False,
+        "head_replay": True,
+        "replay_buffer_size": 100,
+    },
+    {
+        "name": "replay-buf500",
+        "frozen": True,
+        "enable_consolidation": False,
+        "disable_critical_periods": False,
+        "head_replay": True,
+        "replay_buffer_size": 500,
+    },
+    # -- Mix ratio sweep (isolate ratio effect) --
+    {
+        "name": "replay-ratio30",
+        "frozen": True,
+        "enable_consolidation": False,
+        "disable_critical_periods": False,
+        "head_replay": True,
+        "replay_mix_ratio": 0.3,
+    },
+    {
+        "name": "replay-ratio70",
+        "frozen": True,
+        "enable_consolidation": False,
+        "disable_critical_periods": False,
+        "head_replay": True,
+        "replay_mix_ratio": 0.7,
+    },
+    # -- LayerNorm only (no replay, isolate normalization) --
+    {
+        "name": "soma-layernorm",
+        "frozen": True,
+        "enable_consolidation": False,
+        "disable_critical_periods": False,
+        "head_replay": False,
+        "use_layer_norm": True,
+    },
+    # -- LayerNorm + replay (compound) --
+    {
+        "name": "replay-layernorm",
+        "frozen": True,
+        "enable_consolidation": False,
+        "disable_critical_periods": False,
+        "head_replay": True,
+        "use_layer_norm": True,
+    },
+    # -- Herding selection (isolate selection strategy) --
+    {
+        "name": "replay-herding",
+        "frozen": True,
+        "enable_consolidation": False,
+        "disable_critical_periods": False,
+        "head_replay": True,
+        "use_herding": True,
+    },
+    # -- Head-only EWC (no replay, isolate regularization) --
+    {
+        "name": "soma-head-ewc",
+        "frozen": True,
+        "enable_consolidation": False,
+        "disable_critical_periods": False,
+        "head_replay": False,
+        "head_ewc": True,
+    },
+    # -- EWC + replay (compound) --
+    {
+        "name": "replay-ewc",
+        "frozen": True,
+        "enable_consolidation": False,
+        "disable_critical_periods": False,
+        "head_replay": True,
+        "head_ewc": True,
+    },
+    # -- Kitchen sink: replay + herding + layernorm + EWC --
+    {
+        "name": "soma-best",
+        "frozen": True,
+        "enable_consolidation": False,
+        "disable_critical_periods": False,
+        "head_replay": True,
+        "use_herding": True,
+        "use_layer_norm": True,
+        "head_ewc": True,
+        "replay_buffer_size": 500,
     },
 ]
 
@@ -290,6 +383,12 @@ def main() -> None:
             seed=args.seed,
             integrator_count=args.integrators,
             head_replay=ablation.get("head_replay", False),
+            replay_buffer_size=ablation.get("replay_buffer_size", 200),
+            replay_mix_ratio=ablation.get("replay_mix_ratio", 0.5),
+            use_herding=ablation.get("use_herding", False),
+            head_ewc=ablation.get("head_ewc", False),
+            ewc_lambda=ablation.get("ewc_lambda", 1000.0),
+            use_layer_norm=ablation.get("use_layer_norm", False),
         )
         result = _run_benchmark(
             f"{ablation['name']} (Permuted-MNIST)",

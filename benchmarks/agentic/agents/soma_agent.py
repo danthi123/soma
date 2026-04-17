@@ -26,7 +26,7 @@ from typing import Any
 import requests
 import torch
 
-from benchmarks.agentic.models import ModelConfig
+from benchmarks.agentic.models import DEFAULT_API_BASE, ModelConfig
 from soma.memory.api import MemoryLayer
 from soma.schemas.builtin.agent import Observation, ToolCall
 from soma.schemas.packing import pack_context
@@ -67,7 +67,7 @@ class SomaAgent:
     model_config: ModelConfig
     system_prompt: str = "You are a helpful assistant."
     tools: list[dict[str, Any]] = field(default_factory=list)
-    ollama_url: str = "http://localhost:11434"
+    api_base: str = DEFAULT_API_BASE
     max_context_tokens: int = 3800
     embed_fn: EmbedFn | None = field(default=None, repr=False)
     embed_dim: int | None = None
@@ -140,7 +140,7 @@ class SomaAgent:
         ]
 
         # 4. Call Ollama
-        response = self._call_ollama(messages)
+        response = self._call_llm(messages)
 
         # 5. Parse the response
         action = self._parse_response(response)
@@ -196,7 +196,7 @@ class SomaAgent:
         }
 
     # ------------------------------------------------------------------
-    # Ollama integration (mirrors BaselineAgent)
+    # LLM integration (OpenAI-compatible API, mirrors BaselineAgent)
     # ------------------------------------------------------------------
     def _build_system_prompt(self) -> str:
         prompt = self.system_prompt
@@ -204,48 +204,54 @@ class SomaAgent:
             prompt = "/no_think\n" + prompt
         return prompt
 
-    def _call_ollama(self, messages: list[dict[str, str]]) -> dict:
-        """Call Ollama /api/chat and return the response JSON."""
+    def _call_llm(self, messages: list[dict[str, str]]) -> dict:
+        """Call the OpenAI-compatible chat/completions endpoint."""
         payload: dict[str, Any] = {
             "model": self.model_config.name,
             "messages": messages,
             "stream": False,
-            "options": {
-                **self.model_config.ollama_options,
-            },
+            "max_tokens": 1024,
         }
 
-        if self.model_config.disable_thinking:
-            payload["options"]["think"] = False
-
         if self.tools:
-            payload["tools"] = self.tools
+            payload["tools"] = [
+                {"type": "function", "function": t} for t in self.tools
+            ]
 
         try:
             resp = requests.post(
-                f"{self.ollama_url}/api/chat",
+                f"{self.api_base}/chat/completions",
                 json=payload,
                 timeout=120,
             )
             resp.raise_for_status()
             return resp.json()
         except requests.RequestException as exc:
-            logger.error("Ollama call failed: %s", exc)
+            logger.error("LLM call failed: %s", exc)
             self._tool_errors += 1
-            return {"message": {"content": f"ERROR: LLM call failed: {exc}"}}
+            return {
+                "choices": [{
+                    "message": {"content": f"ERROR: LLM call failed: {exc}"}
+                }]
+            }
 
     def _parse_response(self, response: dict) -> str:
-        """Extract tool calls or text from Ollama response.
+        """Extract tool calls or text from OpenAI-format response.
 
-        Same logic as BaselineAgent -- Ollama returns tool calls in
-        ``message.tool_calls``; we convert to a JSON action string.
+        Handles both OpenAI-compatible (choices[0].message) and
+        Ollama native (message at top level) formats.
         """
-        message = response.get("message", {})
+        choices = response.get("choices")
+        if choices and len(choices) > 0:
+            message = choices[0].get("message", {})
+        else:
+            message = response.get("message", {})
+
         tool_calls = message.get("tool_calls")
 
         if tool_calls and len(tool_calls) > 0:
             tc = tool_calls[0]
-            func = tc.get("function", {})
+            func = tc.get("function", tc)
             name = func.get("name", "")
             arguments = func.get("arguments", {})
 

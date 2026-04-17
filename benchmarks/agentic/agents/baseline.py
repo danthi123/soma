@@ -1,8 +1,9 @@
 """Baseline agent: standalone LLM with context-window truncation.
 
-Talks to Ollama ``/api/chat`` with tool definitions.  When the
-conversation exceeds ``max_context_tokens``, the oldest messages
-(after the system prompt) are dropped.
+Talks to an OpenAI-compatible ``/v1/chat/completions`` endpoint
+(LM Studio, Ollama compat mode, vLLM, etc.) with tool definitions.
+When the conversation exceeds ``max_context_tokens``, the oldest
+messages (after the system prompt) are dropped.
 
 No cross-session persistence -- ``reset()`` clears everything.
 """
@@ -16,7 +17,7 @@ from typing import Any
 
 import requests
 
-from benchmarks.agentic.models import ModelConfig
+from benchmarks.agentic.models import DEFAULT_API_BASE, ModelConfig
 
 logger = logging.getLogger(__name__)
 
@@ -26,12 +27,12 @@ _CHARS_PER_TOKEN = 4
 
 @dataclass
 class BaselineAgent:
-    """Pure-LLM agent backed by Ollama."""
+    """Pure-LLM agent backed by an OpenAI-compatible API."""
 
     model_config: ModelConfig
     system_prompt: str = "You are a helpful assistant."
     tools: list[dict[str, Any]] = field(default_factory=list)
-    ollama_url: str = "http://localhost:11434"
+    api_base: str = DEFAULT_API_BASE
     max_context_tokens: int | None = None  # None = use model default
 
     # Internal state
@@ -59,7 +60,7 @@ class BaselineAgent:
         self._messages.append({"role": "user", "content": observation})
         self._truncate_if_needed()
 
-        response = self._call_ollama()
+        response = self._call_llm()
         action = self._parse_response(response)
 
         self._messages.append({"role": "assistant", "content": action})
@@ -74,7 +75,7 @@ class BaselineAgent:
         }
 
     # ------------------------------------------------------------------
-    # Ollama integration
+    # LLM integration (OpenAI-compatible API)
     # ------------------------------------------------------------------
     def _build_system_prompt(self) -> str:
         prompt = self.system_prompt
@@ -82,8 +83,8 @@ class BaselineAgent:
             prompt = "/no_think\n" + prompt
         return prompt
 
-    def _call_ollama(self) -> dict:
-        """Call Ollama /api/chat and return the response JSON."""
+    def _call_llm(self) -> dict:
+        """Call the OpenAI-compatible chat/completions endpoint."""
         payload: dict[str, Any] = {
             "model": self.model_config.name,
             "messages": [
@@ -91,64 +92,75 @@ class BaselineAgent:
                 *self._messages,
             ],
             "stream": False,
-            "options": {
-                **self.model_config.ollama_options,
-            },
+            "max_tokens": 1024,
         }
 
-        if self.model_config.disable_thinking:
-            payload["options"]["think"] = False
-
         if self.tools:
-            payload["tools"] = self.tools
+            payload["tools"] = [
+                {"type": "function", "function": t} for t in self.tools
+            ]
 
         try:
             resp = requests.post(
-                f"{self.ollama_url}/api/chat",
+                f"{self.api_base}/chat/completions",
                 json=payload,
                 timeout=120,
             )
             resp.raise_for_status()
             return resp.json()
         except requests.RequestException as exc:
-            logger.error("Ollama call failed: %s", exc)
+            logger.error("LLM call failed: %s", exc)
             self._tool_errors += 1
-            return {"message": {"content": f"ERROR: LLM call failed: {exc}"}}
+            return {
+                "choices": [{
+                    "message": {"content": f"ERROR: LLM call failed: {exc}"}
+                }]
+            }
 
     def _parse_response(self, response: dict) -> str:
-        """Extract tool calls or text from Ollama response.
+        """Extract tool calls or text from OpenAI-format response.
 
-        Ollama returns tool calls in the message.tool_calls field:
+        OpenAI-compatible format:
         ```json
         {
-          "message": {
-            "role": "assistant",
-            "content": "",
-            "tool_calls": [
-              {
+          "choices": [{
+            "message": {
+              "role": "assistant",
+              "content": "...",
+              "tool_calls": [{
+                "id": "call_abc",
+                "type": "function",
                 "function": {
                   "name": "search_database",
-                  "arguments": {"query": "quantum"}
+                  "arguments": "{\"query\": \"quantum\"}"
                 }
-              }
-            ]
-          }
+              }]
+            }
+          }]
         }
         ```
 
-        We convert the first tool call into a JSON action string
-        that the task can parse.
+        Also handles Ollama's native format (message.tool_calls
+        without the choices wrapper) as a fallback.
         """
-        message = response.get("message", {})
+        # OpenAI-compatible format: choices[0].message
+        choices = response.get("choices")
+        if choices and len(choices) > 0:
+            message = choices[0].get("message", {})
+        else:
+            # Fallback: Ollama native format (message at top level)
+            message = response.get("message", {})
+
         tool_calls = message.get("tool_calls")
 
         if tool_calls and len(tool_calls) > 0:
             tc = tool_calls[0]
-            func = tc.get("function", {})
+            # OpenAI format nests under "function"
+            func = tc.get("function", tc)
             name = func.get("name", "")
             arguments = func.get("arguments", {})
 
-            # Normalize arguments if they came as a string
+            # OpenAI returns arguments as a JSON string; Ollama as a dict
             if isinstance(arguments, str):
                 try:
                     arguments = json.loads(arguments)

@@ -204,5 +204,5 @@ def _average_results(results: list[TaskResult]) -> TaskResult:
 
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO)
+    logging.basicConfig(level=logging.WARNING)
     main()

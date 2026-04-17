@@ -1,4 +1,4 @@
-"""Tests for the BaselineAgent with mocked Ollama responses."""
+"""Tests for the BaselineAgent with mocked LLM responses."""
 
 from __future__ import annotations
 
@@ -19,29 +19,29 @@ def _make_agent(**kwargs) -> BaselineAgent:
     return BaselineAgent(model_config=cfg, **kwargs)
 
 
-def _ollama_response(
+def _openai_response(
     content: str = "",
     tool_calls: list | None = None,
 ) -> dict:
-    """Build a fake Ollama /api/chat response."""
+    """Build a fake OpenAI-compatible chat/completions response."""
     msg: dict = {"role": "assistant", "content": content}
     if tool_calls is not None:
         msg["tool_calls"] = tool_calls
-    return {"message": msg}
+    return {"choices": [{"message": msg}]}
 
 
 class TestBaselineAgentParsing:
-    """Test tool-call parsing from Ollama responses."""
+    """Test tool-call parsing from OpenAI-compatible responses."""
 
     def test_parse_text_response(self) -> None:
         agent = _make_agent()
-        resp = _ollama_response(content="Hello, world!")
+        resp = _openai_response(content="Hello, world!")
         action = agent._parse_response(resp)
         assert action == "Hello, world!"
 
     def test_parse_tool_call(self) -> None:
         agent = _make_agent()
-        resp = _ollama_response(
+        resp = _openai_response(
             tool_calls=[{
                 "function": {
                     "name": "search_database",
@@ -57,7 +57,7 @@ class TestBaselineAgentParsing:
     def test_parse_tool_call_string_args(self) -> None:
         """Ollama sometimes returns arguments as a JSON string."""
         agent = _make_agent()
-        resp = _ollama_response(
+        resp = _openai_response(
             tool_calls=[{
                 "function": {
                     "name": "read_file",
@@ -72,7 +72,7 @@ class TestBaselineAgentParsing:
 
     def test_parse_empty_response(self) -> None:
         agent = _make_agent()
-        resp = _ollama_response(content="")
+        resp = _openai_response(content="")
         action = agent._parse_response(resp)
         assert "error" in action.lower()
 
@@ -80,7 +80,7 @@ class TestBaselineAgentParsing:
         """When model returns tool call as content JSON."""
         agent = _make_agent()
         tc = json.dumps({"tool": "run_tests", "arguments": {}})
-        resp = _ollama_response(content=tc)
+        resp = _openai_response(content=tc)
         action = agent._parse_response(resp)
         parsed = json.loads(action)
         assert parsed["tool"] == "run_tests"
@@ -126,7 +126,7 @@ class TestBaselineAgentStep:
     @patch("benchmarks.agentic.agents.baseline.requests.post")
     def test_step_calls_ollama(self, mock_post: MagicMock) -> None:
         mock_resp = MagicMock()
-        mock_resp.json.return_value = _ollama_response(
+        mock_resp.json.return_value = _openai_response(
             content="I will help you."
         )
         mock_resp.raise_for_status = MagicMock()
@@ -148,7 +148,7 @@ class TestBaselineAgentStep:
     @patch("benchmarks.agentic.agents.baseline.requests.post")
     def test_step_with_tool_call(self, mock_post: MagicMock) -> None:
         mock_resp = MagicMock()
-        mock_resp.json.return_value = _ollama_response(
+        mock_resp.json.return_value = _openai_response(
             tool_calls=[{
                 "function": {
                     "name": "search_database",
@@ -181,7 +181,7 @@ class TestBaselineAgentStep:
     @patch("benchmarks.agentic.agents.baseline.requests.post")
     def test_disable_thinking(self, mock_post: MagicMock) -> None:
         mock_resp = MagicMock()
-        mock_resp.json.return_value = _ollama_response(content="ok")
+        mock_resp.json.return_value = _openai_response(content="ok")
         mock_resp.raise_for_status = MagicMock()
         mock_post.return_value = mock_resp
 
@@ -201,13 +201,10 @@ class TestBaselineAgentStep:
         sys_msg = payload["messages"][0]
         assert sys_msg["content"].startswith("/no_think")
 
-        # Options should include think: false
-        assert payload["options"]["think"] is False
-
     @patch("benchmarks.agentic.agents.baseline.requests.post")
     def test_thinking_enabled(self, mock_post: MagicMock) -> None:
         mock_resp = MagicMock()
-        mock_resp.json.return_value = _ollama_response(content="ok")
+        mock_resp.json.return_value = _openai_response(content="ok")
         mock_resp.raise_for_status = MagicMock()
         mock_post.return_value = mock_resp
 
@@ -240,7 +237,7 @@ class TestBaselineAgentE2E:
 
         # Mock Ollama to always return submit_results
         mock_resp = MagicMock()
-        mock_resp.json.return_value = _ollama_response(
+        mock_resp.json.return_value = _openai_response(
             tool_calls=[{
                 "function": {
                     "name": "submit_results",

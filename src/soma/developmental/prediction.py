@@ -71,10 +71,9 @@ class PredictiveSOMA(nn.Module):
         self._win_counts: dict[str, int] = {}
         # Text store: maps step → original text for verbalization
         self.text_store: dict[int, str] = {}
-        # Activation fingerprints: maps step → {node_id: magnitude}
-        # Used for graph-driven retrieval. Dict format is robust
-        # to neurogenesis (new nodes get new keys).
-        self._activation_store: dict[int, dict[str, float]] = {}
+        # Activation fingerprints: maps step → fixed-size tensor.
+        # Hash-bucketed so fingerprint size is stable across neurogenesis.
+        self._activation_store: dict[int, torch.Tensor] = {}
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -100,40 +99,49 @@ class PredictiveSOMA(nn.Module):
 
     def _get_node_fingerprint(
         self, inhibition_ratio: float = 0.1,
-    ) -> dict[str, float]:
+    ) -> torch.Tensor:
         """Build a sparse fingerprint via lateral inhibition.
 
-        Returns a dict mapping node_id → activation magnitude for the
-        top ``inhibition_ratio`` fraction of nodes.  Suppressed nodes
-        are omitted (implicitly zero).
-
-        Using a dict (not a fixed-size tensor) makes fingerprints
-        robust to neurogenesis — new nodes get new keys, old
-        fingerprints just don't have those keys.
+        Projects each node's activation into a fixed-size hash bucket,
+        so the fingerprint size doesn't change when neurogenesis adds
+        nodes.  Suppressed nodes (below top ``inhibition_ratio``) are
+        zeroed out, creating input-dependent sparse patterns.
         """
         nodes = self.soma.graph.all_nodes()
+        fingerprint_dim = 256  # fixed size regardless of node count
 
-        # Collect magnitudes
-        node_mags: list[tuple[str, float]] = []
+        # Collect activations and magnitudes
+        node_data: list[tuple[str, float, torch.Tensor | None]] = []
         for node in nodes:
             if node.last_activation is not None:
                 mag = node.last_activation.norm().item()
+                node_data.append((node.id, mag, node.last_activation.detach()))
             else:
-                mag = 0.0
-            node_mags.append((node.id, mag))
+                node_data.append((node.id, 0.0, None))
 
-        if not node_mags:
-            return {}
+        if not node_data:
+            return torch.zeros(fingerprint_dim, device=self.device)
 
         # Lateral inhibition: keep only top-K by magnitude
-        k = max(1, int(len(node_mags) * inhibition_ratio))
-        threshold = sorted([m for _, m in node_mags], reverse=True)[
-            min(k - 1, len(node_mags) - 1)
+        k = max(1, int(len(node_data) * inhibition_ratio))
+        threshold = sorted([m for _, m, _ in node_data], reverse=True)[
+            min(k - 1, len(node_data) - 1)
         ]
 
-        return {
-            nid: mag for nid, mag in node_mags if mag >= threshold
-        }
+        # Hash each active node's activation into fixed-size buckets
+        fp = torch.zeros(fingerprint_dim, device=self.device)
+        for nid, mag, act in node_data:
+            if mag < threshold or act is None:
+                continue
+            # Hash node ID to a starting bucket
+            bucket = hash(nid) % fingerprint_dim
+            # Scatter the activation vector into the fingerprint
+            act_flat = act.reshape(-1)
+            for i in range(min(len(act_flat), fingerprint_dim)):
+                idx = (bucket + i) % fingerprint_dim
+                fp[idx] += act_flat[i]
+
+        return fp
 
     def _diversify_activations(self, input_tensor: torch.Tensor) -> None:
         """Modulate each associator's activation by its unique input view.
@@ -277,11 +285,13 @@ class PredictiveSOMA(nn.Module):
         )
         query_act = self._get_node_fingerprint()
 
-        # Similarity between dict fingerprints: dot product of magnitudes
-        # over shared node IDs, normalized by vector norms.
+        # Cosine similarity against stored fingerprints
         scored: list[tuple[float, int]] = []
         for step, stored_fp in self._activation_store.items():
-            sim = self._fingerprint_similarity(query_act, stored_fp)
+            sim = float(torch.nn.functional.cosine_similarity(
+                query_act.unsqueeze(0),
+                stored_fp.unsqueeze(0),
+            ).item())
             scored.append((sim, step))
 
         scored.sort(key=lambda t: -t[0])
@@ -292,21 +302,6 @@ class PredictiveSOMA(nn.Module):
             if text:
                 results.append((step, text, sim))
         return results
-
-    @staticmethod
-    def _fingerprint_similarity(
-        a: dict[str, float], b: dict[str, float],
-    ) -> float:
-        """Cosine similarity between two sparse dict fingerprints."""
-        shared = set(a.keys()) & set(b.keys())
-        if not shared:
-            return 0.0
-        dot = sum(a[k] * b[k] for k in shared)
-        norm_a = sum(v * v for v in a.values()) ** 0.5
-        norm_b = sum(v * v for v in b.values()) ** 0.5
-        if norm_a == 0 or norm_b == 0:
-            return 0.0
-        return dot / (norm_a * norm_b)
 
     # ------------------------------------------------------------------
     # Public API

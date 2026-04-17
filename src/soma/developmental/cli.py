@@ -134,6 +134,36 @@ def main(argv: list[str] | None = None) -> None:
                 print(f"State saved to {args.save_dir}/")
                 continue
 
+            if user_input.lower() == "/report":
+                soma = loop.predictive_soma.soma
+                ps = loop.predictive_soma
+                n_nodes = len(soma.graph.nodes)
+                n_edges = len(soma.graph.edges)
+                n_mem = len(ps.text_store)
+                stage = "blank-slate" if soma.global_step < 100 else \
+                        "early-plasticity" if soma.global_step < 500 else \
+                        "pattern-recognition" if soma.global_step < 2000 else \
+                        "association-formation" if soma.global_step < 5000 else \
+                        "mature"
+                errors = list(ps.error_history)
+                avg_err = sum(errors[-50:]) / max(len(errors[-50:]), 1)
+                print(f"\n  Development Report")
+                print(f"  Stage: {stage} (step {soma.global_step})")
+                print(f"  Graph: {n_nodes} nodes, {n_edges} edges")
+                print(f"  Memories: {n_mem} stored")
+                print(f"  Prediction error (recent): {avg_err:.6f}")
+                if errors:
+                    first = sum(errors[:10]) / min(len(errors), 10)
+                    last = sum(errors[-10:]) / min(len(errors), 10)
+                    if first > 0:
+                        print(f"  Learning: {(1 - last/first) * 100:.0f}% error reduction")
+                summary = loop.tracker.summary()
+                if "num_edges" in summary:
+                    print(f"  Edge growth: {summary['num_edges']['min']:.0f}"
+                          f" -> {summary['num_edges']['last']:.0f}")
+                print()
+                continue
+
             # ---- Normal interaction --------------------------------------
             result = loop.process_input(user_input, call_llm=True)
             step += 1

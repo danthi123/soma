@@ -1,9 +1,9 @@
 {
-  "soma-plastic": {
-    "acc": 0.7502,
-    "bwt": -0.1221,
-    "fwt": 0.0154,
-    "wall_clock_s": 8047.6
+  "soma-head-replay": {
+    "acc": 0.8054,
+    "bwt": -0.0472,
+    "fwt": 0.0167,
+    "wall_clock_s": 3369.5
   },
   "meta": {
     "tasks": 10,
@@ -13,6 +13,6 @@
     "test_samples_per_task": 1000,
     "soma_seed": 42,
     "device": "cuda",
-    "total_wall_clock_s": 8052.0
+    "total_wall_clock_s": 3374.8
   }
 }

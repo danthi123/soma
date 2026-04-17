@@ -17,6 +17,7 @@ Max total VRAM: 22 GB (2 GB headroom on the 24 GB 3090).
 | Config | Model | Quant | ~Model VRAM | +SOMA (~3GB) | Total |
 |---|---|---|---|---|---|
 | SOTA-max | Qwen3.5-27B | Q4_K_M | ~16GB | 3GB | **~19GB** |
+| SOTA-alt | GLM-4.7-Flash | Q4_K_M | ~TBD | 3GB | ~TBD |
 | SOTA-high | Qwen3.5-9B | Q8_0 | ~9GB | 3GB | ~12GB |
 | SOTA-mid | Qwen3.5-9B | Q4_K_M | ~6GB | 3GB | ~9GB |
 | Reasoning | Phi-4 Reasoning 14B | Q4_K_M | ~9GB | 3GB | ~12GB |
@@ -145,7 +146,7 @@ retrieves relevant context when working on dependent files.
 ## Evaluation matrix
 
 ```
-7 model configs × 2 agent types × 5 tasks × 3 seeds = 210 runs
+8 model configs × 2 agent types × 5 tasks × 3 seeds = 240 runs
 ```
 
 Each run is scored on:
@@ -222,6 +223,15 @@ Total: ~2-3 weeks.
   `tools=` is the standard path. Some models need `format: json` for
   structured output. The harness should detect and handle per-model
   quirks.
+- **Thinking/reasoning mode must be disabled for tool calling.**
+  Models like Qwen3.5 and SmolLM3 support `/think` and `/no_think`
+  modes. Thinking tokens can interfere with structured JSON tool-call
+  output. The model registry should carry a `disable_thinking: bool`
+  flag per model (default True for tool-calling tasks). Pass
+  `"think": false` in the Ollama options or use the `/no_think`
+  system prompt prefix where the model supports it. Optionally run
+  a secondary comparison WITH thinking enabled to measure the
+  tradeoff (reasoning quality vs tool-call reliability).
 - **Seed control.** Use fixed seeds for reproducibility. Each of the
   3 seeds should produce meaningfully different task instances (not
   just different random numbers for the same scenario).

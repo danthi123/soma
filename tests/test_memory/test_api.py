@@ -9,6 +9,8 @@ import torch
 
 from soma.io.text_encoder import TextEncoder, train_bpe_tokenizer
 from soma.memory.api import MemoryHit, MemoryLayer
+from soma.schemas import field as schema_field
+from soma.schemas import schema
 
 CORPUS = [
     "the quick brown fox jumps over the lazy dog",
@@ -196,9 +198,7 @@ def test_save_load_accepts_object_store(embedder, tmp_path: Path) -> None:
     assert hit.text == "fact two"
 
 
-def test_save_with_plain_string_path_auto_prefixes(
-    embedder, tmp_path: Path
-) -> None:
+def test_save_with_plain_string_path_auto_prefixes(embedder, tmp_path: Path) -> None:
     """A plain absolute-path ``str`` (no scheme) must work the same as
     a ``Path`` — the ``str`` branch of ``_coerce_store`` routes through
     ``parse_store_url`` which auto-prefixes to ``file://``."""
@@ -266,14 +266,10 @@ def test_save_is_atomic_under_crash(embedder, tmp_path: Path, monkeypatch) -> No
         mem.save(bundle)
 
     # The old bundle must still parse and still match what we wrote first.
-    assert (
-        bundle / "memory_index.json"
-    ).read_text(encoding="utf-8") == original_index, (
+    assert (bundle / "memory_index.json").read_text(encoding="utf-8") == original_index, (
         "memory_index.json corrupted by crashed save"
     )
-    assert (
-        bundle / "memory_embeddings.pt"
-    ).read_bytes() == original_embeds, (
+    assert (bundle / "memory_embeddings.pt").read_bytes() == original_embeds, (
         "memory_embeddings.pt corrupted by crashed save"
     )
     # Our monkeypatch raises *before* the real put_bytes cleans up its
@@ -1011,3 +1007,52 @@ def test_forget_removes_from_backend(embedder) -> None:
     assert mem._backend.ntotal == 1
     assert mem.forget(nid)
     assert mem._backend.ntotal == 0
+
+
+# ── Typed schema integration (Phase 42) ─────────────────────────────
+
+
+@schema("test_api.note")
+class _Note:
+    title: str = schema_field(searchable=True)
+    tag: str = schema_field(filterable=True)
+
+
+@schema("test_api.strict")
+class _Strict:
+    level: str = schema_field(choices=["a", "b"])
+
+
+def test_store_typed_round_trip(embedder) -> None:
+    tok, enc = embedder
+    mem = MemoryLayer(tokenizer=tok, encoder=enc)
+    mem.store_typed(_Note(title="hello world", tag="test"))
+    results = mem.retrieve_typed(_Note, "hello", k=1, tag="test")
+    assert len(results) == 1
+    assert results[0].title == "hello world"
+    assert results[0].tag == "test"
+
+
+def test_store_typed_validates(embedder) -> None:
+    tok, enc = embedder
+    mem = MemoryLayer(tokenizer=tok, encoder=enc)
+    obj = _Strict(level="a")
+    object.__setattr__(obj, "level", "z")
+    with pytest.raises(ValueError):
+        mem.store_typed(obj)
+
+
+def test_retrieve_typed_validates_filter_kwargs(embedder) -> None:
+    tok, enc = embedder
+    mem = MemoryLayer(tokenizer=tok, encoder=enc)
+    mem.store_typed(_Note(title="hello world", tag="test"))
+    with pytest.raises(ValueError, match="not filterable"):
+        mem.retrieve_typed(_Note, "hello", k=1, title="x")
+
+
+def test_untyped_store_still_works(embedder) -> None:
+    tok, enc = embedder
+    mem = MemoryLayer(tokenizer=tok, encoder=enc)
+    mem.store("raw text", metadata={"custom": "field"})
+    hits = mem.retrieve("raw text", k=1)
+    assert len(hits) == 1

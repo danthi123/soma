@@ -122,6 +122,7 @@ def _atomic_torch_save(obj: Any, path: Path) -> None:
             tmp.unlink()
         raise
 
+
 def _coerce_store(dest: str | Path | ObjectStore) -> ObjectStore:
     """Normalise a save/load destination to a concrete :class:`ObjectStore`.
 
@@ -177,9 +178,7 @@ def _vec_to_np(v: torch.Tensor) -> np.ndarray[Any, Any]:
     torch tensors. Centralized here so the torch→numpy round-trip is
     consistent on every call site.
     """
-    arr: np.ndarray[Any, Any] = (
-        v.detach().cpu().numpy().astype(np.float32).reshape(1, -1)
-    )
+    arr: np.ndarray[Any, Any] = v.detach().cpu().numpy().astype(np.float32).reshape(1, -1)
     return arr
 
 
@@ -187,13 +186,7 @@ def _batch_to_np(vs: list[torch.Tensor]) -> np.ndarray[Any, Any]:
     """Stack a list of (dim,) tensors into a (N, dim) float32 array."""
     if not vs:
         return np.empty((0, 0), dtype=np.float32)
-    arr: np.ndarray[Any, Any] = (
-        torch.stack(vs, dim=0)
-        .detach()
-        .cpu()
-        .numpy()
-        .astype(np.float32)
-    )
+    arr: np.ndarray[Any, Any] = torch.stack(vs, dim=0).detach().cpu().numpy().astype(np.float32)
     return arr
 
 
@@ -387,9 +380,7 @@ class MemoryLayer:
                 faiss_hnsw_ef_construction=self._faiss_hnsw_ef_construction,
             )
         if backend.dim != self._embed_dim:
-            raise ValueError(
-                f"backend dim {backend.dim} != embed_dim {self._embed_dim}"
-            )
+            raise ValueError(f"backend dim {backend.dim} != embed_dim {self._embed_dim}")
         self._backend: VectorBackend = backend
         self._backend.open()
 
@@ -427,9 +418,7 @@ class MemoryLayer:
 
         # Durability / persistence state. When bundle_path is None the
         # MemoryLayer runs in-memory only and keeps its pre-WAL behavior.
-        self._bundle_path: Path | None = (
-            Path(bundle_path) if bundle_path is not None else None
-        )
+        self._bundle_path: Path | None = Path(bundle_path) if bundle_path is not None else None
         self._durability: Literal["sync", "batch", "async"] = durability
         self._wal: WAL | None = None
         self._lock_path: Path | None = None
@@ -543,9 +532,7 @@ class MemoryLayer:
             )
         if sbert_model is not None:
             if embed_fn is not None or embed_dim is not None:
-                raise ValueError(
-                    "Pass either sbert_model= OR (embed_fn=, embed_dim=), not both."
-                )
+                raise ValueError("Pass either sbert_model= OR (embed_fn=, embed_dim=), not both.")
             try:
                 from sentence_transformers import SentenceTransformer
             except ImportError as exc:
@@ -574,8 +561,7 @@ class MemoryLayer:
             )
         if embed_fn is None:
             raise ValueError(
-                "MemoryLayer.ephemeral() needs either embed_fn= (+ embed_dim=) "
-                "or sbert_model=."
+                "MemoryLayer.ephemeral() needs either embed_fn= (+ embed_dim=) or sbert_model=."
             )
         return cls(
             embed_fn=embed_fn,
@@ -836,9 +822,7 @@ class MemoryLayer:
                 step_snap = self._step
                 encoder_snap = self._encoder
                 has_encoder = encoder_snap is not None
-                encoder_state = (
-                    encoder_snap.state_dict() if encoder_snap is not None else None
-                )
+                encoder_state = encoder_snap.state_dict() if encoder_snap is not None else None
                 encoder_max_seq = (
                     int(encoder_snap.max_seq_len) if encoder_snap is not None else None
                 )
@@ -912,10 +896,7 @@ class MemoryLayer:
                     if rec.op == "store" and rec.node_id in existing_ids:
                         # Already in snapshot; skip.
                         continue
-                    if (
-                        rec.op == "update_metadata"
-                        and rec.node_id in existing_ids
-                    ):
+                    if rec.op == "update_metadata" and rec.node_id in existing_ids:
                         # Patch is already applied to snapshot metadata; skip.
                         continue
                     tail_records.append(rec)
@@ -1005,9 +986,7 @@ class MemoryLayer:
         if not texts:
             return []
         if metadatas is not None and len(metadatas) != len(texts):
-            raise ValueError(
-                f"metadatas length {len(metadatas)} != texts length {len(texts)}"
-            )
+            raise ValueError(f"metadatas length {len(metadatas)} != texts length {len(texts)}")
         for t in texts:
             if not t or not t.strip():
                 raise ValueError("MemoryLayer.store_batch rejects empty text")
@@ -1142,9 +1121,7 @@ class MemoryLayer:
                 hybrid_alpha=hybrid_alpha,
             )
         elif hybrid_alpha is not None:
-            candidates = self._retrieve_hybrid(
-                query, q_vec, k=candidate_k, alpha=hybrid_alpha
-            )
+            candidates = self._retrieve_hybrid(query, q_vec, k=candidate_k, alpha=hybrid_alpha)
         elif has_graph_signal:
             candidates = self._retrieve_with_rerank(query, q_vec, k=candidate_k)
         else:
@@ -1183,6 +1160,66 @@ class MemoryLayer:
                 "cache_miss": False,
             },
         )
+        return results
+
+    # ------------------------------------------------------------------
+    # Typed schema API (Phase 42)
+    # ------------------------------------------------------------------
+
+    def store_typed(
+        self,
+        instance: Any,
+        *,
+        metadata: dict[str, Any] | None = None,
+    ) -> str:
+        """Store a typed schema instance.
+
+        1. Validate the instance against its schema.
+        2. Extract searchable fields into the text to embed.
+        3. Extract all fields into metadata (with ``type=`` prefix).
+        4. Merge any extra *metadata* kwargs (caller overrides).
+        5. Call ``self.store(text, metadata=merged)``.
+        """
+        from soma.schemas.validation import validate_instance
+
+        validate_instance(instance)
+        text = instance._search_text()
+        if not text or not text.strip():
+            raise ValueError(
+                "Schema instance has no searchable text to embed; "
+                "mark at least one field as searchable=True."
+            )
+        merged = instance.to_metadata()
+        if metadata:
+            merged.update(metadata)
+        return self.store(text, metadata=merged)
+
+    def retrieve_typed(
+        self,
+        schema_cls: type,
+        query: str,
+        k: int = 5,
+        **filter_kwargs: Any,
+    ) -> list[Any]:
+        """Retrieve and reconstruct typed schema instances.
+
+        1. Validate filter_kwargs against schema_cls.
+        2. Build filter dict: ``{"type": type_name, **validated}``.
+        3. Call ``self.retrieve(query, k, where=filter_dict)``.
+        4. Reconstruct each hit into a schema_cls instance.
+        5. Return ``list[schema_cls]``.
+        """
+        from soma.schemas.validation import validate_filter_kwargs
+
+        type_name: str = schema_cls._type_name  # type: ignore[attr-defined]
+        validated = validate_filter_kwargs(schema_cls, **filter_kwargs)
+        where: dict[str, Any] = {"type": type_name}
+        where.update(validated)
+        hits = self.retrieve(query, k, where=where)
+        results: list[Any] = []
+        for hit in hits:
+            obj = schema_cls.from_metadata(hit.metadata)
+            results.append(obj)
         return results
 
     def related(self, node_id: str, k: int = 5) -> list[MemoryHit]:
@@ -1241,12 +1278,10 @@ class MemoryLayer:
         bm25_max = max((s for _, s in bm25_hits), default=1e-9)
 
         cos_scores: dict[str, float] = {
-            h.node_id: (h.score / cos_max if cos_max > 0 else 0.0)
-            for h in cosine_hits
+            h.node_id: (h.score / cos_max if cos_max > 0 else 0.0) for h in cosine_hits
         }
         bm25_scores: dict[str, float] = {
-            self._ids[i]: (s / bm25_max if bm25_max > 0 else 0.0)
-            for i, s in bm25_hits
+            self._ids[i]: (s / bm25_max if bm25_max > 0 else 0.0) for i, s in bm25_hits
         }
 
         blended: dict[str, float] = {}
@@ -1299,9 +1334,7 @@ class MemoryLayer:
         rescored.sort(key=lambda h: -h.score)
         return rescored[:top_k]
 
-    def _rank_subset(
-        self, q_vec: torch.Tensor, indices: list[int], *, k: int
-    ) -> list[MemoryHit]:
+    def _rank_subset(self, q_vec: torch.Tensor, indices: list[int], *, k: int) -> list[MemoryHit]:
         """Brute-force cosine over a pre-filtered subset of entries.
 
         Delegates the numeric work to ``backend.search_subset`` so the
@@ -1333,12 +1366,10 @@ class MemoryLayer:
         cos_max = max((h.score for h in cos_hits), default=1e-9)
         bm25_max = max((s for _, s in bm25_filtered), default=1e-9)
         cos_scores: dict[str, float] = {
-            h.node_id: (h.score / cos_max if cos_max > 0 else 0.0)
-            for h in cos_hits
+            h.node_id: (h.score / cos_max if cos_max > 0 else 0.0) for h in cos_hits
         }
         bm25_scores: dict[str, float] = {
-            self._ids[i]: (s / bm25_max if bm25_max > 0 else 0.0)
-            for i, s in bm25_filtered
+            self._ids[i]: (s / bm25_max if bm25_max > 0 else 0.0) for i, s in bm25_filtered
         }
         blended: dict[str, float] = {}
         for node_id in set(cos_scores) | set(bm25_scores):
@@ -1347,10 +1378,7 @@ class MemoryLayer:
             blended[node_id] = alpha * c + (1.0 - alpha) * b
         id_to_idx = {nid: i for i, nid in enumerate(self._ids)}
         ranked = sorted(blended.items(), key=lambda kv: -kv[1])[:k]
-        return [
-            self._hit_for_index(id_to_idx[nid], score=float(score))
-            for nid, score in ranked
-        ]
+        return [self._hit_for_index(id_to_idx[nid], score=float(score)) for nid, score in ranked]
 
     def get(self, node_id: str) -> MemoryHit | None:
         """Fetch an entry by id; ``None`` if unknown. Score is self-cosine (1.0)."""
@@ -1373,9 +1401,7 @@ class MemoryLayer:
         recent_indices = list(range(start, len(self._ids)))[::-1]
         return [self._hit_for_index(i, score=1.0) for i in recent_indices]
 
-    def update_metadata(
-        self, node_id: str, patch: dict[str, Any]
-    ) -> None:
+    def update_metadata(self, node_id: str, patch: dict[str, Any]) -> None:
         """Merge ``patch`` into the metadata of an existing entry.
 
         Keys in ``patch`` overwrite existing keys; keys not in ``patch``
@@ -1651,9 +1677,7 @@ class MemoryLayer:
             # so route through a short-lived temp file and read the
             # bytes back through the store. Tokenizer JSONs are small
             # (KB-sized) so this buffer round-trip is free.
-            with tempfile.NamedTemporaryFile(
-                suffix=".json", delete=False
-            ) as tmp_tok:
+            with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as tmp_tok:
                 tok_path = Path(tmp_tok.name)
             try:
                 encoder.save_tokenizer(tok_path)
@@ -1753,9 +1777,7 @@ class MemoryLayer:
         # For LocalFSObjectStore that's ``store.root``; remote adapters
         # will stage to a temp dir before calling the WAL path.
         local_root = _store_local_root(store)
-        has_snapshot = store.exists("memory_index.json") and store.exists(
-            "memory_embeddings.pt"
-        )
+        has_snapshot = store.exists("memory_index.json") and store.exists("memory_embeddings.pt")
         has_wal = store.exists("memory_ops.wal.jsonl")
 
         if not has_snapshot and not has_wal:
@@ -1768,14 +1790,10 @@ class MemoryLayer:
         # WAL header.
         index: dict[str, Any] | None = None
         if has_snapshot:
-            index = json.loads(
-                store.get_bytes("memory_index.json").decode("utf-8")
-            )
+            index = json.loads(store.get_bytes("memory_index.json").decode("utf-8"))
             schema = index.get("schema_version")
             if schema not in (1, 2):
-                raise ValueError(
-                    f"Unsupported MemoryLayer schema version {schema!r}"
-                )
+                raise ValueError(f"Unsupported MemoryLayer schema version {schema!r}")
             embed_dim = int(index["embed_dim"])
             embed_type = index.get("embed_type", "text_encoder")
         else:
@@ -1839,9 +1857,7 @@ class MemoryLayer:
             assert index is not None
             instance._step = int(index.get("step", 0))
             with store.get_stream("memory_embeddings.pt") as fh:
-                embeddings = torch.load(
-                    fh, map_location=device or "cpu", weights_only=True
-                )
+                embeddings = torch.load(fh, map_location=device or "cpu", weights_only=True)
             # Batch-insert into the backend in one call so adapters that
             # build per-call indices only do it once. Populate the
             # MemoryLayer lists in parallel.
@@ -1878,9 +1894,7 @@ class MemoryLayer:
                     assert emb is not None
                     instance._backend.add([rec.node_id], _vec_to_np(emb))
                     instance._soma_activations[rec.node_id] = None
-                    instance._step = max(
-                        instance._step, int(rec.timestamp_step) + 1
-                    )
+                    instance._step = max(instance._step, int(rec.timestamp_step) + 1)
                 elif rec.op == "forget":
                     idx = instance._id_to_idx.pop(rec.node_id, None)
                     if idx is None:
@@ -1893,9 +1907,7 @@ class MemoryLayer:
                     instance._soma_activations.pop(rec.node_id, None)
                     for later_id in instance._ids[idx:]:
                         instance._id_to_idx[later_id] -= 1
-                    instance._step = max(
-                        instance._step, int(rec.timestamp_step) + 1
-                    )
+                    instance._step = max(instance._step, int(rec.timestamp_step) + 1)
                 elif rec.op == "update_metadata":
                     idx = instance._id_to_idx.get(rec.node_id)
                     if idx is None:
@@ -1903,9 +1915,7 @@ class MemoryLayer:
                     patch = rec.metadata.get("patch", {})
                     if isinstance(patch, dict):
                         instance._metadatas[idx].update(patch)
-                    instance._step = max(
-                        instance._step, int(rec.timestamp_step) + 1
-                    )
+                    instance._step = max(instance._step, int(rec.timestamp_step) + 1)
         # Mark where we've caught up to; reload_if_stale() starts scanning
         # from here so a peer writer's tail appends are cheap to detect.
         if instance._wal is not None:
@@ -2049,11 +2059,7 @@ class MemoryLayer:
                 pass  # fall through to Python pre-filter
         # Python pre-filter path: restrict to entries matching ``where``
         # then brute-force cosine (and optionally BM25) over the subset.
-        filter_idx = [
-            i
-            for i, meta in enumerate(self._metadatas)
-            if _matches_where(meta, where)
-        ]
+        filter_idx = [i for i, meta in enumerate(self._metadatas) if _matches_where(meta, where)]
         if not filter_idx:
             return []
         candidates = self._rank_subset(q_vec, filter_idx, k=k)

@@ -13,7 +13,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-
 # Ollama's OpenAI-compatible endpoint on localhost.
 DEFAULT_API_BASE = "http://localhost:11434/v1"
 

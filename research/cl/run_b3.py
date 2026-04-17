@@ -212,9 +212,10 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    use_cuda = torch.cuda.is_available() and torch.cuda.device_count() > 0
+    device = torch.device("cuda" if use_cuda else "cpu")
     print(f"Device: {device}")
-    if device.type == "cuda":
+    if use_cuda:
         print(f"GPU: {torch.cuda.get_device_name(0)}")
 
     t0_total = time.perf_counter()

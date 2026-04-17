@@ -56,6 +56,16 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=0,
         help="Run consolidation every N steps (0 = never)",
     )
+    parser.add_argument(
+        "--load",
+        default=None,
+        help="Load a saved developmental state from this directory",
+    )
+    parser.add_argument(
+        "--save-dir",
+        default="soma_dev_state",
+        help="Directory to save state on /save or exit (default: soma_dev_state)",
+    )
     return parser.parse_args(argv)
 
 
@@ -75,9 +85,16 @@ def main(argv: list[str] | None = None) -> None:
     # Seed tokenizer
     loop.train_tokenizer(_SEED_CORPUS)
 
+    # Load saved state if requested
+    if args.load:
+        print(f"Loading state from {args.load}...")
+        loop.predictive_soma.load(args.load)
+        print(f"  Loaded: step {loop.predictive_soma.soma.global_step}, "
+              f"{len(loop.predictive_soma.text_store)} memories")
+
     print("SOMA Developmental CLI")
     print(f"Model: {args.model} | Device: {device}")
-    print("Type /state, /stats, or /quit.  Ctrl-C to exit.\n")
+    print("Type /state, /stats, /save, or /quit.  Ctrl-C to exit.\n")
 
     step = 0
     try:
@@ -109,6 +126,12 @@ def main(argv: list[str] | None = None) -> None:
                         f"last={stats['last']:.4f}  "
                         f"(n={int(stats['count'])})"
                     )
+                continue
+
+            if user_input.lower() == "/save":
+                loop.predictive_soma.save(args.save_dir)
+                loop.tracker.save(f"{args.save_dir}/tracker.json")
+                print(f"State saved to {args.save_dir}/")
                 continue
 
             # ---- Normal interaction --------------------------------------

@@ -304,6 +304,91 @@ class PredictiveSOMA(nn.Module):
         return results
 
     # ------------------------------------------------------------------
+    # Persistence
+    # ------------------------------------------------------------------
+
+    def save(self, path: str) -> None:
+        """Save full developmental state to disk.
+
+        Saves SOMA graph/memory state + PredictiveSOMA's text store,
+        activation fingerprints, input projections, prediction head,
+        and error history.
+        """
+        from pathlib import Path
+
+        save_dir = Path(path)
+        save_dir.mkdir(parents=True, exist_ok=True)
+
+        # Save SOMA core state
+        self.soma.save_state(save_dir / "soma_state.pt")
+
+        # Save PredictiveSOMA additions
+        torch.save({
+            "prediction_head": self.prediction_head.state_dict(),
+            "prediction_error": self.prediction_error,
+            "error_history": list(self.error_history),
+            "text_store": self.text_store,
+            "activation_store": {
+                k: v.cpu() for k, v in self._activation_store.items()
+            },
+            "input_projections": {
+                k: v.cpu() for k, v in self._input_projections.items()
+            },
+            "win_counts": self._win_counts,
+            "last_summary": (
+                self._last_summary.cpu()
+                if self._last_summary is not None
+                else None
+            ),
+            "last_prediction": (
+                self._last_prediction.cpu()
+                if self._last_prediction is not None
+                else None
+            ),
+        }, save_dir / "predictive_state.pt")
+
+    def load(self, path: str) -> None:
+        """Load full developmental state from disk."""
+        from pathlib import Path
+
+        save_dir = Path(path)
+
+        # Load SOMA core state
+        self.soma.load_state(save_dir / "soma_state.pt")
+
+        # Load PredictiveSOMA additions
+        state = torch.load(
+            save_dir / "predictive_state.pt",
+            map_location="cpu",
+            weights_only=False,
+        )
+        self.prediction_head.load_state_dict(state["prediction_head"])
+        self.prediction_head.to(self.device)
+        self.prediction_error = state["prediction_error"]
+        self.error_history = deque(
+            state["error_history"], maxlen=self.error_history.maxlen,
+        )
+        self.text_store = state["text_store"]
+        self._activation_store = {
+            k: v.to(self.device) for k, v in state["activation_store"].items()
+        }
+        self._input_projections = {
+            k: v.to(self.device)
+            for k, v in state["input_projections"].items()
+        }
+        self._win_counts = state.get("win_counts", {})
+        self._last_summary = (
+            state["last_summary"].to(self.device)
+            if state["last_summary"] is not None
+            else None
+        )
+        self._last_prediction = (
+            state["last_prediction"].to(self.device)
+            if state["last_prediction"] is not None
+            else None
+        )
+
+    # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
 

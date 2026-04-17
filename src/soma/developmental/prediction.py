@@ -42,6 +42,10 @@ class PredictiveSOMA(nn.Module):
             config.sensor_output_dim, config.sensor_output_dim
         ).to(self.device)
         self._last_prediction: torch.Tensor | None = None
+        self._last_summary: torch.Tensor | None = None
+        self._pred_optimizer = torch.optim.Adam(
+            self.prediction_head.parameters(), lr=0.0003,
+        )
         self.prediction_error: float = 0.0
         self.error_history: deque[float] = deque(maxlen=error_history_size)
         # Text store: maps step → original text for verbalization
@@ -116,12 +120,18 @@ class PredictiveSOMA(nn.Module):
 
         current_summary = self._get_activation_summary(step_result)
 
-        if self._last_prediction is not None:
-            self.prediction_error = float(
-                torch.nn.functional.mse_loss(
-                    self._last_prediction, current_summary,
-                ).item()
+        # Train prediction head: re-predict from last summary,
+        # compare to current summary, backprop.
+        if self._last_summary is not None:
+            predicted = self.prediction_head(self._last_summary)
+            pred_loss = torch.nn.functional.mse_loss(
+                predicted, current_summary.detach(),
             )
+            self.prediction_error = pred_loss.item()
+
+            self._pred_optimizer.zero_grad()
+            pred_loss.backward()
+            self._pred_optimizer.step()
         else:
             self.prediction_error = 0.0
 
@@ -131,7 +141,13 @@ class PredictiveSOMA(nn.Module):
         # trigger neurogenesis when error is persistently high.
         self.soma._recent_errors.append(self.prediction_error)
 
-        self._last_prediction = self.prediction_head(current_summary.detach())
+        # Save current summary for next step's prediction training
+        self._last_summary = current_summary.detach().clone()
+        # Cache the prediction for verbalization / inspection
+        with torch.no_grad():
+            self._last_prediction = self.prediction_head(
+                current_summary.detach(),
+            )
 
         return {
             "activations": current_summary,

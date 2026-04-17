@@ -1,0 +1,72 @@
+{
+  "permuted_mnist": {
+    "naive": {
+      "acc": 0.7019,
+      "bwt": -0.234,
+      "fwt": 0.0236,
+      "wall_clock_s": 42.9
+    },
+    "ewc": {
+      "acc": 0.7136,
+      "bwt": -0.2199,
+      "fwt": 0.0155,
+      "wall_clock_s": 64.3
+    },
+    "agem": {
+      "acc": 0.8233,
+      "bwt": -0.0987,
+      "fwt": 0.0121,
+      "wall_clock_s": 75.5
+    }
+  },
+  "split_cifar10": {
+    "naive": {
+      "acc": 0.14,
+      "bwt": -0.6617,
+      "fwt": -0.1,
+      "wall_clock_s": 3.5
+    },
+    "ewc": {
+      "acc": 0.1545,
+      "bwt": -0.6253,
+      "fwt": -0.1,
+      "wall_clock_s": 5.6
+    },
+    "agem": {
+      "acc": 0.1573,
+      "bwt": -0.6915,
+      "fwt": -0.1,
+      "wall_clock_s": 6.2
+    }
+  },
+  "ewc_lambda_sweep": {
+    "100": {
+      "acc": 0.7001,
+      "bwt": -0.2349,
+      "fwt": 0.0198,
+      "wall_clock_s": 61.1
+    },
+    "400": {
+      "acc": 0.7107,
+      "bwt": -0.2233,
+      "fwt": 0.0207,
+      "wall_clock_s": 62.6
+    },
+    "1000": {
+      "acc": 0.7164,
+      "bwt": -0.2159,
+      "fwt": 0.0186,
+      "wall_clock_s": 61.8
+    }
+  },
+  "meta": {
+    "tasks_mnist": 10,
+    "tasks_cifar": 5,
+    "epochs": 5,
+    "batch_size": 128,
+    "ewc_lambda": 400.0,
+    "agem_buffer_per_task": 256,
+    "device": "cuda",
+    "total_wall_clock_s": 385.2
+  }
+}

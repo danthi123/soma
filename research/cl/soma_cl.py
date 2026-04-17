@@ -78,8 +78,13 @@ class SomaClassifier(nn.Module):
         # The sensor node expects input matching its output_dim.
         self.input_proj = nn.Linear(input_dim, sensor_dim, bias=False)
 
-        # Linear classification head (only this gets backprop)
-        self.head = nn.Linear(self._output_dim, num_classes)
+        # Classification head takes SOMA features concatenated with
+        # projected input. SOMA features are detached (Hebbian only);
+        # the projected input carries gradients from backprop.
+        # This lets the head learn from both the trainable projection
+        # and the SOMA representation.
+        self._head_dim = sensor_dim + self._output_dim
+        self.head = nn.Linear(self._head_dim, num_classes)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Forward pass: x -> SOMA features -> logits.
@@ -94,42 +99,50 @@ class SomaClassifier(nn.Module):
         Logits tensor, shape ``(batch, num_classes)``.
         """
         batch_size = x.size(0)
-        features = []
+        soma_features = []
 
-        # Project all samples to sensor dim at once
-        projected = self.input_proj(x)
+        # Project: raw pixels -> sensor_output_dim.
+        # Keep grad graph alive for the classification head's backprop.
+        projected = self.input_proj(x)  # (batch, sensor_dim)
+        # Detach copy for SOMA (its internal backward must not collide)
+        projected_detached = projected.detach()
+
+        is_eval = self.frozen or not self.training
 
         for i in range(batch_size):
-            sample = projected[i]  # (sensor_dim,)
-
-            # SOMA.step() expects dict[str, Tensor] inputs.
-            # The sensor node's set_input takes a 1-d tensor.
+            sample = projected_detached[i]  # (sensor_dim,)
             inputs = {self._input_modality: sample}
 
-            # When frozen, run in eval_mode to skip weight updates
+            # Self-supervised target for SOMA's Hebbian learning.
+            # Skip in eval mode (no_grad context breaks backward).
+            targets = (
+                None if is_eval
+                else {self._output_modality: sample.detach()}
+            )
+
             result = self.soma.step(
                 inputs,
-                targets=None,
-                eval_mode=self.frozen,
+                targets=targets,
+                eval_mode=is_eval,
             )
 
             outputs = result["outputs"]
             if self._output_modality in outputs:
                 feat = outputs[self._output_modality]
             else:
-                # Fallback: zero features if output node didn't fire
                 feat = torch.zeros(
                     self._output_dim,
                     device=x.device,
                     dtype=x.dtype,
                 )
-            features.append(feat)
+            soma_features.append(feat)
 
-        # Stack into (batch, feature_dim)
-        features_t = torch.stack(features, dim=0)
+        # SOMA features: detached (Hebbian only, no backprop through graph)
+        soma_t = torch.stack(soma_features, dim=0).detach()
 
-        # Only the head is trained via backprop -- detach SOMA features
-        logits = self.head(features_t.detach())
+        # Concatenate: [projected (grad-carrying), soma_features (detached)]
+        combined = torch.cat([projected, soma_t], dim=1)
+        logits = self.head(combined)
         return logits
 
     def consolidate(self) -> None:
@@ -361,7 +374,7 @@ def make_soma_cl_components(
         trainable = list(classifier.input_proj.parameters()) + list(
             classifier.head.parameters()
         )
-        optimizer = SGD(trainable, lr=0.01)
+        optimizer = SGD(trainable, lr=0.1)
         return classifier, optimizer
 
     return model_factory, adapter.train_one_epoch, adapter.on_task_end

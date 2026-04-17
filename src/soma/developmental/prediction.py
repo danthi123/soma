@@ -96,18 +96,30 @@ class PredictiveSOMA(nn.Module):
         modality = self.config.input_modalities[0]
         inputs = {modality: input_tensor}
 
+        # Self-supervised: use the input as its own target so SOMA
+        # computes a loss, runs Hebbian learning, and triggers growth.
+        if targets is None:
+            out_modality = self.config.output_modalities[0]
+            targets = {out_modality: input_tensor.detach()}
+
         step_result = self.soma.step(inputs, targets=targets)
 
         current_summary = self._get_activation_summary(step_result)
 
         if self._last_prediction is not None:
             self.prediction_error = float(
-                torch.nn.functional.mse_loss(self._last_prediction, current_summary).item()
+                torch.nn.functional.mse_loss(
+                    self._last_prediction, current_summary,
+                ).item()
             )
         else:
             self.prediction_error = 0.0
 
         self.error_history.append(self.prediction_error)
+
+        # Feed prediction error into SOMA's recent errors so it can
+        # trigger neurogenesis when error is persistently high.
+        self.soma._recent_errors.append(self.prediction_error)
 
         self._last_prediction = self.prediction_head(current_summary.detach())
 
@@ -119,4 +131,5 @@ class PredictiveSOMA(nn.Module):
             "global_step": step_result.get("global_step"),
             "num_nodes": step_result.get("num_nodes"),
             "num_edges": step_result.get("num_edges"),
+            "loss": step_result.get("loss"),
         }

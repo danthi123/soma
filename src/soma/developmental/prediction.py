@@ -166,15 +166,9 @@ class PredictiveSOMA(nn.Module):
         base_syn = 2.0
         self.config.synaptogenesis_rate = base_syn * (1.0 + 10.0 * avg_error)
 
-        # Scale pruning: more aggressive when error is low (well-learned
-        # patterns don't need all those edges).
-        # Low error → shorter pruning interval → more pruning
-        if avg_error < 0.0001:
-            self.config.pruning_interval = 50  # aggressive
-        elif avg_error < 0.001:
-            self.config.pruning_interval = 100
-        else:
-            self.config.pruning_interval = 200  # default
+        # NOTE: dynamic pruning was tested but over-corrects — input
+        # diversification already prevents over-connection. Keep pruning
+        # at the static default (200 steps).
 
     def _diversify_activations(self, input_tensor: torch.Tensor) -> None:
         """Modulate each associator's activation by its unique input view.

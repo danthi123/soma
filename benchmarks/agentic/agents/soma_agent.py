@@ -214,9 +214,13 @@ class SomaAgent:
         }
 
         if self.tools:
-            payload["tools"] = [
-                {"type": "function", "function": t} for t in self.tools
-            ]
+            wrapped = []
+            for t in self.tools:
+                if "type" in t and "function" in t:
+                    wrapped.append(t)
+                else:
+                    wrapped.append({"type": "function", "function": t})
+            payload["tools"] = wrapped
 
         try:
             resp = requests.post(

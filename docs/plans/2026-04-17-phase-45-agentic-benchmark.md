@@ -18,11 +18,15 @@ Max total VRAM: 22 GB (2 GB headroom on the 24 GB 3090).
 |---|---|---|---|---|---|
 | SOTA-max | Qwen3.5-27B | Q4_K_M | ~16GB | 3GB | **~19GB** |
 | SOTA-alt | GLM-4.7-Flash | Q4_K_M | ~TBD | 3GB | ~TBD |
+| MoE-large | Gemma-4-26b-a4b | Q4_K_M | ~15GB | 3GB | ~18GB |
+| Dense-large | Gemma-4-31b | Q4_K_M | ~18GB | 3GB | ~21GB |
 | SOTA-high | Qwen3.5-9B | Q8_0 | ~9GB | 3GB | ~12GB |
 | SOTA-mid | Qwen3.5-9B | Q4_K_M | ~6GB | 3GB | ~9GB |
 | Reasoning | Phi-4 Reasoning 14B | Q4_K_M | ~9GB | 3GB | ~12GB |
+| MoE-small | Gemma-4-e4b | Q8_0 | ~TBD | 3GB | ~TBD |
 | Small-high | Qwen3.5-4B | Q8_0 | ~4GB | 3GB | ~7GB |
 | Small-low | Qwen3.5-4B | Q4_K_M | ~3GB | 3GB | ~6GB |
+| Small-gemma | Gemma-4-e2b | Q8_0 | ~TBD | 3GB | ~TBD |
 | Ultralight | Qwen3-0.6B | Q8_0 | ~0.7GB | 3GB | ~3.7GB |
 
 SOMA footprint includes sbert (all-MiniLM-L6-v2 ~0.5 GB) + PyTorch
@@ -37,6 +41,15 @@ SOMA footprint includes sbert (all-MiniLM-L6-v2 ~0.5 GB) + PyTorch
   compensates for context-window limitations?
 - At what VRAM point does "more model" stop beating "smaller model +
   SOMA"? (The crossover curve.)
+- **MoE vs dense with SOMA:** does Gemma-4-26b-a4b (26B/4B-active
+  MoE) + SOMA beat Gemma-4-31b dense standalone? MoE gets dense-
+  model knowledge at sparse-model speed — does SOMA compound that
+  advantage or is it redundant?
+- **Gemma caveat:** gemma-4-26b-a4b was tested during the LoCoMo-QA
+  smoke (2026-04-16) and showed pathological behavior on
+  apostrophe-containing context (safety training over-triggers). The
+  agentic benchmark tasks should not rely on apostrophe-heavy text
+  for correctness, but note any anomalies.
 
 ---
 
@@ -146,8 +159,12 @@ retrieves relevant context when working on dependent files.
 ## Evaluation matrix
 
 ```
-8 model configs × 2 agent types × 5 tasks × 3 seeds = 240 runs
+11 model configs × 2 agent types × 5 tasks × 3 seeds = 330 runs
 ```
+
+Note: some Gemma configs have TBD VRAM — verify by pulling the model
+in Ollama and checking `nvidia-smi` before committing to the matrix.
+Drop any that don't fit in 22 GB total.
 
 Each run is scored on:
 - **Completion rate** (0 or 1, did the task succeed?)

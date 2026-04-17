@@ -78,7 +78,7 @@ class PredictiveSOMA(nn.Module):
         return torch.zeros(dim, device=self.device)
 
     def _get_node_fingerprint(
-        self, inhibition_ratio: float = 0.2,
+        self, inhibition_ratio: float = 0.1,
     ) -> torch.Tensor:
         """Build a sparse fingerprint via lateral inhibition.
 
@@ -123,7 +123,7 @@ class PredictiveSOMA(nn.Module):
 
         return torch.cat(parts)
 
-    def _apply_lateral_inhibition(self, keep_ratio: float = 0.2) -> None:
+    def _apply_lateral_inhibition(self, keep_ratio: float = 0.1) -> None:
         """Suppress weakest nodes' last_activation in-place.
 
         After SOMA.step(), zero out the activations of the least active
@@ -237,7 +237,7 @@ class PredictiveSOMA(nn.Module):
         # This drives specialization — synaptogenesis only wires
         # co-active (non-suppressed) nodes, so different inputs
         # strengthen different subgraphs over time.
-        self._apply_lateral_inhibition(keep_ratio=0.2)
+        self._apply_lateral_inhibition()
 
         # Store original text for retrieval/verbalization
         step_num = step_result.get("global_step", len(self.text_store))
@@ -259,9 +259,14 @@ class PredictiveSOMA(nn.Module):
             )
             self.prediction_error = pred_loss.item()
 
-            self._pred_optimizer.zero_grad()
-            pred_loss.backward()
-            self._pred_optimizer.step()
+            # Only update if error is still meaningful — prevent
+            # over-convergence that collapses all fingerprints.
+            # Biological analogy: synaptic plasticity decreases
+            # for well-learned patterns but never reaches zero.
+            if self.prediction_error > 1e-5:
+                self._pred_optimizer.zero_grad()
+                pred_loss.backward()
+                self._pred_optimizer.step()
         else:
             self.prediction_error = 0.0
 

@@ -343,11 +343,11 @@ class SOMAConfig:
         """
         defaults: dict[str, Any] = {
             "vocab_size": 256,
-            "text_embed_dim": 64,
-            "sensor_output_dim": 64,
+            "text_embed_dim": 128,
+            "sensor_output_dim": 128,
             "max_input_tokens": 128,
-            "initial_integrator_count": 16,
-            "initial_associator_count": 32,
+            "initial_integrator_count": 4,
+            "initial_associator_count": 8,
             # Faster growth cycles for interactive use
             "synaptogenesis_interval": 10,
             "synaptogenesis_rate": 2.0,
@@ -356,7 +356,7 @@ class SOMAConfig:
             "pruning_interval": 200,
             "consolidation_interval": 50,
             "consolidation_replay_steps": 20,
-            # Lower thresholds for small graphs
+            # Lower thresholds for developmental graphs
             "activation_threshold": 0.005,
             "seed": 42,
         }

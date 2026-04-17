@@ -294,6 +294,46 @@ All notable changes to SOMA are documented here.
   vars, when to prefer the in-proc limiter vs a reverse proxy,
   per-token vs per-subject tradeoff.
 
+### Added — typed schema framework (Phases 42–44)
+
+- **`@schema` decorator + `field()` descriptors** (Phase 42,
+  `src/soma/schemas/`): developer-facing API for defining typed
+  memory records. `@schema("domain.type")` wraps a class as a
+  dataclass, generates `to_metadata()` / `from_metadata()` methods,
+  and registers in a global registry at import time. `field()` marks
+  fields as `filterable` (metadata filter pushdown), `searchable`
+  (included in embedded text), and/or `choices` (validated on
+  construction). Third-party packages register custom schemas by
+  importing their module — zero boilerplate.
+- **`MemoryLayer.store_typed()` + `retrieve_typed()`** (Phase 42):
+  validated typed store/retrieve on top of the existing API.
+  `store_typed(instance)` validates, extracts searchable text for
+  embedding, and stores with typed metadata. `retrieve_typed(Class,
+  query, k, **filter_kwargs)` validates filter kwargs against the
+  schema, retrieves, and reconstructs typed instances. Backward
+  compatible — `store(text, metadata={})` is unchanged.
+- **31 built-in schemas across 8 domains** (Phases 43–44):
+  * `agent.*` (4): TaskState, ToolCall, Observation, Decision
+  * `conv.*` (3): Fact, Preference, Contradiction
+  * `km.*` (4): Note, Connection, Question, Insight
+  * `code.*` (4): Decision, Pattern, Incident, DependencyNote
+  * `research.*` (4): Hypothesis, Experiment, Result, Literature
+  * `collab.*` (4): ActionItem, Decision, FollowUp, StakeholderPosition
+  * `customer.*` (4): Profile, Issue, Sentiment, Preference
+  * `creative.*` (4): Character, WorldDetail, Continuity, PlotThread
+- **Context packer** (`pack_context()`, Phase 43): assembles a
+  prompt-ready context string from memory with configurable mix
+  weights (recency 15%, relevant facts 50%, task state 10%,
+  decisions 10%, preferences 15%). Each slot gets a character budget;
+  entries formatted as `[{type}] {text}` lines, truncated to fit.
+  Supports type filtering (e.g. `types=["agent.*"]`).
+- **Full developer documentation** (`docs/schemas.md`, 494 lines,
+  Phase 44): how to define, store, retrieve, extend, and pack
+  context with custom schemas. Cookbook recipes §24–26 cover agent
+  workflows, custom schema extension, and context packing.
+- **+148 tests** across `tests/test_schemas/` (24 framework + 124
+  domain schemas). Zero regressions.
+
 ### Added — object-storage bundle layer (Phases 30–33)
 
 - **`ObjectStore` Protocol** (`src/soma/storage/base.py`) with

@@ -41,6 +41,25 @@ class PredictiveSOMA(nn.Module):
         self.prediction_head = nn.Linear(
             config.sensor_output_dim, config.sensor_output_dim
         ).to(self.device)
+
+        # Random input diversifier: for each associator node, a frozen
+        # random projection that transforms the input differently.
+        # This gives each node a unique "view" of the input — the
+        # software equivalent of different dendritic arbors in biology.
+        from soma.core.node import NodeType
+
+        self._input_projections: dict[str, torch.Tensor] = {}
+        dim = config.sensor_output_dim
+        gen = torch.Generator()
+        if config.seed is not None:
+            gen.manual_seed(config.seed + 13)
+        for node in self.soma.graph.all_nodes():
+            if node.node_type == NodeType.ASSOCIATOR:
+                # Random orthogonal-ish projection matrix
+                proj = torch.randn(dim, dim, generator=gen).to(self.device)
+                # Normalize rows so projections preserve magnitude
+                proj = proj / (proj.norm(dim=1, keepdim=True) + 1e-8)
+                self._input_projections[node.id] = proj
         self._last_prediction: torch.Tensor | None = None
         self._last_summary: torch.Tensor | None = None
         self._pred_optimizer = torch.optim.Adam(
@@ -115,6 +134,31 @@ class PredictiveSOMA(nn.Module):
         return {
             nid: mag for nid, mag in node_mags if mag >= threshold
         }
+
+    def _diversify_activations(self, input_tensor: torch.Tensor) -> None:
+        """Modulate each associator's activation by its unique input view.
+
+        Multiplies each associator's ``last_activation`` element-wise by
+        the dot product of the input with that node's random projection.
+        Nodes whose projection aligns well with the input get amplified;
+        others get dampened. This creates genuinely different activation
+        patterns across nodes for different inputs.
+        """
+        inp = input_tensor.detach().to(self.device)
+        for node_id, proj in self._input_projections.items():
+            if node_id not in self.soma.graph.nodes:
+                continue
+            node = self.soma.graph.nodes[node_id]
+            if node.last_activation is None:
+                continue
+
+            # Compute a scalar gain from the projection: how well
+            # does this node's random "receptive field" match the input?
+            alignment = torch.dot(torch.mv(proj, inp), inp)
+            # Normalize to a gain factor centered on 1.0
+            gain = 0.5 + 1.5 * torch.sigmoid(alignment / (inp.norm() ** 2 + 1e-8))
+            # Scale this node's activation by the gain
+            node.last_activation = node.last_activation * gain.item()
 
     def _apply_lateral_inhibition(self, keep_ratio: float = 0.1) -> None:
         """Suppress weakest nodes' last_activation in-place.
@@ -304,16 +348,22 @@ class PredictiveSOMA(nn.Module):
 
         step_result = self.soma.step(inputs, targets=targets)
 
+        # Input diversification: each associator's activation gets
+        # modulated by its unique random projection of the input.
+        # This creates different "views" per node — the software
+        # equivalent of different dendritic receptive fields.
+        self._diversify_activations(input_tensor)
+
         # Lateral inhibition: suppress weakest nodes' activations.
         # This drives specialization — synaptogenesis only wires
         # co-active (non-suppressed) nodes, so different inputs
         # strengthen different subgraphs over time.
         self._apply_lateral_inhibition()
 
-        # NOTE: competitive learning is implemented but disabled —
-        # with fully-connected initialization all nodes receive the
-        # same signal, so one node always dominates. Needs sparse
-        # initial connectivity to work. See _competitive_learning().
+        # Competitive learning: winner node adapts toward the input.
+        # Requires sparse_init_connectivity < 1.0 so nodes receive
+        # different input subsets and can genuinely specialize.
+        self._competitive_learning(input_tensor)
 
         # Store original text for retrieval/verbalization
         step_num = step_result.get("global_step", len(self.text_store))

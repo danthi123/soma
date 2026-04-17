@@ -224,7 +224,16 @@ class SOMA:
             self.graph.add_node(node, modality=modality)
             outputs.append(node)
 
-        # Associator layer wired sensor -> assoc -> output.
+        # Associator layer. With sparse_init_connectivity < 1.0, each
+        # associator connects to a random subset of sensors — different
+        # nodes see different input subsets, enabling specialization.
+        # At 1.0 (default), all associators connect to all sensors
+        # (original fully-connected behavior).
+        sparse_p = getattr(config, "sparse_init_connectivity", 1.0)
+        rng_init = torch.Generator()
+        if config.seed is not None:
+            rng_init.manual_seed(config.seed + 7)
+
         associators: list[Node] = []
         for _ in range(max(1, config.initial_associator_count)):
             node = Node(
@@ -239,17 +248,25 @@ class SOMA:
             self.graph.add_node(node)
             associators.append(node)
             for sensor in sensors:
-                self._try_add_edge(sensor, node)
+                if sparse_p >= 1.0 or torch.rand(1, generator=rng_init).item() < sparse_p:
+                    self._try_add_edge(sensor, node)
             for out_node in outputs:
-                self._try_add_edge(node, out_node)
+                if sparse_p >= 1.0 or torch.rand(1, generator=rng_init).item() < sparse_p:
+                    self._try_add_edge(node, out_node)
+
+        # Ensure every associator has at least one input and one output
+        # edge — orphaned nodes can't participate.
+        for node in associators:
+            if not self.graph.get_incoming_edges(node.id):
+                sensor = sensors[0]
+                self._try_add_edge(sensor, node)
+            if not self.graph.get_outgoing_edges(node.id):
+                self._try_add_edge(node, outputs[0])
 
         # Integrator layer wired assoc -> integrator -> output. Each integrator
         # receives from one associator (round-robin) and broadcasts to every
         # output — enough to ensure the integrator sees signal on day zero.
         # Synaptogenesis widens the inbound fan-in later based on correlation.
-        # Fixes a long-standing bug where config.initial_integrator_count was
-        # read by SOMAConfig but never consumed here, leaving the graph with
-        # no INTEGRATOR nodes ever (neurogenesis only grows ASSOCIATORs).
         for i in range(max(0, config.initial_integrator_count)):
             node = Node(
                 node_type=NodeType.INTEGRATOR,

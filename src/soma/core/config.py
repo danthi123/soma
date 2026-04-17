@@ -102,6 +102,7 @@ class SOMAConfig:
     max_edge_weight: float = 5.0
     locality_scale: float = 2.0
     position_jitter: float = 0.1
+    sparse_init_connectivity: float = 1.0  # 1.0 = fully connected (default)
 
     # --- Intervals --------------------------------------------------------
     synaptogenesis_interval: int = 100
@@ -358,6 +359,7 @@ class SOMAConfig:
             "consolidation_replay_steps": 20,
             # Lower thresholds for developmental graphs
             "activation_threshold": 0.005,
+            "sparse_init_connectivity": 0.3,
             "seed": 42,
         }
         defaults.update(overrides)

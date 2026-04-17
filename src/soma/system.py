@@ -249,7 +249,7 @@ class SOMA:
             associators.append(node)
             for sensor in sensors:
                 if sparse_p >= 1.0 or torch.rand(1, generator=rng_init).item() < sparse_p:
-                    self._try_add_edge(sensor, node)
+                    self._try_add_edge(sensor, node, diversify=sparse_p < 1.0)
             for out_node in outputs:
                 if sparse_p >= 1.0 or torch.rand(1, generator=rng_init).item() < sparse_p:
                     self._try_add_edge(node, out_node)
@@ -259,7 +259,7 @@ class SOMA:
         for node in associators:
             if not self.graph.get_incoming_edges(node.id):
                 sensor = sensors[0]
-                self._try_add_edge(sensor, node)
+                self._try_add_edge(sensor, node, diversify=sparse_p < 1.0)
             if not self.graph.get_outgoing_edges(node.id):
                 self._try_add_edge(node, outputs[0])
 
@@ -289,6 +289,7 @@ class SOMA:
         target: Node,
         *,
         initial_weight: float = 0.1,
+        diversify: bool = False,
     ) -> None:
         if self.graph.has_edge(source.id, target.id):
             return
@@ -300,6 +301,7 @@ class SOMA:
                 target_input_dim=target.input_dim,
                 creation_step=self.global_step,
                 initial_weight=initial_weight,
+                diversify=diversify,
             )
         )
 

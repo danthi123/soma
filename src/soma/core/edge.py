@@ -53,6 +53,7 @@ class Edge(nn.Module):
         initial_weight: float = 0.01,
         edge_id: str | None = None,
         device: torch.device | str | None = None,
+        diversify: bool = False,  # reserved for future use
     ) -> None:
         super().__init__()
 

@@ -184,11 +184,7 @@ class SOMAConfig:
             "vocab_size",
             "text_embed_dim",
             "max_nodes",
-            "synaptogenesis_interval",
-            "neurogenesis_interval",
-            "consolidation_interval",
             "consolidation_replay_steps",
-            "pruning_interval",
             "checkpoint_interval",
             "num_curiosity_domains",
             "max_output_tokens",
@@ -212,6 +208,11 @@ class SOMAConfig:
             "inactivity_threshold",
             "pruning_grace_period",
             "myelination_age_threshold",
+            # Growth/consolidation intervals: 0 = disabled.
+            "synaptogenesis_interval",
+            "neurogenesis_interval",
+            "consolidation_interval",
+            "pruning_interval",
         ]
         for name in non_negative_ints:
             value = getattr(self, name)
@@ -300,6 +301,35 @@ class SOMAConfig:
             )
         filtered = {k: v for k, v in data.items() if k in known}
         return cls(**filtered)
+
+    @classmethod
+    def production(cls, **overrides: Any) -> SOMAConfig:
+        """Return a production-tuned config: frozen graph, no growth cycles.
+
+        B3 CL ablations showed that SOMA's anti-forgetting property is
+        architectural (the graph acts as a fixed nonlinear feature
+        extractor, similar to reservoir computing). Hebbian plasticity,
+        consolidation, and critical periods add compute cost without
+        measurable benefit in production workloads.
+
+        This factory disables all growth/consolidation intervals (set to
+        0) so the graph is constructed once and then used read-only.
+        Callers should pass ``eval_mode=True`` to ``SOMA.step()`` to
+        also skip per-step Hebbian weight updates (2x faster).
+
+        Any keyword argument overrides the production default, so you
+        can still enable specific research features::
+
+            cfg = SOMAConfig.production(consolidation_interval=500)
+        """
+        defaults: dict[str, Any] = {
+            "synaptogenesis_interval": 0,
+            "neurogenesis_interval": 0,
+            "consolidation_interval": 0,
+            "pruning_interval": 0,
+        }
+        defaults.update(overrides)
+        return cls(**defaults)
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize to a plain dict (YAML-friendly)."""

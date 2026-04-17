@@ -533,7 +533,8 @@ class SOMA:
         config = self.config
         if self.global_step > 0:
             if (
-                self.global_step % config.synaptogenesis_interval == 0
+                config.synaptogenesis_interval > 0
+                and self.global_step % config.synaptogenesis_interval == 0
                 and self.homeostasis.allow_synaptogenesis
             ):
                 new_edges = synaptogenesis(
@@ -551,7 +552,8 @@ class SOMA:
                         target=edge.target_id,
                     )
             if (
-                self.global_step % config.neurogenesis_interval == 0
+                config.neurogenesis_interval > 0
+                and self.global_step % config.neurogenesis_interval == 0
                 and self.homeostasis.allow_neurogenesis
             ):
                 new_node = neurogenesis(
@@ -569,7 +571,7 @@ class SOMA:
                         node_type=new_node.node_type.name,
                         trigger_ratio=ratio,
                     )
-            if self.global_step % config.pruning_interval == 0:
+            if config.pruning_interval > 0 and self.global_step % config.pruning_interval == 0:
                 # Snapshot edge/node metadata BEFORE pruning so we can attach
                 # source/target/age/final_strength to prune events — these
                 # fields are irretrievable once the edge is gone from the graph.
@@ -587,7 +589,8 @@ class SOMA:
 
     def _maybe_consolidate(self, *, rng: torch.Generator | None) -> None:
         if (
-            self.global_step > 0
+            self.config.consolidation_interval > 0
+            and self.global_step > 0
             and self.global_step % self.config.consolidation_interval == 0
             and self.episodic_memory.num_valid > 0
         ):

@@ -87,7 +87,7 @@ Things that came up during the 2026-04-16 gap-closing push (Phases 1-7b) but wer
 
 ## Research agenda (out-of-sprint)
 
-- **Graph re-rank re-activation.** The plastic-graph substrate ships but the growth thresholds (training-tuned) don't fire under memory-layer workloads. The research agenda in `benchmarks/reports/paper-draft.md` §5 details what would activate it.
+- **Graph re-rank re-activation — deprioritized after Research-C C1/C1b (2026-04-17).** The plastic-graph substrate captures co-occurrence structure (Spearman ρ=0.854 between edge weights and pair co-occurrence at N=10 consolidation), but its edges are between *internal processing nodes* (sensors/associators/integrators/outputs), not between *memory entries*. A 9-way readout ablation (α-sweep, pure-graph-rank, graph-traversal-expand, centrality-prior) failed to convert this signal into retrieval improvement — every mode either tied or hurt pure-vector. Root cause: the signal is structurally unreachable without a text-token-to-graph-node index (essentially building a knowledge graph on top of SOMA, which is a different project). See `research/graph_memory/reports/c1b_blend_ablation.md`. The substrate may still be useful for *non-retrieval* objectives (CL benchmark, attractor/Hopfield dynamics) — those tracks are active under Research B and D.
 - **Multimodal memory.** Current store is text-only. Arrow-native adapters (LanceDB) could host image/audio vectors behind the same API. No concrete plan.
 - **Federated / multi-device sync.** Bundles are portable; sync across devices is a different problem (CRDT on the WAL? sync service?). No plan.
 

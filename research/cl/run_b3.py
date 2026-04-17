@@ -26,7 +26,7 @@ import torch
 from torch.utils.data import DataLoader, TensorDataset
 
 from research.cl import datasets, harness
-from research.cl.soma_cl import make_soma_cl_components
+from research.cl.soma_cl import SomaClassifier, make_soma_cl_components
 
 REPORTS_DIR = Path("research/cl/reports")
 
@@ -390,10 +390,29 @@ def main() -> None:
             ewc_lambda=ablation.get("ewc_lambda", 1000.0),
             use_layer_norm=ablation.get("use_layer_norm", False),
         )
+
+        # For frozen ablations, pre-build the model, cache all SOMA
+        # features once, and replace DataLoaders with feature tensors.
+        # Reduces ~50 min to ~2 min per ablation.
+        run_tasks = mnist_tasks
+        if ablation["frozen"]:
+            _model, _opt = factory(device)
+            if isinstance(_model, SomaClassifier):
+                run_tasks = _model.precompute_all_tasks(mnist_tasks, device)
+            # Wrap pre-built model in a factory that returns it once
+            _built = [(_model, _opt)]
+
+            def _prebuilt_factory(
+                dev: torch.device, _ref: list = _built,
+            ) -> tuple:
+                return _ref[0]
+
+            factory = _prebuilt_factory
+
         result = _run_benchmark(
             f"{ablation['name']} (Permuted-MNIST)",
             factory,
-            mnist_tasks,
+            run_tasks,
             args.epochs,
             device,
             train_one_epoch=train_fn,

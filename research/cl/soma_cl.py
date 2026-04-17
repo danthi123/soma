@@ -85,66 +85,112 @@ class SomaClassifier(nn.Module):
             self.layer_norm = nn.LayerNorm(self._head_dim)
         self.head = nn.Linear(self._head_dim, num_classes)
 
+    _use_cached: bool = False
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Forward pass: x -> SOMA features -> logits.
 
-        Parameters
-        ----------
-        x:
-            Flattened input tensor, shape ``(batch, input_dim)``.
-
-        Returns
-        -------
-        Logits tensor, shape ``(batch, num_classes)``.
+        When ``_use_cached=True``, ``x`` is expected to be a
+        pre-computed ``(projected || soma_features)`` combined tensor
+        from ``precompute_all_tasks()``, so we skip the graph entirely.
         """
+        if self._use_cached:
+            combined = x
+        else:
+            projected, soma_t = self._compute_features(x)
+            combined = torch.cat([projected, soma_t], dim=1)
+
+        if self.layer_norm is not None:
+            combined = self.layer_norm(combined)
+        logits = self.head(combined)
+        return logits
+
+    def _compute_features(
+        self, x: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Run input through projection + SOMA graph (slow path)."""
         batch_size = x.size(0)
         soma_features = []
 
-        # Project: raw pixels -> sensor_output_dim.
-        # Keep grad graph alive for the classification head's backprop.
-        projected = self.input_proj(x)  # (batch, sensor_dim)
-        # Detach copy for SOMA (its internal backward must not collide)
+        projected = self.input_proj(x)
         projected_detached = projected.detach()
-
         is_eval = self.frozen or not self.training
 
         for i in range(batch_size):
-            sample = projected_detached[i]  # (sensor_dim,)
+            sample = projected_detached[i]
             inputs = {self._input_modality: sample}
-
-            # Self-supervised target for SOMA's Hebbian learning.
-            # Skip in eval mode (no_grad context breaks backward).
             targets = (
                 None if is_eval
                 else {self._output_modality: sample.detach()}
             )
-
             result = self.soma.step(
-                inputs,
-                targets=targets,
-                eval_mode=is_eval,
+                inputs, targets=targets, eval_mode=is_eval,
             )
-
             outputs = result["outputs"]
             if self._output_modality in outputs:
                 feat = outputs[self._output_modality]
             else:
                 feat = torch.zeros(
-                    self._output_dim,
-                    device=x.device,
-                    dtype=x.dtype,
+                    self._output_dim, device=x.device, dtype=x.dtype,
                 )
             soma_features.append(feat)
 
-        # SOMA features: detached (Hebbian only, no backprop through graph)
         soma_t = torch.stack(soma_features, dim=0).detach()
+        return projected, soma_t
 
-        # Concatenate: [projected (grad-carrying), soma_features (detached)]
-        combined = torch.cat([projected, soma_t], dim=1)
-        if self.layer_norm is not None:
-            combined = self.layer_norm(combined)
-        logits = self.head(combined)
-        return logits
+    def precompute_all_tasks(
+        self,
+        tasks: list[tuple[int, DataLoader, DataLoader]],
+        device: torch.device,
+    ) -> list[tuple[int, DataLoader, DataLoader]]:
+        """Pre-compute SOMA features and return new DataLoaders.
+
+        Replaces raw-pixel loaders with cached-feature loaders where
+        each sample is ``(combined_features, label)`` instead of
+        ``(pixels, label)``. Sets ``_use_cached=True`` so forward()
+        skips the graph. Returns the replacement task list.
+        """
+        import time as _time
+
+        from torch.utils.data import DataLoader as DL
+        from torch.utils.data import TensorDataset
+
+        self.train(False)
+        total = 0
+        t0 = _time.perf_counter()
+
+        new_tasks = []
+        with torch.no_grad():
+            for task_id, train_loader, test_loader in tasks:
+                new_loaders = []
+                for loader in (train_loader, test_loader):
+                    all_combined = []
+                    all_y = []
+                    for x, y in loader:
+                        x = x.to(device)
+                        proj, soma = self._compute_features(x)
+                        combined = torch.cat([proj, soma], dim=1)
+                        all_combined.append(combined.detach().cpu())
+                        all_y.append(y)
+                        total += x.size(0)
+                    cat_x = torch.cat(all_combined, dim=0)
+                    cat_y = torch.cat(all_y, dim=0)
+                    is_train = loader.dataset is train_loader.dataset
+                    new_loaders.append(DL(
+                        TensorDataset(cat_x, cat_y),
+                        batch_size=loader.batch_size or 128,
+                        shuffle=is_train,
+                    ))
+                new_tasks.append((task_id, new_loaders[0], new_loaders[1]))
+
+        self._use_cached = True
+        elapsed = _time.perf_counter() - t0
+        rate = total / elapsed if elapsed > 0 else 0
+        print(
+            f"  [cache] Pre-computed {total} samples across "
+            f"{len(tasks)} tasks in {elapsed:.1f}s ({rate:.0f}/sec)"
+        )
+        return new_tasks
 
     def consolidate(self) -> None:
         """Run one consolidation cycle (artificial sleep).

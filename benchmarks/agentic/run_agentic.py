@@ -18,6 +18,7 @@ from pathlib import Path
 
 from benchmarks.agentic.agents import AGENT_REGISTRY
 from benchmarks.agentic.agents.baseline import BaselineAgent
+from benchmarks.agentic.agents.soma_agent import SomaAgent
 from benchmarks.agentic.harness import run
 from benchmarks.agentic.metrics import TaskResult, format_comparison_table
 from benchmarks.agentic.models import MODELS, get_model
@@ -26,7 +27,9 @@ from benchmarks.agentic.tasks import TASK_REGISTRY
 logger = logging.getLogger(__name__)
 
 
-def _build_agent(agent_name: str, model_tier: str) -> BaselineAgent:
+def _build_agent(
+    agent_name: str, model_tier: str
+) -> BaselineAgent | SomaAgent:
     """Construct an agent by name + model tier."""
     if agent_name not in AGENT_REGISTRY:
         raise ValueError(
@@ -37,6 +40,9 @@ def _build_agent(agent_name: str, model_tier: str) -> BaselineAgent:
 
     if agent_name == "baseline":
         return BaselineAgent(model_config=model_cfg)
+
+    if agent_name == "soma":
+        return SomaAgent(model_config=model_cfg)
 
     raise ValueError(f"Agent {agent_name!r} not yet implemented.")
 

@@ -87,6 +87,29 @@ def _format_growth_log(soma: SOMA, recent: int = 5) -> str:
     return "\n".join(lines)
 
 
+_SBERT = None
+_EMBED_CACHE: dict[str, torch.Tensor] = {}
+
+
+def _get_sbert():
+    """Lazy-load sentence-transformers model."""
+    global _SBERT
+    if _SBERT is None:
+        from sentence_transformers import SentenceTransformer
+
+        _SBERT = SentenceTransformer("all-MiniLM-L6-v2")
+    return _SBERT
+
+
+def _embed(text: str) -> torch.Tensor:
+    """Embed text with caching to avoid redundant encoding."""
+    if text not in _EMBED_CACHE:
+        _EMBED_CACHE[text] = _get_sbert().encode(
+            text, convert_to_tensor=True,
+        )
+    return _EMBED_CACHE[text]
+
+
 def _format_recalled_memories(
     text_store: dict[int, str] | None,
     query: str | None = None,
@@ -94,26 +117,28 @@ def _format_recalled_memories(
 ) -> str:
     """Format recalled memories from the text store.
 
-    If *query* is given, do simple keyword matching to find the most
-    relevant stored texts.  Otherwise show the most recent entries.
+    If *query* is given, rank stored texts by semantic similarity
+    using sentence-transformers embeddings.  Otherwise show the
+    most recent entries.
     """
     if not text_store:
         return "  (no memories)"
 
     if query is not None:
-        # Simple keyword relevance: count query-word overlap
-        query_words = set(query.lower().split())
+        query_emb = _embed(query)
         scored: list[tuple[float, int, str]] = []
         for step, text in text_store.items():
-            text_words = set(text.lower().split())
-            overlap = len(query_words & text_words)
-            scored.append((overlap, step, text))
+            text_emb = _embed(text)
+            sim = float(torch.nn.functional.cosine_similarity(
+                query_emb.unsqueeze(0), text_emb.unsqueeze(0),
+            ).item())
+            scored.append((sim, step, text))
         scored.sort(key=lambda t: (-t[0], -t[1]))
         selected = scored[:top_k]
     else:
         # Most recent
         items = sorted(text_store.items(), key=lambda t: -t[0])
-        selected = [(0, step, text) for step, text in items[:top_k]]
+        selected = [(0.0, step, text) for step, text in items[:top_k]]
 
     lines: list[str] = []
     for _score, step, text in selected:

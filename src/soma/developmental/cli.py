@@ -94,7 +94,7 @@ def main(argv: list[str] | None = None) -> None:
 
     print("SOMA Developmental CLI")
     print(f"Model: {args.model} | Device: {device}")
-    print("Type /state, /stats, /save, or /quit.  Ctrl-C to exit.\n")
+    print("Commands: /state /stats /report /recall <q> /sleep /save /quit\n")
 
     step = 0
     try:
@@ -162,6 +162,16 @@ def main(argv: list[str] | None = None) -> None:
                     print(f"  Edge growth: {summary['num_edges']['min']:.0f}"
                           f" -> {summary['num_edges']['last']:.0f}")
                 print()
+                continue
+
+            if user_input.lower() == "/sleep":
+                soma = loop.predictive_soma.soma
+                print("  Consolidating (sleep cycle)...", flush=True)
+                n_before = len(soma.graph.edges)
+                soma._maybe_consolidate(rng=None)
+                n_after = len(soma.graph.edges)
+                delta_e = n_after - n_before
+                print(f"  Sleep complete. Edges: {n_before} -> {n_after} ({delta_e:+d})")
                 continue
 
             if user_input.lower().startswith("/recall "):

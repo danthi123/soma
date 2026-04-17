@@ -93,6 +93,11 @@ def main(argv: list[str] | None = None) -> None:
         action="store_true",
         help="Print the run matrix without executing",
     )
+    parser.add_argument(
+        "--enable-thinking",
+        action="store_true",
+        help="Override disable_thinking=False for all models (enable reasoning)",
+    )
 
     args = parser.parse_args(argv)
     model_tiers = [m.strip() for m in args.models.split(",")]
@@ -133,6 +138,8 @@ def main(argv: list[str] | None = None) -> None:
 
     for m in model_tiers:
         cfg = get_model(m)
+        if args.enable_thinking:
+            cfg.disable_thinking = False
         model_results: dict[str, TaskResult] = {}
 
         for t in task_names:

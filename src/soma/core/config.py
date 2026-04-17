@@ -331,6 +331,38 @@ class SOMAConfig:
         defaults.update(overrides)
         return cls(**defaults)
 
+    @classmethod
+    def developmental(cls, **overrides: Any) -> SOMAConfig:
+        """Return a config tuned for developmental learning.
+
+        Optimised for small graphs (< 50 nodes) that grow through
+        text interaction.  Higher synaptogenesis rate, lower
+        activation threshold, and shorter growth intervals than the
+        whitepaper defaults — which were designed for 50K-node graphs
+        and million-step training runs.
+        """
+        defaults: dict[str, Any] = {
+            "vocab_size": 256,
+            "text_embed_dim": 64,
+            "sensor_output_dim": 64,
+            "max_input_tokens": 128,
+            "initial_integrator_count": 4,
+            "initial_associator_count": 8,
+            # Faster growth cycles for interactive use
+            "synaptogenesis_interval": 10,
+            "synaptogenesis_rate": 2.0,
+            "neurogenesis_interval": 25,
+            "neurogenesis_threshold": 1.02,
+            "pruning_interval": 200,
+            "consolidation_interval": 50,
+            "consolidation_replay_steps": 20,
+            # Lower thresholds for small graphs
+            "activation_threshold": 0.005,
+            "seed": 42,
+        }
+        defaults.update(overrides)
+        return cls(**defaults)
+
     def to_dict(self) -> dict[str, Any]:
         """Serialize to a plain dict (YAML-friendly)."""
         result: dict[str, Any] = {}

@@ -64,7 +64,7 @@ def main(argv: list[str] | None = None) -> None:
     args = _parse_args(argv)
     device = torch.device(args.device)
 
-    config = SOMAConfig()
+    config = SOMAConfig.developmental()
     loop = InteractionLoop(
         config=config,
         llm_model=args.model,

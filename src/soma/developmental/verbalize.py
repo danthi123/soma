@@ -82,7 +82,8 @@ def _format_growth_log(soma: SOMA, recent: int = 5) -> str:
         return "  (none)"
     lines: list[str] = []
     for entry in entries:
-        lines.append(f"  - step {entry['step']}: {entry['event']}")
+        event_name = entry.get("event", entry.get("event_type", "unknown"))
+    lines.append(f"  - step {entry.get('step', '?')}: {event_name}")
     return "\n".join(lines)
 
 

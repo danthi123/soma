@@ -210,6 +210,25 @@ def main() -> None:
         default=42,
         help="SOMA seed (default: 42)",
     )
+    parser.add_argument(
+        "--integrators",
+        type=int,
+        default=8,
+        help=(
+            "Number of initial integrator nodes (default: 8). "
+            "Associators are set to 2x this value."
+        ),
+    )
+    parser.add_argument(
+        "--ablation",
+        type=str,
+        default=None,
+        help=(
+            "Run only a specific ablation (default: all). "
+            "Choices: soma-plastic, soma-frozen, soma-no-consolidation, "
+            "soma-no-critical-periods"
+        ),
+    )
     args = parser.parse_args()
 
     use_cuda = torch.cuda.is_available() and torch.cuda.device_count() > 0
@@ -245,13 +264,20 @@ def main() -> None:
 
     all_results: dict = {}
 
-    for ablation in ABLATIONS:
+    ablations = ABLATIONS
+    if args.ablation:
+        ablations = [a for a in ABLATIONS if a["name"] == args.ablation]
+        if not ablations:
+            parser.error(f"Unknown ablation {args.ablation!r}")
+
+    for ablation in ablations:
         factory, train_fn, hook = make_soma_cl_components(
             dataset="mnist",
             frozen=ablation["frozen"],
             enable_consolidation=ablation["enable_consolidation"],
             disable_critical_periods=ablation["disable_critical_periods"],
             seed=args.seed,
+            integrator_count=args.integrators,
         )
         result = _run_benchmark(
             f"{ablation['name']} (Permuted-MNIST)",

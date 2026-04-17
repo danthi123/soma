@@ -319,6 +319,7 @@ def make_soma_cl_components(
     enable_consolidation: bool = True,
     disable_critical_periods: bool = False,
     seed: int = 42,
+    integrator_count: int = 8,
 ) -> tuple[
     Callable[[torch.device], tuple[nn.Module, Optimizer]],
     Callable[..., float],
@@ -338,6 +339,8 @@ def make_soma_cl_components(
         If True, disable the development schedule (constant LR).
     seed:
         Random seed for SOMA construction.
+    integrator_count:
+        Number of initial integrator nodes. Associators = 2x this.
     """
 
     config_fn = _mnist_soma_config if dataset == "mnist" else _cifar_soma_config
@@ -345,6 +348,8 @@ def make_soma_cl_components(
         disable_critical_periods=disable_critical_periods,
         seed=seed,
     )
+    config.initial_integrator_count = integrator_count
+    config.initial_associator_count = integrator_count * 2
 
     num_classes = 10  # both MNIST and CIFAR-10
     input_dim = 784 if dataset == "mnist" else 3072

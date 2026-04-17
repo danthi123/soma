@@ -155,7 +155,8 @@ class ToolLearningTask:
             submitted = args.get("results", [])
             for target in self._target_queries:
                 for item in submitted:
-                    if target.lower() in item.lower():
+                    item_str = str(item) if not isinstance(item, str) else item
+                    if target.lower() in item_str.lower():
                         self._targets_found += 1
                         break
             found = self._targets_found

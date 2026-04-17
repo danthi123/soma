@@ -22,6 +22,16 @@ D3 showed that GROWING from 14 to 128 nodes dynamically hurt
 different — the seed graph's topology is more structured than
 randomly-added growth nodes.
 
+**Theoretical prediction from D4 (testable):** the D4 analysis found
+the Jacobian is full-rank (50/50 at D=50, condition number 1.63)
+with capacity scaling as O(rank of transfer function) ≈ O(output_dim),
+NOT O(node_count). If this theory holds, the node-count sweep should
+show: (a) per-bit accuracy flat across node counts (dominated by
+output_dim), (b) nearest-recall capacity unchanged (already at
+N/D=3.0 with 14 nodes), (c) wall-clock and VRAM scale linearly
+with node count (pure overhead). This makes the sweep a CONFIRMATION
+of the D4 theory, not just an exploratory ablation.
+
 **Depends on:** B3 (CL adapter baseline) for CL sweep; D2/D3
 (attractor mode) for associative sweep.
 

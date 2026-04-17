@@ -164,20 +164,40 @@ def main(argv: list[str] | None = None) -> None:
                 print()
                 continue
 
+            if user_input.lower().startswith("/recall "):
+                query = user_input[8:].strip()
+                if query:
+                    qvec = loop.encode_text(query)
+                    recalled = loop.predictive_soma.retrieve_by_graph(qvec, top_k=5)
+                    print(f"\n  Memories recalled for \"{query}\":")
+                    if recalled:
+                        for s, text, sim in recalled:
+                            print(f"    [{s}] (sim={sim:.3f}) {text[:100]}")
+                    else:
+                        print("    (none)")
+                    print()
+                continue
+
             # ---- Normal interaction --------------------------------------
             result = loop.process_input(user_input, call_llm=True)
             step += 1
+
+            soma = loop.predictive_soma.soma
+            n = len(soma.graph.nodes)
+            e = len(soma.graph.edges)
+            m = len(loop.predictive_soma.text_store)
 
             if result["response"]:
                 print(f"\nSOMA> {result['response']}\n")
             else:
                 print("\nSOMA> (no response)\n")
 
-            # Dev metrics
+            # Dev metrics — compact status line
             print(
-                f"  [step {result['global_step']}]  "
+                f"  [step {result['global_step']}  "
+                f"graph:{n}n/{e}e  mem:{m}  "
                 f"pred_err={result['prediction_error']:.4f}  "
-                f"novelty={result['novelty']:.4f}"
+                f"novelty={result['novelty']:.4f}]"
             )
 
             if args.show_state:

@@ -66,6 +66,10 @@ def _train_one_epoch(
 
 ModelFactory = Callable[[torch.device], tuple[nn.Module, Optimizer]]
 
+# Callback signatures for custom training loops (B2+)
+TrainOneEpoch = Callable[[nn.Module, Optimizer, DataLoader, torch.device], float]
+OnTaskEnd = Callable[[nn.Module, int, DataLoader, torch.device], None]
+
 
 def run(
     model_factory: ModelFactory,
@@ -73,6 +77,8 @@ def run(
     n_epochs: int = 5,
     device: torch.device | None = None,
     verbose: bool = True,
+    train_one_epoch: TrainOneEpoch | None = None,
+    on_task_end: OnTaskEnd | None = None,
 ) -> dict:
     """Run the full CL benchmark.
 
@@ -89,6 +95,13 @@ def run(
         Torch device. Auto-detects CUDA if available.
     verbose:
         Print progress to stdout.
+    train_one_epoch:
+        Optional custom training function ``(model, optimizer, loader, device) -> loss``.
+        Defaults to vanilla cross-entropy SGD.
+    on_task_end:
+        Optional callback ``(model, task_idx, train_loader, device) -> None``
+        invoked after training on each task (before evaluation). Used by EWC
+        to compute Fisher, by A-GEM to populate the memory buffer, etc.
 
     Returns
     -------
@@ -102,6 +115,8 @@ def run(
     """
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    _train_fn = train_one_epoch or _train_one_epoch
 
     T = len(tasks)
     A = np.zeros((T, T), dtype=np.float64)
@@ -117,9 +132,13 @@ def run(
         if verbose:
             print(f"--- Task {task_id} ({idx + 1}/{T}) ---")
         for epoch in range(n_epochs):
-            avg_loss = _train_one_epoch(model, optimizer, train_loader, device)
+            avg_loss = _train_fn(model, optimizer, train_loader, device)
             if verbose:
                 print(f"  epoch {epoch + 1}/{n_epochs}  loss={avg_loss:.4f}")
+
+        # Post-task hook (Fisher computation, memory buffer, etc.)
+        if on_task_end is not None:
+            on_task_end(model, idx, train_loader, device)
 
         task_times.append(time.perf_counter() - task_t0)
 

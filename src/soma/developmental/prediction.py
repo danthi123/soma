@@ -78,7 +78,7 @@ class PredictiveSOMA(nn.Module):
         return torch.zeros(dim, device=self.device)
 
     def _get_node_fingerprint(
-        self, inhibition_ratio: float = 0.3,
+        self, inhibition_ratio: float = 0.2,
     ) -> torch.Tensor:
         """Build a sparse fingerprint via lateral inhibition.
 
@@ -123,7 +123,7 @@ class PredictiveSOMA(nn.Module):
 
         return torch.cat(parts)
 
-    def _apply_lateral_inhibition(self, keep_ratio: float = 0.3) -> None:
+    def _apply_lateral_inhibition(self, keep_ratio: float = 0.2) -> None:
         """Suppress weakest nodes' last_activation in-place.
 
         After SOMA.step(), zero out the activations of the least active
@@ -237,7 +237,7 @@ class PredictiveSOMA(nn.Module):
         # This drives specialization — synaptogenesis only wires
         # co-active (non-suppressed) nodes, so different inputs
         # strengthen different subgraphs over time.
-        self._apply_lateral_inhibition(keep_ratio=0.3)
+        self._apply_lateral_inhibition(keep_ratio=0.2)
 
         # Store original text for retrieval/verbalization
         step_num = step_result.get("global_step", len(self.text_store))

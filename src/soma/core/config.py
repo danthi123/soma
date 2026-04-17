@@ -346,8 +346,8 @@ class SOMAConfig:
             "text_embed_dim": 64,
             "sensor_output_dim": 64,
             "max_input_tokens": 128,
-            "initial_integrator_count": 4,
-            "initial_associator_count": 8,
+            "initial_integrator_count": 16,
+            "initial_associator_count": 32,
             # Faster growth cycles for interactive use
             "synaptogenesis_interval": 10,
             "synaptogenesis_rate": 2.0,

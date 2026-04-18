@@ -228,30 +228,74 @@ Each memory stores which nodes were active (inverted index: node → memory
 steps). Enables fast topology-based retrieval without re-running graph
 execution per stored memory.
 
+## Completed Work (previously listed as next steps)
+
+### Consolidation Validation — DONE (commit `c553a66`)
+Develop 300 steps → consolidate → QA vs no-consolidation test shipped.
+Result: **+45% QA improvement with consolidation**. The "sleep" cycle
+reorganizes the graph in a way that measurably helps retrieval.
+
+### Multi-Session Development — DONE (commit `6a0a822`)
+Save/load across 3 sessions (cooking+family → travel+music → cross-
+session recall). Graph grew 275% across sessions and cross-session
+recall works. Developmental state is persistent.
+
+### Edge-Level Input Diversification (naive) — REVERTED (commit `4d044f6`)
+Tried moving random projections into `Edge.transmit()` directly. Linear
+projections preserve inner products, so this doesn't create genuine
+input differentiation — it's equivalent to the current post-hoc scheme
+in terms of what each associator "sees." A **nonlinear per-edge
+variant** (e.g. edge-specific nonlinear activations or learned
+projections) remains untried and is the real open version of this
+idea.
+
 ## Next Steps (Priority Order)
 
-### P1: Edge-Level Input Diversification
-Move the random projections from PredictiveSOMA's post-hoc modulation into
-the Edge.transmit() method. Each sensor→associator edge would apply its own
-random linear transform. This is architecturally cleaner and would enable
-competitive learning to work properly.
+### P1: Fingerprint Vocabulary Scaling — DISPROVEN (2026-04-18)
+Hypothesis was: hybrid retrieval plateaus near ~66/100 because
+fingerprint vocabulary is too small (~C(14,3)=364 patterns for 5882
+turns). Scaling associators should expand vocabulary and lift hits.
 
-### P2: Consolidation Validation
-We haven't verified that consolidation ("sleep") cycles actually improve
-retrieval. Run a test: develop for 300 steps, consolidate, test QA.
-Compare to 300 steps without consolidation.
+`research/developmental/associator_count_sweep.py` swept
+`initial_associator_count` ∈ {8, 32, 64}:
 
-### P3: Multi-Session Development
-Test development across multiple separate sessions with save/load:
-- Session 1: Talk about cooking and family (save)
-- Session 2: Load, talk about travel and music (save)
-- Session 3: Load, test cross-session recall
+| n_init | n_final | Hits | Used | W/L | Net | Time |
+|--------|---------|------|------|------|-----|------|
+| 8      | 14      | 64   | 40   | 11/3 | +8  | 349s |
+| 32     | 38      | 61   | 56   | 13/9 | +4  | 1352s |
+| 64     | 70      | 63   | 61   | 8/9  | -1  | 2904s |
+
+**n=8 is Pareto optimal.** Scaling hurt: gate usage climbed (40→56→61)
+exactly as predicted, but confidence fired on *mismatches* — losses
+tripled from 3 to 9, wiping out the extra wins. At n=64 the graph is
+indistinguishable from VecDB (63 vs 63).
+
+Conclusion: the bottleneck is **signal quality, not vocabulary size**.
+Fingerprint patterns from random projections are structurally diverse
+but semantically arbitrary, consistent with the Phase 4b contrastive-
+FT failure finding.
+
+### P2: Nonlinear Edge-Level Diversification (future)
+The `4d044f6` revert showed linear per-edge projections don't
+differentiate. Nonlinear variants (per-edge activation functions,
+per-edge small MLPs, or gated projections) could create genuine input
+differentiation without the "linear preserves inner products"
+problem. Blocked on P1 outcome — if scaling the graph alone cracks
+the plateau, this becomes lower priority.
+
+### P3: Multi-Benchmark Validation
+LoCoMo's 100 QA pairs have been our only retrieval benchmark for
+Phase 3-8. Before more architectural work, validate the +3 gated-
+hybrid result on LongMemEval or a different LoCoMo split to confirm
+it's not overfit to this specific slice.
 
 ### P4: Separate Project Setup
-The developmental module is getting large enough to warrant its own repo.
-Keep the SOMA core as a dependency, move developmental/ to a new project.
+The developmental module is getting large enough to warrant its own
+repo. Keep the SOMA core as a dependency, move developmental/ to a
+new project. Admin task, not research.
 
 ### P5: Inhibitory Node Type
 Add explicit inhibitory nodes to the graph that learn to suppress
-specific associators. This would replace the post-hoc lateral inhibition
-with learned, input-dependent suppression.
+specific associators. Would replace the post-hoc lateral inhibition
+with learned, input-dependent suppression. Larger architectural
+change — park until P1/P2/P3 are exhausted.

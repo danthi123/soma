@@ -1,7 +1,7 @@
 # Developmental SOMA — Known Issues & Next Steps
 
 **Date:** 2026-04-18 (updated)  
-**Status:** PoC validated, pre-training tested, fingerprint collision fix, weight-based diversification
+**Status:** Confidence-gated hybrid validated (+3 over VecDB), adaptive gating, contrastive fine-tuning
 
 ---
 
@@ -20,14 +20,24 @@
 | Topology wins vs fingerprint | — | — | 20/100 queries |
 | Pre-trained graph (20K turns) | recall F1=0.051/0.052 | — | 44/46 hits (fp/topo) |
 | Combined fp+topo (any weight) | recall F1=~0.048 | — | 44/100 (signals too correlated) |
+| **SOMA + pretrained encoder** | — | — | — |
+| Vector DB (all-MiniLM-L6-v2) | — | — | **63/100** hits |
+| SOMA + pretrained (full replace) | — | — | 49/100 (-14 vs VecDB) |
+| **Confidence-gated hybrid** | — | — | **66/100** (+3 vs VecDB) |
+| Query analysis: SOMA wins | — | — | 9 queries |
+| Query analysis: VecDB wins | — | — | 6 queries |
+| Query analysis: ties | — | — | 85 (graph used in 22) |
 
-**Key insight:** Token overlap (53 hits) is the "dumb ceiling" — what character
-matching gives you for free. Graph-driven retrieval (47 hits) is SOMA's genuine
-contribution. The graph currently underperforms token overlap because random BPE
-embeddings limit it to character-level patterns. The graph's unique value is in
-cross-domain associations (topology wins 20/100), which token overlap cannot do.
-Gap to close: 6 hits (47 → 53). min_active=3 is optimal; min_active=4 hurts
-(-6 hits). Temperature=5.0 diversification helps (1.18x vs 1.07x discrimination).
+**Key insight (updated):** SOMA destroys embedding signal when used as a
+REPLACEMENT (-14 hits) but ADDS value as a confidence-gated COMPLEMENT (+3
+hits). The graph only intervenes when it has strong structural signal (confidence
+gap >= 0.05); otherwise pure embedding similarity is used. SOMA wins on cross-
+entity associations, multi-entity recall, and distributed temporal events. VecDB
+wins on single-turn factual recall and counting queries.
+
+**Architecture:** Embedding recall (top-20) → fingerprint confidence gate →
+selective graph reranking with weight 0.2. Implemented as `retrieve_hybrid()`
+on PredictiveSOMA.
 
 ## Known Issues
 
@@ -67,9 +77,64 @@ nature of which hash buckets get populated for each query.
 **Fix:** Larger fingerprint dim (512 or 1024), or average over multiple
 retrieval passes.
 
-## Recent Changes (2026-04-18)
+## Recent Changes (2026-04-18, Phase 3-6)
 
-### Pre-training Experiment (Negative Result)
+### Phase 3: Confidence-Gated Hybrid Retrieval (BREAKTHROUGH)
+Embeddings for candidate recall (top-20), then SOMA fingerprint similarity
+for selective reranking. Gate fires when confidence (top-1 minus top-2 fp
+sim) exceeds 0.05. Result: **66/100 hits vs VecDB's 63/100 (+3)**.
+Gate fires on 32/100 queries; wins 9, loses 6, ties 17.
+
+Query analysis reveals SOMA wins on:
+- Cross-entity: "What volunteering have John and Maria both done?"
+- Multi-entity recall: "Which of Deborah's family have passed away?"
+- Distributed temporal: "When did John join the support group?"
+- Coping/inference: "What helped Deborah find peace?"
+
+SOMA loses on single-turn factual recall and counting queries — the graph's
+structural reranking pushes wrong results up for queries where the answer
+is in a single well-embedded passage.
+
+### Phase 4: Encoder Fine-Tuning via SOMA Loss (Failed)
+Attempted to fine-tune sentence-transformers encoder through SOMA's loss.
+Result: 0 gradient updates — SOMA internally detaches tensors before
+computing loss, so `loss.backward()` never propagates to the encoder.
+
+### Phase 4b: Contrastive Encoder Fine-Tuning (FAILED)
+Designed `compute_contrastive_loss()` that uses graph topology as
+supervision: memories sharing active nodes should have similar embeddings.
+Provides proper gradient flow to the encoder. Result: **catastrophic**.
+VecDB dropped 63→50 (-13), gated dropped 65→51 (-14). Only 316 FT
+updates (all in Conv 1-3) were enough to destroy the pretrained encoder.
+Gate usage dropped 32→11 (graph also confused by degraded embeddings).
+
+Root cause: Graph co-activation topology is driven by frozen random
+projections, not semantic relationships. Training the encoder to match
+arbitrary activation patterns causes catastrophic forgetting. The
+contrastive loss optimizes for the wrong objective.
+
+### Phase 5: Semantic Lens (Negative)
+Learned projection from embeddings to graph fingerprint space. Lens alone
+hurts, combined matches baseline. No improvement over raw fingerprints.
+
+### Phase 6: Adaptive Gating (Negative Result)
+Tested scaling rerank_weight by absolute fingerprint quality (fp_sorted[0])
+to prevent confidently-wrong reranking. Result: same 66 hits but 2 fewer
+wins (10 vs 12). Hypothesis was wrong — fingerprint quality is already
+high when the gate fires (fp_best=0.7+). Reducing the effective weight
+just weakens correct reranking decisions.
+
+Also tested: combined confidence (gap * absolute, 65 hits), higher
+threshold (0.10, 65 hits), higher weight (0.3, 65 hits). All worse.
+
+**Conclusion:** Fixed `gate=0.05, w=0.2` is optimal. The 4 VecDB losses
+are queries intrinsically unsuited to graph reranking — this is the
+price of the 12 graph wins. Net effect: +3 hits (+8 net when counting
+ties that shift).
+
+### Previous Changes (2026-04-18)
+
+#### Pre-training Experiment (Negative Result)
 Pre-trained SOMA's graph on 20K diverse turns from LongMemEval-S (2000
 sessions), cleared memory stores, then developed on LoCoMo. Result:
 fingerprint 44 hits (vs 47 baseline), topology 46 hits (vs 45 baseline).

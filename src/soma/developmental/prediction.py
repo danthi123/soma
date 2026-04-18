@@ -539,6 +539,7 @@ class PredictiveSOMA(nn.Module):
         top_k: int = 5,
         gate_threshold: float = 0.05,
         rerank_weight: float = 0.2,
+        adaptive_weight: bool = False,
     ) -> list[tuple[int, str, float]]:
         """Confidence-gated hybrid retrieval.
 
@@ -569,8 +570,13 @@ class PredictiveSOMA(nn.Module):
             required to apply graph reranking. Lower = more aggressive
             (more queries reranked). 0.05 is a good default.
         rerank_weight:
-            Weight of graph signal in reranking formula:
+            Maximum weight of graph signal in reranking formula:
             ``(1-w)*emb_sim + w*fp_sim``. 0.2 is a good default.
+        adaptive_weight:
+            When True, scale rerank_weight by the absolute quality
+            of the best fingerprint match (fp_sorted[0]). This
+            prevents confidently-wrong reranking: a high confidence
+            gap between low-similarity fingerprints gets attenuated.
 
         Returns
         -------
@@ -628,10 +634,14 @@ class PredictiveSOMA(nn.Module):
 
         # Step 5: Rerank if confident, else use embedding order
         if confidence >= gate_threshold:
+            w = rerank_weight
+            if adaptive_weight and fp_sims:
+                fp_sorted_vals = sorted(fp_sims, reverse=True)
+                w = rerank_weight * max(0.0, min(fp_sorted_vals[0], 1.0))
             scored = [
                 (
-                    (1 - rerank_weight) * top_k_sims[i].item()
-                    + rerank_weight * fp_sims[i],
+                    (1 - w) * top_k_sims[i].item()
+                    + w * fp_sims[i],
                     top_k_indices[i].item(),
                 )
                 for i in range(k)

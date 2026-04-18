@@ -35,6 +35,10 @@ ablation finds that structural plasticity (neurogenesis, synaptogenesis,
 pruning) does *not* drive the advantage — a `no_growth` variant with
 frozen topology outperforms the full system on 10 of 12 regimes
 across two schedules, including under explicit capacity pressure.
+We further isolate the failure to *integration*, not *triggering*:
+an opt-in prediction-error-gated neurogenesis mode fires 66% fewer
+events and produces a 46% smaller graph, yet prediction quality is
+unchanged and still 2-6x worse than the frozen-topology baseline.
 A consolidation test on synthetic QA shows +45% F1 relative (0.279 →
 0.404). Together the retrieval and adaptation findings suggest
 brain-inspired graph memory is mis-applied as a retrieval plugin
@@ -600,6 +604,42 @@ depth, or raw parameter count. Isolating these is future work (see
 typically foregrounded in the brain-inspired architecture literature
 are, at least in the current SOMA implementation, a net cost.
 
+**Follow-up: is the failure about trigger *timing*?** One obvious
+hypothesis is that the default interval-based neurogenesis trigger
+(fire every $N$ steps regardless of the current prediction-error
+state) was the problem — it would add random-weight nodes even
+during stable phases where the graph is not struggling. We added
+an opt-in alternative (`neurogenesis_mode="pe_gated"`) that polls
+every step and fires only after a cooldown has elapsed since the
+last event, effectively gating growth on prediction-error
+dynamics rather than wall-clock cadence (see Appendix A.2 for
+the configuration). Rerunning the 8-regime capacity schedule
+with `cooldown=200`:
+
+| Regime   | full_interval | full_pe_gated | no_growth |
+|----------|---------------|---------------|-----------|
+| mlp_2x16 | 0.0068        | 0.0063        | 0.0062    |
+| mlp_2x32 | 0.0006        | 0.0006        | 0.0005    |
+| mlp_3x16 | 0.0011        | 0.0012        | 0.0006    |
+| mlp_3x32 | 0.0010        | 0.0018        | 0.0006    |
+| mlp_2x64 | 0.0023        | 0.0038        | 0.0011    |
+| mlp_3x64 | 0.0038        | 0.0047        | 0.0014    |
+| mlp_4x32 | 0.0040        | 0.0041        | 0.0018    |
+| mlp_4x64 | 0.0050        | 0.0052        | 0.0010    |
+
+PE-gated fired 11 neurogenesis events versus 32 for interval
+(a 66% reduction) and the resulting graph was 25 nodes / 500 edges
+versus 46 / 920 (a 46% reduction). Despite producing a
+substantially less-perturbed graph, PE-gated mode's prediction
+MSE is statistically indistinguishable from interval mode and
+remains 2-6x worse than `no_growth` on every regime. This
+isolates the failure further: cutting the event count by two-
+thirds with a principled PE-based trigger does not recover the
+benefit. The failure mode is not *when* neurogenesis fires; it
+is *how* new nodes are integrated (initial edge weights, neighbor
+selection, no gain warm-up). Integration-mechanism fixes — not
+better triggering — are the logical next line of work.
+
 These results are specifically not retrieval wins. They are
 demonstrations that SOMA's graph substrate helps on tasks evaluated
 by adaptation and capacity metrics rather than static retrieval
@@ -953,6 +993,14 @@ All experiments run on a single RTX 3090.
   without this bound caused SOMA to diverge numerically at
   regime boundaries; observation-distribution stationarity matters
   for this architecture).
+- PE-gated variant (follow-up in §4.7):
+  `SOMAConfig.developmental(neurogenesis_mode="pe_gated",
+  neurogenesis_cooldown=200)`. In this mode the outer scheduler
+  polls neurogenesis every step and fires only if the cooldown has
+  elapsed since the previous firing. The threshold ratio check
+  inside `neurogenesis()` is unchanged. Interval mode
+  (the default) continues to fire on aligned steps per
+  `neurogenesis_interval=25`.
 
 ### A.3 Scripts and data
 
@@ -982,6 +1030,7 @@ maps phase numbers to script filenames and commit hashes.
 | Env v0                 | `research/developmental/env_sequence_v0.py`     | `c94c274` | §4.7 Table 7 |
 | Env v0 ablation        | `research/developmental/env_sequence_ablation.py` | `c19a0b9` | §4.7 Table 8 |
 | Env v0.5 capacity      | `research/developmental/env_sequence_v05_capacity.py` | `0390590` | §4.7 Table 9 |
+| Env v0.5 PE-gated      | `research/developmental/env_sequence_v05_pe_gated.py` | `bb9637e` | §4.7 (follow-up) |
 | Consolidation result   | (ad-hoc via `/sleep` CLI)                        | `c553a66` | §4.7 |
 | Multi-session result   | (ad-hoc via developmental CLI)                   | `6a0a822` | §4.7 |
 

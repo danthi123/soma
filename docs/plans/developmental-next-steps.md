@@ -275,6 +275,48 @@ Fingerprint patterns from random projections are structurally diverse
 but semantically arbitrary, consistent with the Phase 4b contrastive-
 FT failure finding.
 
+### Phase 10: Multi-Slice Held-Out Validation (2026-04-18)
+The +3 hit advantage on LoCoMo was established on a single slice of
+100 QA pairs (first 10 per conv). Every phase since tuned against it.
+Phase 10 tested whether +3 generalizes to unseen queries.
+
+One dev run (n=8), three disjoint slices evaluated:
+
+| Slice          | N   | Hybrid | VecDB | Delta |
+|----------------|-----|--------|-------|-------|
+| A [0:10] tuned | 100 | 64     | 63    | +1    |
+| B [10:30]      | 200 | 129    | 131   | -2    |
+| C [30:50]      | 200 | 129    | 126   | +3    |
+| **Combined**   | 500 | 322    | 320   | **+2**|
+
+Wins/losses across 500 queries: 32/34 — near coin flip. The gated-
+hybrid is *perturbing* results without adding net signal. The +3 on
+slice A was at the high end of the mechanism's real strength, which
+is ~+0.4% absolute over 500 queries.
+
+### Phase 11: Shuffle Diagnostic (2026-04-18)
+To confirm whether the graph contributes ANY signal vs random noise,
+ran gated-hybrid with real fingerprint-to-memory mapping vs 5 random
+shuffles on all three slices.
+
+| Slice     | Real Δ | Shuffled Δs         | Shuf mean | Shuf range |
+|-----------|--------|---------------------|-----------|------------|
+| A [0:10]  | +1     | [-1,-1,-1,-3,-1]    | -1.4      | [-3, -1]   |
+| B [10:30] | -2     | [-1,-2,-4,+4,+1]    | -0.4      | [-4, +4]   |
+| C [30:50] | +3     | [+1,+1,-4,0,-1]     | -0.6      | [-4, +1]   |
+
+Per-seed totals shuffled = [-1, -2, -9, +1, -1], mean -2.4, max +1.
+**Real total +2 exceeds all five shuffled totals.** The graph
+contributes real signal — about 4 hits/500 queries (~0.8% absolute)
+above random fingerprint assignment. Consistent with earlier Phase 1.3
+finding that graph wins concentrate on relational/cross-entity
+queries, not uniformly.
+
+Takeaway: the fingerprint mechanism works as designed, but the
+retrievable signal magnitude is too small to ship as a general
+retrieval enhancement. Per-query attribution could identify the
+subset where it consistently helps (tighter gating).
+
 ### P2: Nonlinear Edge-Level Diversification (future)
 The `4d044f6` revert showed linear per-edge projections don't
 differentiate. Nonlinear variants (per-edge activation functions,

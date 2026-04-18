@@ -385,18 +385,34 @@ decision required — see
 [2026-04-18-developmental-findings-and-direction.md](2026-04-18-developmental-findings-and-direction.md)
 for current options and recommendation.
 
-### Phase 15: Sequence-prediction env + structural plasticity ablation (2026-04-18)
+### Phase 15: Sequence-prediction env + structural plasticity decomposition (2026-04-18)
 
-Shifted to the adaptive-learning track per "D then A" direction.
+Shifted to the adaptive-learning track per "D then A" direction. Ran a cascade of increasingly targeted ablations that converged on a clean mechanism claim.
 
-- **v0** (4-regime, 2000-step schedule): SOMA beats online MLP 3-33x. Ablation: `no_growth` wins 3/4 regimes at small scale (commit c19a0b9).
-- **v0.5** (8-regime capacity schedule, 4000-step): `no_growth` still wins 7/8 under default interval-based neurogenesis; `full` grew to 49 nodes / 980 edges yet was 5-10x worse (commit 0390590, paper §4.7 Table 9).
-- **v0.5 + PE-gated neurogenesis** (opt-in `neurogenesis_mode="pe_gated"` w/ cooldown=200): fires 66% fewer events, graph is 46% smaller, MSE unchanged — rules out trigger *timing* as the root cause (commit bb9637e, paper §4.7 follow-up).
+| Probe | What it tested | Result | Commit |
+|---|---|---|---|
+| v0 (4 regimes, 2000 steps) | Does SOMA adapt? | SOMA 3-33x lower MSE than online MLP | `c94c274` |
+| v0 ablation | Does growth drive the gain? | `no_growth` wins 3/4 regimes at small scale | `c19a0b9` |
+| v0.5 capacity (8 regimes) | Would growth help under pressure? | `no_growth` wins 7/8; `full` 5-10x worse | `0390590` |
+| v0.5 PE-gated | Was timing the problem? | -66% events, MSE unchanged. Timing ruled out. | `bb9637e` |
+| v0.5 init-scale | Was edge magnitude? | scale=0 (silent new edges) also loses 8/8. Magnitude ruled out. | `963349b` |
+| v0.5 pre-add-nodes | Was "more nodes" per se the problem? | 49n/94e frozen loses to 14n/24e frozen 2-16x. Capacity matters. | `4cabff4` |
+| v0.5 2×2 (synap × neuro) | Which sub-mechanism drives damage? | **Neuro_only ties/beats no_growth 8/8; synap_only hurts 7/8.** | `2a1bbcc` |
+| v0.5 synap-volume | Is it mechanism or just volume? | 890 events at 48n loses harder than 653 at 48n in `full`. Mechanism is cause, volume amplifies. **Neurogenesis partially rescues synap damage.** | `283ed22` |
 
-**Diagnosis:** the failure is new-node *integration*, not trigger
-timing or event count. Next probe is the `neurogenesis_init_weight_scale` sweep over {0.01 (legacy), 0.001, 0.0001, 0.0, no_growth} on the same 8-regime schedule (commit cb41b40 adds the knob). Results (in flight) will tell us whether making new edges quieter lets Hebbian updates integrate new nodes without disturbance, or whether the mere presence of new nodes degrades the circuit (scale=0 would falsify).
+**Convergent diagnosis:** "growth hurts" is really "synaptogenesis hurts." Synaptogenesis wires new edges based on activation *correlations* drawn from the same random-projection-driven winners that produced the §5 retrieval ceiling — so the edges it installs reinforce arbitrary structure. Neurogenesis wires new nodes to *positional* nearest neighbors, never consults the correlation signal, and does not exhibit the same pathology. When paired, neurogenesis-wired lateral edges partially offset synap-induced damage. Paper §4.7 rewritten to reflect this across the abstract, §1 finding 6, §5, §6.2, and §9.
 
-If init-scale fails too, next candidates are (a) gain-ramped new nodes that start near-inert and mature via homeostasis, (b) non-disruptive neighbor selection (connect to least-active instead of most-active), (c) a structure-control experiment that isolates which substrate component (wave execution, residual MLPs, homeostatic gain, depth, parameter count) actually drives SOMA's 3-40x win over online MLP.
+**Open follow-ups (ordered by diagnostic value):**
+
+- **v0 2×2 cross-check** (runner at `research/developmental/env_sequence_v0_growth_2x2.py`, commit `64c70c5`). Reproduces the 2×2 on the simpler 4-regime v0 schedule to test robustness across task complexity. Paused on 2026-04-18 per operator request to free the GPU; resumable with `python -m research.developmental.env_sequence_v0_growth_2x2`.
+- **Seed-variance**: run the v0.5 2×2 across 3-5 seeds to establish error bars before any publication claim. Single-seed differences of 2-10x are suggestive but not tight.
+- **Structure-matched feedforward MLP control (E3)**: a capacity-matched deep MLP with the same total parameter count as SOMA would cleanly isolate "wave execution + residuals + homeostatic gain" from "more parameters." Current §8 Limitations flag this as open.
+- **Replace correlation-driven synaptogenesis**: if the failure mode is "synaptogenesis reads the correlation signal which is arbitrary," an alternative is positional or semantically-grounded edge creation between existing associators. Would test whether the mechanism *concept* can be rescued with a different wiring rule.
+
+**Deprioritized (based on the above findings):**
+
+- Gain-ramped new nodes. The init-scale sweep already showed that new-node weight magnitude is not the lever; ramping gain adds complexity without a clear hypothesis why it would escape the same critique.
+- "Cracking the retrieval ceiling by scaling the graph." The scaling sweep (Phase 9) confirmed the ceiling is architectural. Further work on retrieval is not well-motivated given the §5 analysis.
 
 ### P2: Nonlinear Edge-Level Diversification (future)
 The `4d044f6` revert showed linear per-edge projections don't

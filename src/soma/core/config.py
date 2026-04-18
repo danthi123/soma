@@ -124,6 +124,12 @@ class SOMAConfig:
     neurogenesis_mode: Literal["interval", "pe_gated"] = "interval"
     # Minimum gap between neurogenesis events in pe_gated mode.
     neurogenesis_cooldown: int = 200
+    # Scale of randn-drawn initial weight for edges wired out of
+    # freshly-created neurogenesis nodes. Lower values reduce the
+    # immediate disturbance a new node imposes on existing circuitry
+    # and let Hebbian updates grow useful weight only where there is
+    # co-activation to support it. 0.01 preserves legacy behavior.
+    neurogenesis_init_weight_scale: float = 0.01
 
     # --- Curiosity --------------------------------------------------------
     num_curiosity_domains: int = 8
@@ -237,6 +243,12 @@ class SOMAConfig:
             raise ValueError(
                 f"SOMAConfig.neurogenesis_mode must be 'interval' or 'pe_gated', "
                 f"got {self.neurogenesis_mode!r}"
+            )
+
+        if self.neurogenesis_init_weight_scale < 0.0:
+            raise ValueError(
+                f"SOMAConfig.neurogenesis_init_weight_scale must be >= 0, "
+                f"got {self.neurogenesis_init_weight_scale!r}"
             )
 
         if not 0.0 < self.wm_decay_rate <= 1.0:

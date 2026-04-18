@@ -84,8 +84,22 @@ def neurogenesis(
     # Connect to the k nearest existing nodes (bidirectional).
     neighbors = graph.get_nearest_nodes(new_position, k=num_neighbors, exclude=[new_node.id])
     for neighbor in neighbors:
-        _add_wired_edge(graph, source=neighbor, target=new_node, step=step, rng=rng)
-        _add_wired_edge(graph, source=new_node, target=neighbor, step=step, rng=rng)
+        _add_wired_edge(
+            graph,
+            source=neighbor,
+            target=new_node,
+            step=step,
+            init_weight_scale=config.neurogenesis_init_weight_scale,
+            rng=rng,
+        )
+        _add_wired_edge(
+            graph,
+            source=new_node,
+            target=neighbor,
+            step=step,
+            init_weight_scale=config.neurogenesis_init_weight_scale,
+            rng=rng,
+        )
 
     return new_node
 
@@ -118,12 +132,19 @@ def _add_wired_edge(
     target: Node,
     *,
     step: int,
+    init_weight_scale: float = 0.01,
     rng: torch.Generator | None,
 ) -> None:
-    """Best-effort edge creation between ``source`` and ``target``."""
+    """Best-effort edge creation between ``source`` and ``target``.
+
+    ``init_weight_scale`` gates how loud the new connection starts:
+    smaller values reduce the immediate disturbance on the existing
+    circuit and rely on Hebbian updates to amplify edges where
+    co-activation actually supports them.
+    """
     if graph.has_edge(source.id, target.id):
         return
-    init_weight = 0.01 * float(torch.randn(1, generator=rng).item())
+    init_weight = init_weight_scale * float(torch.randn(1, generator=rng).item())
     edge = Edge(
         source_id=source.id,
         target_id=target.id,

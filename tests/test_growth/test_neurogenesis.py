@@ -123,3 +123,74 @@ class TestDeterminism:
         # — we verify that by zeroing activations on one seed path.
         # A weaker check: both produced a valid node without error.
         assert new_a.position.shape == new_b.position.shape
+
+
+class TestInitWeightScale:
+    """Config-driven initial edge-weight scale for fresh neurogenesis edges."""
+
+    def _edge_magnitudes(
+        self, config: SOMAConfig, seed: int,
+    ) -> list[float]:
+        graph = _seed_graph(config, num_existing=4)
+        errors = [0.01] * 900 + [0.5] * 100
+        rng = torch.Generator().manual_seed(seed)
+        new = neurogenesis(graph, errors, step=0, config=config, rng=rng)
+        assert new is not None
+        mags: list[float] = []
+        for e in graph.get_incoming_edges(new.id) + graph.get_outgoing_edges(new.id):
+            mags.append(abs(float(e.weight.item())))
+        return mags
+
+    def test_default_scale_preserves_legacy_behaviour(self) -> None:
+        cfg = SOMAConfig(
+            neurogenesis_threshold=1.2,
+            max_nodes=50,
+            position_dim=8,
+            associator_input_dim=8,
+            associator_hidden_dim=16,
+            associator_output_dim=8,
+        )
+        assert cfg.neurogenesis_init_weight_scale == 0.01
+        # All sampled magnitudes should fit under a loose 3-sigma bound
+        # for the default scale: 3 * 0.01 = 0.03. randn rarely exceeds 3.
+        for m in self._edge_magnitudes(cfg, seed=7):
+            assert m < 0.03 + 1e-6
+
+    def test_smaller_scale_produces_smaller_edge_magnitudes(self) -> None:
+        """A scale of 0.0001 should put every edge weight well under the
+        3-sigma bound of the default-scale distribution (3 * 0.01 = 0.03)."""
+        cfg_small = SOMAConfig(
+            neurogenesis_threshold=1.2,
+            max_nodes=50,
+            position_dim=8,
+            associator_input_dim=8,
+            associator_hidden_dim=16,
+            associator_output_dim=8,
+            neurogenesis_init_weight_scale=0.0001,
+        )
+        small_mags = self._edge_magnitudes(cfg_small, seed=7)
+        assert small_mags, "expected at least one new edge"
+        # 4-sigma bound for scale=0.0001 is 4 * 0.0001 = 0.0004. All edge
+        # magnitudes must be under that.
+        for m in small_mags:
+            assert m < 0.0004, f"scale=0.0001 but got |w|={m}"
+
+    def test_rejects_negative_scale(self) -> None:
+        with pytest.raises(ValueError, match="neurogenesis_init_weight_scale"):
+            SOMAConfig(
+                neurogenesis_init_weight_scale=-0.001,
+                position_dim=8,
+            )
+
+    def test_zero_scale_yields_zero_weights(self) -> None:
+        cfg = SOMAConfig(
+            neurogenesis_threshold=1.2,
+            max_nodes=50,
+            position_dim=8,
+            associator_input_dim=8,
+            associator_hidden_dim=16,
+            associator_output_dim=8,
+            neurogenesis_init_weight_scale=0.0,
+        )
+        for m in self._edge_magnitudes(cfg, seed=7):
+            assert m == 0.0

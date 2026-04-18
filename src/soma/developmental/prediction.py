@@ -369,6 +369,29 @@ class PredictiveSOMA(nn.Module):
                     delta = inp.unsqueeze(0) - w
                     w.add_(delta, alpha=-anti_lr)
 
+        # Learnable diversification projections: update the random
+        # projections used by _diversify_activations() so that winners
+        # become MORE responsive to this input class and suppressed
+        # nodes become LESS responsive. This breaks the frozen-projection
+        # bottleneck where input->winner mapping is static.
+        proj_lr = lr * 0.1  # slower than weight updates
+        inp_full = input_tensor.detach().to(self.device)
+        inp_norm = inp_full / (inp_full.norm() + 1e-8)
+        outer = torch.outer(inp_norm, inp_norm)  # rank-1 update
+
+        with torch.no_grad():
+            # Winner: increase alignment with this input direction
+            if winner.id in self._input_projections:
+                self._input_projections[winner.id].add_(outer, alpha=proj_lr)
+
+            # Suppressed: decrease alignment with this input direction
+            if suppressed_ids:
+                for nid in suppressed_ids:
+                    if nid in self._input_projections:
+                        self._input_projections[nid].add_(
+                            outer, alpha=-proj_lr * 0.3,
+                        )
+
     def retrieve_by_graph(
         self,
         query_tensor: torch.Tensor,

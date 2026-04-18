@@ -385,6 +385,19 @@ decision required — see
 [2026-04-18-developmental-findings-and-direction.md](2026-04-18-developmental-findings-and-direction.md)
 for current options and recommendation.
 
+### Phase 15: Sequence-prediction env + structural plasticity ablation (2026-04-18)
+
+Shifted to the adaptive-learning track per "D then A" direction.
+
+- **v0** (4-regime, 2000-step schedule): SOMA beats online MLP 3-33x. Ablation: `no_growth` wins 3/4 regimes at small scale (commit c19a0b9).
+- **v0.5** (8-regime capacity schedule, 4000-step): `no_growth` still wins 7/8 under default interval-based neurogenesis; `full` grew to 49 nodes / 980 edges yet was 5-10x worse (commit 0390590, paper §4.7 Table 9).
+- **v0.5 + PE-gated neurogenesis** (opt-in `neurogenesis_mode="pe_gated"` w/ cooldown=200): fires 66% fewer events, graph is 46% smaller, MSE unchanged — rules out trigger *timing* as the root cause (commit bb9637e, paper §4.7 follow-up).
+
+**Diagnosis:** the failure is new-node *integration*, not trigger
+timing or event count. Next probe is the `neurogenesis_init_weight_scale` sweep over {0.01 (legacy), 0.001, 0.0001, 0.0, no_growth} on the same 8-regime schedule (commit cb41b40 adds the knob). Results (in flight) will tell us whether making new edges quieter lets Hebbian updates integrate new nodes without disturbance, or whether the mere presence of new nodes degrades the circuit (scale=0 would falsify).
+
+If init-scale fails too, next candidates are (a) gain-ramped new nodes that start near-inert and mature via homeostasis, (b) non-disruptive neighbor selection (connect to least-active instead of most-active), (c) a structure-control experiment that isolates which substrate component (wave execution, residual MLPs, homeostatic gain, depth, parameter count) actually drives SOMA's 3-40x win over online MLP.
+
 ### P2: Nonlinear Edge-Level Diversification (future)
 The `4d044f6` revert showed linear per-edge projections don't
 differentiate. Nonlinear variants (per-edge activation functions,

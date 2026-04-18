@@ -22,21 +22,37 @@ priors, neuromodulator broadcasts tied to reward/novelty,
 prediction error against the actual world, critical-period
 scheduling. SOMA has the mechanical scaffolding (pruning,
 consolidation, PE computation) but lacks the grounded
-signals. This plan proposes three directions — ordered by
+signals. This plan proposes four directions — ordered by
 ambition and independent enough to run in parallel — that each
 attempt to introduce an external anchor into at least one
 plasticity decision.
 
-The common success criterion across all three: on the v0.5
+Two framings for "what counts as a grounded signal":
+
+- **Directions 1-3** use only the environment's own
+  prediction-error signal as the anchor. They test whether
+  SOMA's plasticity can work under the current "no LLM in the
+  core loop" design principle. This is the research-paper
+  framing: if the 2×2 finding generalizes, these directions
+  test whether plasticity *can* be fixed without external
+  supervision; if none works, the honest conclusion is that
+  it can't.
+- **Direction 4** uses a pretrained SOTA LLM as a teacher/
+  judge, introducing semantic grounding from outside SOMA
+  itself. This is the product-pivot framing: SOMA as an
+  agent-memory layer serving an LLM already has the LLM
+  available, so using it as a training signal is natural and
+  cheap at inference time.
+
+The common success criterion across all four: on the v0.5
 capacity schedule (where the current `full` variant loses 5-10×
 to `no_growth`), does the modified variant recover ground on
 at least 4 of 8 regimes while still growing a meaningfully
-larger graph? If none of the three succeeds, the honest
-conclusion is that SOMA's plasticity mechanisms cannot be
-made useful under the current substrate and the research
-focus should shift to the substrate itself (wave execution,
-residual MLPs, homeostatic gain — none yet independently
-ablated).
+larger graph? If none succeeds, the honest conclusion is that
+SOMA's plasticity mechanisms cannot be made useful under the
+current substrate and the research focus should shift to the
+substrate itself (wave execution, residual MLPs, homeostatic
+gain — none yet independently ablated).
 
 ---
 
@@ -345,11 +361,212 @@ homeostasis-style updates + tests), ~1 day of experiments.
 
 ---
 
+## Direction 4 — LLM-as-teacher for plasticity supervision (product-aligned)
+
+### Hypothesis
+
+The root cause of SOMA's plasticity failure is lack of
+semantic grounding — the same limit that bounds retrieval at
+~0.8%. A pretrained SOTA LLM **has** the grounding SOMA needs
+(this is precisely why GraphRAG beats vanilla RAG on global
+queries: Microsoft's LLM does the semantic work through entity
+extraction and community summarization). Instead of trying to
+manufacture grounding from SOMA's internal PE signal alone
+(Directions 1-3), we use an available LLM as the external
+reference for plasticity decisions.
+
+This direction explicitly violates the "no LLM in the core
+loop" design principle from the original whitepaper. The case
+for including it: SOMA's announced pivot (see
+`docs/positioning.md`, `CLAUDE.md`) is an **agent-memory
+layer** serving an LLM. In that context the LLM is already
+available at inference time, so using it as a training signal
+is natural, amortizable, and directly addresses the
+first-principles limit from §5.
+
+### Three compositional flavors
+
+Each flavor pairs with one of Directions 1-3 and extends it
+with an LLM-derived signal instead of / alongside PE.
+
+#### 4a — LLM-distilled input projections (pairs with Direction 2)
+
+Replace the "train projections to predict the next
+observation" loss with "train projections so SOMA's activation
+state for an input matches the LLM's embedding for that same
+input." Standard knowledge distillation: SOMA is the student,
+the LLM's last-hidden-state (or sentence-embedding head) is
+the teacher. L2 or cosine loss on a per-input basis.
+
+- Config: `associator_projections_learnable=True,
+  projection_distillation_target="llm_embedding"`.
+- Teacher model: `all-MiniLM-L6-v2` for cheap parity with the
+  existing retrieval encoder; scale up to a larger teacher
+  (e.g., `bge-large`, `e5-large`) in a second pass if the
+  small-teacher version shows lift.
+- Directly replaces the arbitrary random projections with
+  semantically grounded ones. If this works, it affects both
+  the §5 retrieval ceiling and the §4.7 adaptation result
+  simultaneously — the most systemic fix of the four.
+
+#### 4b — LLM-judged edge admission (pairs with Direction 1)
+
+When synaptogenesis proposes a new edge (a, b), ask "does
+connecting these two nodes correspond to a useful relation?"
+as a labeled signal from the LLM. Three implementation
+options, in increasing amortization:
+
+- **Literal**: Prompt the LLM on every admission decision.
+  Very expensive; maybe 10-100× inference cost during
+  development.
+- **Cached**: Each candidate (a, b) is summarized by a
+  fingerprint of their recent co-activations; cache LLM
+  judgments per fingerprint. Cheap after warmup.
+- **Distilled judge**: Train a small local classifier on a
+  few hundred LLM-labeled examples; use it as a drop-in
+  admission filter. Essentially free at inference; needs a
+  one-time setup step.
+
+Config: `synaptogenesis_supervision="llm_judged",
+synaptogenesis_llm_judge_cache_size=10000`.
+
+#### 4c — LLM-scored outputs as reward broadcast (pairs with Direction 3)
+
+SOMA generates output tokens via the verbalizer. Have the
+LLM grade each output for correctness/relevance/coherence
+against the task; broadcast the score as `plasticity_gain`.
+This is the SOMA equivalent of an RLHF reward model. The
+neuromodulator analogue gets real semantic anchoring instead
+of a raw PE ratio.
+
+- Works best once there's an actual generation task (not just
+  sequence-prediction MSE). v0/v0.5 env doesn't produce
+  natural outputs to grade, so this flavor needs a new
+  evaluation task (e.g., short-horizon QA over corpora, where
+  SOMA's activations drive the answer and the LLM grades it).
+- Config: `plasticity_broadcast_mode="llm_scored"`.
+
+### Config surface (combined)
+
+```python
+# 4a
+projection_distillation_target: Literal[
+    "none", "next_obs", "llm_embedding",
+] = "none"
+projection_distillation_llm: str = "all-MiniLM-L6-v2"
+
+# 4b
+synaptogenesis_supervision: Literal[
+    "none", "pe_conditional", "llm_judged",
+] = "none"
+synaptogenesis_llm_judge_mode: Literal[
+    "literal", "cached", "distilled",
+] = "cached"
+
+# 4c
+plasticity_broadcast_mode: Literal[
+    "off", "pe_scaled", "llm_scored",
+] = "off"
+```
+
+All default to off/none. Opt-in does not break existing
+behavior. These extend the Direction 1/2/3 config surfaces
+rather than replacing them.
+
+### Experimental design
+
+Phase A — Cheapest first: run 4a (distillation against
+all-MiniLM-L6-v2) on the v0.5 capacity schedule against the
+same reference points as Direction 2:
+
+- `full_fixed_proj` (reference, reproduces commit `2a1bbcc`)
+- `full_distilled_proj` (new; distillation loss on
+  projections)
+- `no_growth_fixed_proj` (reference)
+- `no_growth_distilled_proj` (isolates distillation-only
+  effect)
+
+Phase B — Cross-check on retrieval: rebuild the LoCoMo graph
+with `full_distilled_proj` and rerun the Phase 10 held-out
+validation. If the §5 ceiling shifts from ~+2/500 to
+anything like +20/500, the LLM-as-teacher framing is a
+genuine crack.
+
+Phase C — 4b (LLM-judged admission) only if 4a shows lift and
+we want to close the remaining gap with synaptogenesis
+specifically. Start with the cached flavor; upgrade to
+distilled only if cache hit rate is high enough to justify.
+
+Phase D — 4c (LLM-scored reward) only after there's a
+generation-capable evaluation task to grade; not
+blocking-critical for the immediate direction.
+
+### Success criteria
+
+Primary (adaptation, Phase A):
+- `full_distilled_proj` beats `full_fixed_proj` on ≥ 5 of 8
+  v0.5 regimes.
+- `no_growth_distilled_proj` matches or beats
+  `no_growth_fixed_proj` (checks whether the benefit requires
+  growth or is pure projection quality).
+
+Secondary (retrieval, Phase B):
+- LoCoMo gated-hybrid delta moves from ~+2/500 to ≥ +15/500
+  against VecDB on held-out slices (not just the tuning
+  slice). If this happens, the §5 ceiling is not actually a
+  ceiling — it's an artifact of arbitrary projections — and
+  the retrieval story reopens.
+
+Tertiary:
+- Any lift in cross-benchmark (LongMemEval −1 → positive).
+
+### Risk and reversibility
+
+- **Research-purity objection**: "the LLM is doing the
+  semantic work, not the graph." Legitimate critique for the
+  paper-aligned framing (Directions 1-3 are the clean test);
+  not a problem for the product-aligned framing where the
+  LLM is expected to be in the stack anyway. Document the
+  trade-off clearly in any write-up.
+- **Distillation destabilization**: same as Direction 2's
+  risk (projection updates could destabilize training).
+  Mitigation is the same: clip updates, smaller LR
+  multiplier, fail-fast assertion on non-zero gradient
+  detection.
+- **LLM cost for 4b literal/cached**: if cache miss rate is
+  high, 4b is expensive. Mitigate by monitoring miss rate in
+  early runs and capping call budget.
+- **Teacher-encoder mismatch**: if the encoder used for
+  SENSOR nodes differs from the distillation teacher,
+  projections are trained to match a different geometry than
+  SOMA already consumes. Use the same encoder as both SENSOR
+  input and distillation teacher for the first pass to avoid
+  this.
+- All reversible via config flags.
+
+### Effort estimate
+
+- 4a (distillation): ~2-3 days of implementation, ~1 day of
+  experiments. The SENSOR node's encoder is already in-tree;
+  the new loss term is a clean addition to the prediction
+  step.
+- 4b (LLM-judged admission): ~3-5 days including caching
+  layer. Cached flavor is non-trivial because the
+  fingerprint + cache design has to be careful.
+- 4c (LLM-scored reward): ~3-5 days, gated on a generation
+  task existing. Likely deferred.
+
+---
+
 ## Running order
 
-All three directions are independent and opt-in, so they can
+All four directions are independent and opt-in, so they can
 be implemented in parallel. If pipelined, the rational order
-is:
+depends on which framing is being optimized.
+
+### Research-paper framing (tests "plasticity works without LLM supervision")
+
+Run only Directions 1-3, in this order:
 
 1. **Direction 1 first** (lowest lift, highest direct
    engagement with the diagnosis). If PE-supervised
@@ -367,21 +584,39 @@ is:
    But it's also the riskiest in terms of training stability
    and needs the most testing before running the full sweep.
 
+### Product-pivot framing (tests "plasticity works as an agent-memory layer")
+
+Direction 4a first. It's the most systemic fix (projections
+are upstream of everything else in the graph), the cheapest
+to implement of the four, and it directly aligns with the
+product claim that SOMA is useful as an agent-memory layer.
+If 4a lifts both v0.5 adaptation and the §5 retrieval ceiling,
+the rest of the directions become optional polish rather than
+research necessities.
+
+### Hybrid framing (recommended in practice)
+
+Run 4a and 1 in parallel — they don't share code paths and
+each answers a distinct question (can the LLM supervise
+projections? can PE supervise edge admission?). Use the
+result of both to decide whether to continue with 2, 3, 4b,
+or 4c.
+
 ## Gating on v0 2×2 cross-check
 
 Currently in flight at commit `64c70c5`. If the v0 2×2 result
-reproduces the v0.5 finding (neuro fine, synap bad), all three
+reproduces the v0.5 finding (neuro fine, synap bad), all four
 directions remain well-motivated. If the v0 result diverges
 (e.g., neuro also hurts on v0), we should pause and understand
-that divergence before shipping any of the three — since they
+that divergence before shipping any of the four — since they
 all assume the v0.5 diagnosis generalizes.
 
 ## Out-of-scope for this plan
 
 - Structure-matched deep MLP control (E3 from AUDIT). Separate
-  experiment; doesn't depend on these three directions.
+  experiment; doesn't depend on these four directions.
 - Seed-variance sweeps for existing v0.5 results. Should happen
   before publication regardless; not blocking here.
 - Retrieval-track experiments unrelated to projection changes.
   Retrieval is effectively dormant (§5 ceiling diagnosed) and
-  reopens only if direction 2 shows signs of cracking it.
+  reopens only if direction 2 or 4a shows signs of cracking it.

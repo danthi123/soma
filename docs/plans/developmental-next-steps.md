@@ -317,6 +317,46 @@ retrievable signal magnitude is too small to ship as a general
 retrieval enhancement. Per-query attribution could identify the
 subset where it consistently helps (tighter gating).
 
+### Phase 12: Per-Query Attribution (2026-04-18)
+Classified all 500 queries into 6 categories (cross_entity, temporal,
+counting, factual_self, causal, preference, other) via keyword rules.
+Per-category win/loss rates:
+
+| Category      | N   | W/L/T     | Delta |
+|---------------|-----|-----------|-------|
+| other         | 222 | 10/7/205  | +5    |
+| temporal      | 182 | 15/17/150 | +1    |
+| counting      |  36 | 2/1/33    | 0     |
+| cross_entity  |  31 | 3/1/27    | 0     |
+| preference    |  23 | 0/0/23    | 0     |
+| causal        |   6 | 0/0/6     | 0     |
+
+No clean category signal. cross_entity and counting have 2-3:1 win
+ratios as expected, but n is tiny (31, 36) and absolute delta is
+near zero. The biggest delta (+5) is in "other," a 44% catch-all with
+no semantic pattern. Keyword-gated hybrid won't lift hits meaningfully.
+
+### Phase 13: Topology Signal in Gated Hybrid (2026-04-18)
+Swapped fingerprint cosine similarity for node-topology Jaccard
+similarity as the gate signal, holding everything else constant.
+
+| Slice | Fingerprint (W/L/Δ) | Topology (W/L/Δ) |
+|-------|---------------------|-------------------|
+| A     | 8/4/+2              | 6/2/+1            |
+| B     | 15/14/-1            | 5/10/-1           |
+| C     | 11/11/+2            | 11/9/+2           |
+
+Functionally equivalent: fingerprint 323 hits, topology 322 hits over
+500 queries. Both plateau around +2/500 delta. Topology is more
+conservative (fires 135 vs 192 times) but hits land in the same
+place. **No complementarity** — both signals derive from the same 3
+lateral-inhibition-winner nodes, so they're structurally the same
+information presented differently.
+
+Takeaway: the ceiling is **architectural, not mechanism-specific**.
+Any retrieval signal derived from "which nodes fire together" caps
+around +2/500 at this graph scale on LoCoMo.
+
 ### P2: Nonlinear Edge-Level Diversification (future)
 The `4d044f6` revert showed linear per-edge projections don't
 differentiate. Nonlinear variants (per-edge activation functions,

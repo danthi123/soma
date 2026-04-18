@@ -70,10 +70,10 @@ by severity. Items are independently addressable — tackle in any order.
 **Issue:** Commit `6a0a822` body shows: session 1 (40 memories, 29 edges) → session 3 (120 memories, 43 edges). Memory growth is 3x (200% increase or 300% of initial); edge growth is 48%. "275%" doesn't match any computable quantity from the commit body.
 **Fix:** Either track down the actual 275% metric or rephrase as "3x memory growth (40 → 120) with preserved cross-session recall" and back the "preserved recall" claim (see C2).
 
-### A6. Experiment count inconsistent (14 vs 16)
+### A6. Experiment count inconsistent (14 vs 16) — **UPDATED 2026-04-18c**
 **Location:** Abstract ("14 diagnostic experiments"), §9 ("sixteen").
-**Issue:** Retrieval phases: 3, 4, 4b, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14 = **13**. Env experiments: v0, v0_ablation, v0.5 = **3**. Total = **16**.
-**Fix:** Update abstract: "Across 13 retrieval-diagnostic experiments on LoCoMo and LongMemEval, and 3 sequence-prediction experiments".
+**Issue:** Retrieval phases: 3, 4, 4b, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14 = **13**. Env experiments now include v0, v0 ablation, v0.5 capacity, PE-gated, init-scale, pre-add-nodes, 2x2 growth, synap-volume = **8**. Plus 2 ad-hoc (consolidation, multi-session). Total = **23**.
+**Fix:** §9 now reads "twenty-three scripted and ad-hoc experiments (thirteen on retrieval, eight on adaptation, two ad-hoc)"; abstract tail reworded to drop the specific count. Appendix B table updated with all 8 env runners.
 
 ---
 
@@ -108,10 +108,10 @@ SOMA is **slower** on rot→sqrt (118 vs 28). Both hit the 500-step cap on sqrt�
 
 ## C. Overclaims (should soften)
 
-### C1. "Load-bearing contribution is the executable graph substrate, specifically: wave-based execution, residual connections, homeostatic gain"
-**Location:** §4.7 line 454, §9 line 691.
+### C1. "Load-bearing contribution is the executable graph substrate, specifically: wave-based execution, residual connections, homeostatic gain" — **UPDATED 2026-04-18c**
+**Location:** §4.7, §9.
 **Issue:** We have evidence that plasticity is NOT load-bearing and SOMA still beats MLP. We have NOT directly tested which of (wave execution / residuals / homeostasis / depth / parameter count) drives the advantage. Attributing to specific components is unsupported.
-**Fix:** "We do not isolate which aspect of SOMA's substrate drives the advantage. The ablation rules out structural plasticity but does not separately test wave execution, residual connections, homeostatic gain, depth, or parameter count. These remain open questions; see §8 Limitations."
+**Fix:** Current §4.7 and §9 already soften to "we do not isolate which substrate component matters" per an earlier revision. The 2x2 decomposition (commit 2a1bbcc) adds a new, verifiable finding: *within* plasticity, neurogenesis is beneficial and synaptogenesis is the bad mechanism. That sharper claim replaces the vague "substrate specifically" attribution in the current draft.
 
 ### C2. "Preserved cross-session recall"
 **Location:** §4.7 line 386, Abstract.
@@ -199,10 +199,11 @@ I have the raw JSON data to generate all four. Matplotlib is already a dep.
 **Impact:** Paper could be positioned as a negative-result methodology template, but current framing is "SOMA empirical study." A small framing change in the intro could broaden appeal.
 **Suggested edit:** Add one paragraph to §1 introduction: "Our broader aim is to offer a **diagnostic template** for brain-inspired retrieval claims, comprising multi-slice held-out, shuffle, scaling, and cross-benchmark tests. We apply this template to SOMA; the same template is directly applicable to any graph-augmented retrieval system."
 
-### E3. No ablation-vs-structure-control comparison
+### E3. No ablation-vs-structure-control comparison — **PARTIALLY RESOLVED 2026-04-18c**
 **Impact:** See C1 — we don't know if the advantage is from wave execution, residual nodes, or just more params. A "structure-matched" feedforward MLP (4-6 hidden layers, same total parameters as SOMA) would test this directly.
+**Partial resolution:** The pre-add-nodes sweep (commit 4cabff4) ruled out "more nodes" as an explanation at a given edge density, and the 2x2 + synap-volume sweeps (2a1bbcc, 283ed22) isolated synap as harmful and neuro-wiring as the partial rescue. This sharpens "what about the substrate matters" to a claim about wiring pattern (positional-neighbor lateral vs. correlation-driven lateral). A fully structure-matched feedforward MLP is still open.
 **Cost:** ~30 min to code + run.
-**Recommendation:** Add this as a follow-up experiment before paper submission.
+**Recommendation:** Still worth running as a sanity check before submission, but the paper's plasticity story no longer depends on it.
 
 ### E4. No "why tanh?" explanation for env
 **Impact:** Minor. The env applies tanh to keep observations bounded (to avoid the first-attempt NaN blow-up). A reader might wonder.

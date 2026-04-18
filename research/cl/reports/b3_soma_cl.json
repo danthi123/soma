@@ -1,9 +1,9 @@
 {
-  "soma-head-replay": {
-    "acc": 0.8054,
-    "bwt": -0.0472,
-    "fwt": 0.0167,
-    "wall_clock_s": 3369.5
+  "soma-frozen": {
+    "acc": 0.7497,
+    "bwt": -0.1286,
+    "fwt": 0.0161,
+    "wall_clock_s": 2.0
   },
   "meta": {
     "tasks": 10,
@@ -13,6 +13,6 @@
     "test_samples_per_task": 1000,
     "soma_seed": 42,
     "device": "cuda",
-    "total_wall_clock_s": 3374.8
+    "total_wall_clock_s": 75.6
   }
 }

@@ -27,7 +27,7 @@ from benchmarks.industry.longmemeval.metrics import (
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_API_BASE = "http://localhost:11434/v1"
+DEFAULT_API_BASE = "http://localhost:11434"
 DEFAULT_MODEL = "qwen3.5:4b-q8_0"
 CHARS_PER_TOKEN = 4
 
@@ -84,8 +84,6 @@ def answer_question_baseline(
         "Be concise and direct. If the history does not contain the answer, "
         "say 'I don't know'."
     )
-    if disable_thinking:
-        system_prompt = "/no_think\n" + system_prompt
 
     user_msg = (
         f"Conversation history:\n{history}\n\n"
@@ -100,19 +98,19 @@ def answer_question_baseline(
             {"role": "user", "content": user_msg},
         ],
         "stream": False,
-        "max_tokens": 256,
-        "temperature": 0.0,
+        "think": not disable_thinking,
+        "options": {"num_predict": 512, "temperature": 0.0},
     }
 
     try:
         resp = requests.post(
-            f"{api_base}/chat/completions",
+            f"{api_base}/api/chat",
             json=payload,
             timeout=120,
         )
         resp.raise_for_status()
         data = resp.json()
-        content: str = data["choices"][0]["message"]["content"]
+        content: str = data["message"]["content"]
         return content.strip()
     except (requests.RequestException, KeyError, IndexError) as exc:
         logger.error("LLM call failed: %s", exc)

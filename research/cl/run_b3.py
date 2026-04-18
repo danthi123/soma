@@ -333,6 +333,14 @@ def main() -> None:
             "soma-no-critical-periods"
         ),
     )
+    parser.add_argument(
+        "--no-cache",
+        action="store_true",
+        help=(
+            "Disable feature caching for frozen ablations. "
+            "Slower but trains input_proj alongside the head."
+        ),
+    )
     args = parser.parse_args()
 
     use_cuda = torch.cuda.is_available() and torch.cuda.device_count() > 0
@@ -391,11 +399,11 @@ def main() -> None:
             use_layer_norm=ablation.get("use_layer_norm", False),
         )
 
-        # For frozen ablations, pre-build the model, cache all SOMA
-        # features once, and replace DataLoaders with feature tensors.
+        # For frozen ablations, pre-build the model, cache SOMA graph
+        # features once. input_proj still trains (gets gradients).
         # Reduces ~50 min to ~2 min per ablation.
         run_tasks = mnist_tasks
-        if ablation["frozen"]:
+        if ablation["frozen"] and not args.no_cache:
             _model, _opt = factory(device)
             if isinstance(_model, SomaClassifier):
                 run_tasks = _model.precompute_all_tasks(mnist_tasks, device)

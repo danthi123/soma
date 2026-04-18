@@ -133,8 +133,8 @@ def main() -> None:
 
         conv_results = []
         for qi, qa in enumerate(qa_pairs):
-            # Graph-driven retrieval per question
-            qvec = loop.encode_text(qa.question)
+            # Graph-driven retrieval per question (no grad needed)
+            qvec = loop.encode_text(qa.question, keep_grad=False)
             recalled = loop.predictive_soma.retrieve_by_graph(qvec, top_k=5)
             dev_state = verbalize_state(
                 loop.predictive_soma.soma, recalled=recalled,

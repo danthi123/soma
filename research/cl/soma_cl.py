@@ -87,14 +87,21 @@ class SomaClassifier(nn.Module):
 
     _use_cached: bool = False
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, soma_cache: torch.Tensor | None = None) -> torch.Tensor:
         """Forward pass: x -> SOMA features -> logits.
 
-        When ``_use_cached=True``, ``x`` is expected to be a
-        pre-computed ``(projected || soma_features)`` combined tensor
-        from ``precompute_all_tasks()``, so we skip the graph entirely.
+        When ``soma_cache`` is provided, ``x`` is raw pixels and
+        ``soma_cache`` holds pre-computed SOMA output features.
+        ``input_proj`` still runs on ``x`` so it gets gradients.
+
+        Legacy ``_use_cached=True`` mode: ``x`` is the full
+        ``(projected || soma)`` combined tensor (input_proj frozen).
         """
-        if self._use_cached:
+        if soma_cache is not None:
+            # Fast path: skip SOMA graph, but input_proj still trains
+            projected = self.input_proj(x)
+            combined = torch.cat([projected, soma_cache], dim=1)
+        elif self._use_cached:
             combined = x
         else:
             projected, soma_t = self._compute_features(x)
@@ -145,15 +152,16 @@ class SomaClassifier(nn.Module):
     ) -> list[tuple[int, DataLoader, DataLoader]]:
         """Pre-compute SOMA features and return new DataLoaders.
 
-        Replaces raw-pixel loaders with cached-feature loaders where
-        each sample is ``(combined_features, label)`` instead of
-        ``(pixels, label)``. Sets ``_use_cached=True`` so forward()
-        skips the graph. Returns the replacement task list.
+        Caches only the SOMA graph output (the slow part). Raw pixels
+        are kept so ``input_proj`` still gets gradients during training.
+        Each sample becomes ``(pixels, soma_features, label)`` via a
+        3-tensor dataset.
+
+        Call ``forward(pixels, soma_cache=soma_features)`` to use.
         """
         import time as _time
 
-        from torch.utils.data import DataLoader as DL
-        from torch.utils.data import TensorDataset
+        from torch.utils.data import DataLoader as DL, TensorDataset
 
         self.train(False)
         total = 0
@@ -164,30 +172,31 @@ class SomaClassifier(nn.Module):
             for task_id, train_loader, test_loader in tasks:
                 new_loaders = []
                 for loader in (train_loader, test_loader):
-                    all_combined = []
+                    all_pixels = []
+                    all_soma = []
                     all_y = []
                     for x, y in loader:
                         x = x.to(device)
-                        proj, soma = self._compute_features(x)
-                        combined = torch.cat([proj, soma], dim=1)
-                        all_combined.append(combined.detach().cpu())
+                        _proj, soma = self._compute_features(x)
+                        all_pixels.append(x.cpu())
+                        all_soma.append(soma.detach().cpu())
                         all_y.append(y)
                         total += x.size(0)
-                    cat_x = torch.cat(all_combined, dim=0)
+                    cat_pixels = torch.cat(all_pixels, dim=0)
+                    cat_soma = torch.cat(all_soma, dim=0)
                     cat_y = torch.cat(all_y, dim=0)
                     is_train = loader.dataset is train_loader.dataset
                     new_loaders.append(DL(
-                        TensorDataset(cat_x, cat_y),
+                        TensorDataset(cat_pixels, cat_soma, cat_y),
                         batch_size=loader.batch_size or 128,
                         shuffle=is_train,
                     ))
                 new_tasks.append((task_id, new_loaders[0], new_loaders[1]))
 
-        self._use_cached = True
         elapsed = _time.perf_counter() - t0
         rate = total / elapsed if elapsed > 0 else 0
         print(
-            f"  [cache] Pre-computed {total} samples across "
+            f"  [cache] Pre-computed {total} SOMA features across "
             f"{len(tasks)} tasks in {elapsed:.1f}s ({rate:.0f}/sec)"
         )
         return new_tasks
@@ -316,7 +325,7 @@ class SomaCLAdapter:
         disable_critical_periods: bool = False,
         consolidation_replay_steps: int = 50,
         head_replay: bool = False,
-        replay_buffer_size: int = 200,
+        replay_buffer_size: int = 500,
         replay_mix_ratio: float = 0.5,
         use_herding: bool = False,
         head_ewc: bool = False,
@@ -359,19 +368,27 @@ class SomaCLAdapter:
         total_loss = 0.0
         n_batches = 0
 
-        for x, y in loader:
-            x, y = x.to(device), y.to(device)
+        from research.cl.harness import _unpack_batch
+
+        for batch in loader:
+            x, y, soma_cache = _unpack_batch(batch, device)
             optimizer.zero_grad()
-            logits = model(x)
+            if soma_cache is not None:
+                logits = model(x, soma_cache=soma_cache)
+            else:
+                logits = model(x)
             loss = criterion(logits, y)
 
             # Mix in replay loss from past tasks
             if self.head_replay and self._replay_buffer:
-                replay_x, replay_y = self._sample_replay(
+                r_x, r_y, r_soma = self._sample_replay(
                     x.size(0), device
                 )
-                replay_logits = model(replay_x)
-                replay_loss = criterion(replay_logits, replay_y)
+                if r_soma is not None:
+                    replay_logits = model(r_x, soma_cache=r_soma)
+                else:
+                    replay_logits = model(r_x)
+                replay_loss = criterion(replay_logits, r_y)
                 ratio = self.replay_mix_ratio
                 loss = (1.0 - ratio) * loss + ratio * replay_loss
 
@@ -417,10 +434,15 @@ class SomaCLAdapter:
         for name in head_params:
             fisher[name] = torch.zeros_like(head_params[name])
 
+        from research.cl.harness import _unpack_batch
+
         n_samples = 0
-        for x, y in loader:
-            x, y = x.to(device), y.to(device)
-            logits = model(x)
+        for batch in loader:
+            x, y, soma_cache = _unpack_batch(batch, device)
+            if soma_cache is not None:
+                logits = model(x, soma_cache=soma_cache)
+            else:
+                logits = model(x)
             loss = criterion(logits, y)
             model.zero_grad()
             loss.backward()
@@ -445,13 +467,21 @@ class SomaCLAdapter:
 
     def _sample_replay(
         self, batch_size: int, device: torch.device
-    ) -> tuple[torch.Tensor, torch.Tensor]:
-        """Sample a batch from the replay buffer (uniform across tasks)."""
-        all_x = torch.cat([x for x, _y in self._replay_buffer], dim=0)
-        all_y = torch.cat([_y for _x, _y in self._replay_buffer], dim=0)
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor | None]:
+        """Sample a batch from the replay buffer (uniform across tasks).
+
+        Returns ``(x, y, soma_cache)`` where ``soma_cache`` is None
+        for non-cached entries and a tensor for cached entries.
+        """
+        all_x = torch.cat([entry[0] for entry in self._replay_buffer], dim=0)
+        all_y = torch.cat([entry[1] for entry in self._replay_buffer], dim=0)
+        has_soma = len(self._replay_buffer[0]) == 3
         n = all_x.size(0)
         idx = torch.randint(0, n, (min(batch_size, n),))
-        return all_x[idx].to(device), all_y[idx].to(device)
+        if has_soma:
+            all_soma = torch.cat([entry[2] for entry in self._replay_buffer], dim=0)
+            return all_x[idx].to(device), all_y[idx].to(device), all_soma[idx].to(device)
+        return all_x[idx].to(device), all_y[idx].to(device), None
 
     def on_task_end(
         self,
@@ -473,12 +503,21 @@ class SomaCLAdapter:
     def _update_replay_buffer(self, train_loader: DataLoader) -> None:
         """Add samples from this task to the replay buffer.
 
-        Uses herding (nearest-to-class-mean) if ``use_herding=True``,
+        Handles both 2-tuple ``(x, y)`` and 3-tuple ``(x, soma_cache, y)``
+        loaders. Uses herding (nearest-to-class-mean) if ``use_herding=True``,
         otherwise random selection. Stored on CPU.
         """
         all_x = []
+        all_soma = []
         all_y = []
-        for x, y in train_loader:
+        has_soma = False
+        for batch in train_loader:
+            if len(batch) == 3:
+                x, soma, y = batch
+                all_soma.append(soma)
+                has_soma = True
+            else:
+                x, y = batch
             all_x.append(x)
             all_y.append(y)
         all_x = torch.cat(all_x, dim=0)
@@ -493,7 +532,13 @@ class SomaCLAdapter:
             else torch.randperm(n)[:k]
         )
 
-        self._replay_buffer.append((all_x[idx].cpu(), all_y[idx].cpu()))
+        if has_soma:
+            all_soma_t = torch.cat(all_soma, dim=0)
+            self._replay_buffer.append(
+                (all_x[idx].cpu(), all_y[idx].cpu(), all_soma_t[idx].cpu())
+            )
+        else:
+            self._replay_buffer.append((all_x[idx].cpu(), all_y[idx].cpu()))
 
     @staticmethod
     def _herd_select(
@@ -527,7 +572,7 @@ def make_soma_cl_components(
     seed: int = 42,
     integrator_count: int = 8,
     head_replay: bool = False,
-    replay_buffer_size: int = 200,
+    replay_buffer_size: int = 500,
     replay_mix_ratio: float = 0.5,
     use_herding: bool = False,
     head_ewc: bool = False,

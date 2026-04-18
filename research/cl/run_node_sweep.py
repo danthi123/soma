@@ -22,9 +22,9 @@ import torch
 
 from research.cl import datasets, harness
 from research.cl.run_b3 import _print_results, _subsample_tasks
-from research.cl.soma_cl import make_soma_cl_components
+from research.cl.soma_cl import SomaClassifier, make_soma_cl_components
 
-INTEGRATOR_COUNTS = [8, 16, 32, 64, 128]
+INTEGRATOR_COUNTS = [8, 16, 32, 64]
 REPORTS_DIR = Path("research/cl/reports")
 
 
@@ -82,10 +82,22 @@ def main() -> None:
             integrator_count=n_int,
         )
 
+        # Cache SOMA features for this architecture
+        _model, _opt = factory(device)
+        run_tasks = mnist_tasks
+        if isinstance(_model, SomaClassifier):
+            run_tasks = _model.precompute_all_tasks(mnist_tasks, device)
+        _built = [(_model, _opt)]
+
+        def _prebuilt_factory(
+            dev: torch.device, _ref: list = _built,
+        ) -> tuple:
+            return _ref[0]
+
         t0 = time.perf_counter()
         result = harness.run(
-            model_factory=factory,
-            tasks=mnist_tasks,
+            model_factory=_prebuilt_factory,
+            tasks=run_tasks,
             n_epochs=args.epochs,
             device=device,
             verbose=True,

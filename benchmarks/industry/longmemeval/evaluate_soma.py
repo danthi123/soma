@@ -31,20 +31,30 @@ from soma.schemas.packing import pack_context
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_API_BASE = "http://localhost:11434/v1"
+DEFAULT_API_BASE = "http://localhost:11434"
 DEFAULT_MODEL = "qwen3.5:4b-q8_0"
-EMBED_DIM = 16
 CHARS_PER_TOKEN = 4
 
+# Lazy-loaded sentence-transformer for real semantic embeddings
+_SBERT_MODEL = None
+_SBERT_DIM = 384
 
-def _stub_embed(text: str) -> torch.Tensor:
-    h = hash(text) & 0xFFFFFFFF
-    torch.manual_seed(h)
-    return torch.randn(EMBED_DIM)
+
+def _get_sbert():
+    global _SBERT_MODEL
+    if _SBERT_MODEL is None:
+        from sentence_transformers import SentenceTransformer
+        _SBERT_MODEL = SentenceTransformer("all-MiniLM-L6-v2")
+    return _SBERT_MODEL
+
+
+def _sbert_embed(text: str) -> torch.Tensor:
+    model = _get_sbert()
+    return model.encode(text, convert_to_tensor=True)
 
 
 def _build_memory_layer() -> MemoryLayer:
-    return MemoryLayer(embed_fn=_stub_embed, embed_dim=EMBED_DIM)
+    return MemoryLayer(embed_fn=_sbert_embed, embed_dim=_SBERT_DIM)
 
 
 def _format_turn_text(turn: Turn, session_id: str, session_date: str) -> str:
@@ -108,8 +118,6 @@ def answer_question(
         "Answer the question using ONLY the context provided. Be concise and direct. "
         "If the context does not contain the answer, say 'I don't know'."
     )
-    if disable_thinking:
-        system_prompt = "/no_think\n" + system_prompt
 
     user_msg = ""
     if context.strip():
@@ -124,19 +132,19 @@ def answer_question(
             {"role": "user", "content": user_msg},
         ],
         "stream": False,
-        "max_tokens": 256,
-        "temperature": 0.0,
+        "think": not disable_thinking,
+        "options": {"num_predict": 512, "temperature": 0.0},
     }
 
     try:
         resp = requests.post(
-            f"{api_base}/chat/completions",
+            f"{api_base}/api/chat",
             json=payload,
             timeout=120,
         )
         resp.raise_for_status()
         data = resp.json()
-        content: str = data["choices"][0]["message"]["content"]
+        content: str = data["message"]["content"]
         return content.strip()
     except (requests.RequestException, KeyError, IndexError) as exc:
         logger.error("LLM call failed: %s", exc)

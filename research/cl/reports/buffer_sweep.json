@@ -1,0 +1,51 @@
+{
+  "sweep_type": "buffer_size",
+  "ratio": 0.5,
+  "results": {
+    "400": {
+      "acc": 0.8219,
+      "bwt": -0.03,
+      "fwt": 0.0114,
+      "wall_clock_s": 3.9
+    },
+    "425": {
+      "acc": 0.826,
+      "bwt": -0.0264,
+      "fwt": 0.0154,
+      "wall_clock_s": 4.0
+    },
+    "450": {
+      "acc": 0.8264,
+      "bwt": -0.0264,
+      "fwt": 0.0124,
+      "wall_clock_s": 4.3
+    },
+    "475": {
+      "acc": 0.8222,
+      "bwt": -0.0316,
+      "fwt": 0.0113,
+      "wall_clock_s": 4.7
+    },
+    "500": {
+      "acc": 0.8265,
+      "bwt": -0.0262,
+      "fwt": 0.0157,
+      "wall_clock_s": 4.9
+    },
+    "525": {
+      "acc": 0.8261,
+      "bwt": -0.0277,
+      "fwt": 0.0069,
+      "wall_clock_s": 5.1
+    },
+    "550": {
+      "acc": 0.8298,
+      "bwt": -0.0226,
+      "fwt": 0.0091,
+      "wall_clock_s": 4.9
+    }
+  },
+  "best_buffer": 550,
+  "best_acc": 0.8298,
+  "total_wall_clock_s": 32.1
+}

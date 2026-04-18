@@ -357,6 +357,34 @@ Takeaway: the ceiling is **architectural, not mechanism-specific**.
 Any retrieval signal derived from "which nodes fire together" caps
 around +2/500 at this graph scale on LoCoMo.
 
+### Phase 14: LongMemEval Cross-Benchmark Validation (2026-04-18)
+Ran the gated hybrid on LongMemEval oracle (100 items, merged
+haystack corpus of 3094 turns):
+
+| Metric     | Value                |
+|------------|----------------------|
+| VecDB hits | 41/100 (41.0%)       |
+| Hybrid hits| 40/100 (40.0%)       |
+| Delta      | **-1**               |
+| Wins/Losses| 3/6 (net -3)         |
+| Gate used  | 36/100 (36%)         |
+
+By question type:
+- temporal-reasoning (n=60): -1 delta, 1W/5L
+- multi-session (n=40): 0 delta, 2W/1L
+
+**Ceiling confirmed cross-benchmark.** The gated hybrid slightly
+hurts on LongMemEval (especially temporal-reasoning, where the
+graph's winners mismatch actual temporal semantics). The retrieval-
+signal ceiling is not LoCoMo-specific. The mechanism has reached
+its performance floor on two independent canonical benchmarks.
+
+**Implication:** no further tactical experimentation on the
+fingerprint hybrid retrieval approach is warranted. Strategic
+decision required — see
+[2026-04-18-developmental-findings-and-direction.md](2026-04-18-developmental-findings-and-direction.md)
+for current options and recommendation.
+
 ### P2: Nonlinear Edge-Level Diversification (future)
 The `4d044f6` revert showed linear per-edge projections don't
 differentiate. Nonlinear variants (per-edge activation functions,

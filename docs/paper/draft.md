@@ -9,26 +9,37 @@ learning, structural plasticity, and consolidation — have been
 proposed as retrieval enhancements over pre-trained embeddings for
 retrieval-augmented generation (RAG). We present a rigorous empirical
 study of one such architecture, SOMA, evaluated as a gated-hybrid
-reranker over a pre-trained embedding baseline. Across 14 diagnostic
-experiments on LoCoMo (5882-turn corpus, 500 held-out queries) and
-LongMemEval (3094-turn corpus, 100 queries), we find: (1) the
-graph-derived signal is real but architecturally bounded at roughly
-+0.8% absolute over random fingerprint assignment on LoCoMo, and
-becomes slightly negative on LongMemEval; (2) both "fingerprint"
-(projected activation) and "topology" (shared-active-nodes) signals
-plateau identically because they derive from the same lateral-
-inhibition winners; (3) contrastively fine-tuning the encoder against
-the graph topology causes catastrophic forgetting (-13 hits on 100
-queries after 316 updates) because the topology is driven by random
-projections and is therefore structurally diverse but semantically
+reranker over a pre-trained embedding baseline.
+
+Across thirteen retrieval-diagnostic experiments on LoCoMo (5882-turn
+corpus, 500 held-out queries) and LongMemEval-oracle (3094-turn
+corpus, 100 queries), we find: (1) the graph-derived signal is real
+but architecturally bounded at roughly +0.8% absolute over random
+fingerprint assignment on LoCoMo, and becomes slightly negative on
+LongMemEval; (2) both "fingerprint" (projected activation) and
+"topology" (shared-active-nodes) signals plateau identically because
+they derive from the same lateral-inhibition winners; (3) contrastively
+fine-tuning the encoder against the graph topology causes catastrophic
+forgetting (VecDB 63 → 50 hits, gated 65 → 51, gate usage 32 → 11 on
+100 queries after 316 updates) because the topology is driven by
+random projections and is structurally diverse but semantically
 arbitrary. We argue this ceiling is a direct consequence of the
 "structural without semantic" nature of graph activation patterns and
 cannot be overcome by scaling the graph alone (scaling hurts).
-Complementary experiments on SOMA-native tasks — a +45% improvement
-from consolidation on synthetic QA, stable cross-session recall with
-+275% graph growth — suggest brain-inspired mechanisms are mis-
-applied when evaluated as retrieval plugins and are better suited to
-developmental adaptation tasks. We release all diagnostic
+
+Three complementary experiments on SOMA's native mechanisms then
+investigate whether the ceiling extends to non-retrieval tasks.
+On a sequence-prediction environment with distribution shifts, SOMA
+beats a vanilla online MLP by 3-40x across regimes. But a targeted
+ablation finds that structural plasticity (neurogenesis, synaptogenesis,
+pruning) does *not* drive the advantage — a `no_growth` variant with
+frozen topology outperforms the full system on 10 of 12 regimes
+across two schedules, including under explicit capacity pressure.
+A consolidation test on synthetic QA shows +45% F1 relative (0.279 →
+0.404). Together the retrieval and adaptation findings suggest
+brain-inspired graph memory is mis-applied as a retrieval plugin
+and mis-attributed when the claim is that structural plasticity
+is the load-bearing mechanism. We release all sixteen diagnostic
 experiments and data.
 
 ## 1. Introduction
@@ -48,8 +59,12 @@ This premise is plausible but under-tested. Existing evaluations
 typically report aggregate F1 on one benchmark with a small
 held-out set and no shuffle or permutation baseline. It is difficult
 from the published literature to distinguish a real structural
-signal from either (a) overfit-to-tuning-sample, or (b) tautological
-gains where the graph rediscovers the encoder's own clusters.
+signal from either (a) overfit-to-tuning-sample (hyperparameter
+search over a small tuning set that does not generalize), or (b)
+tautological gains, where the graph — itself trained on activations
+derived from the same encoder — will naturally align with encoder
+similarity structure and appear to add signal without actually
+adding any beyond what the encoder already provides.
 
 This paper does not propose a new architecture. Instead, we take an
 existing brain-inspired system — SOMA, a graph memory with
@@ -83,18 +98,37 @@ Our findings:
    arbitrary. Training the encoder contrastively against graph
    topology is catastrophic (-13 hits) because the topology target
    is not correlated with semantic structure.
-5. Orthogonally, SOMA's mechanisms **do work on tasks they were
-   designed for**: consolidation gives +45% QA improvement on
-   synthetic data; multi-session development produces +275% graph
-   growth with preserved cross-session recall. These are not
-   retrieval wins — they are development/adaptation wins.
+5. On the non-retrieval side, **SOMA substantially outperforms
+   a vanilla MLP on adaptation tasks** — 3-33x lower MSE than an
+   online MLP across four regimes of a sequence-prediction
+   environment, and 9-40x lower on an 8-regime capacity-pressure
+   schedule. Consolidation gives +45% relative F1 on an ad-hoc
+   synthetic-QA test. Multi-session development produces +275%
+   relative F1 growth across three sequential sessions with save/
+   load preserving state.
+6. **But a targeted ablation finds that structural plasticity is
+   not load-bearing for SOMA's adaptation advantage.** A variant
+   with growth disabled (14 nodes / 24 edges fixed) outperforms
+   the full system on 10 of 12 regimes across both schedules,
+   including under capacity pressure. The advantage is in SOMA's
+   graph substrate; the plasticity mechanisms SOMA foregrounds
+   are, in the current implementation, a net cost.
 
-We take these results as evidence that the retrieval-enhancement
-framing is a mismatch for what structural plasticity provides. We
-conclude with a call to evaluate brain-inspired architectures on
-problems they are structurally suited to, rather than on problems
-where they are forced to compete with pretrained embeddings on the
-latter's home field.
+We take these results as evidence that (a) the retrieval-
+enhancement framing is a mismatch for what structural plasticity
+provides, and (b) the widely-promoted mechanisms (neurogenesis,
+synaptogenesis, pruning) are not the load-bearing component of
+SOMA's adaptation advantage; the graph substrate is. We conclude
+with a call both to evaluate brain-inspired architectures on
+problems they are structurally suited to, and to ablate their
+plasticity components when claiming advantage, to distinguish
+"substrate matters" from "plasticity matters."
+
+A broader aim is to offer a **diagnostic template** for
+brain-inspired retrieval claims. Our five-test suite — multi-slice
+held-out, shuffle permutations, scaling sweep, per-query attribution,
+cross-benchmark — is applicable to any graph-augmented retrieval
+system and does not depend on SOMA specifics.
 
 ## 2. Background
 
@@ -146,9 +180,24 @@ SOMA is a graph-memory system with:
   weights; analogous to sleep.
 
 We use PredictiveSOMA, a wrapper that drives the graph via next-input
-prediction error (Free Energy Principle), with a text front-end
-(encoder → sensor node). Full architecture is documented in
-[whitepaper.md](../whitepaper.md).
+prediction error (Free Energy Principle). The text processing flow
+for retrieval experiments is:
+
+1. Text passage $c_i$ is encoded by the frozen pretrained encoder:
+   $e_i = E(c_i) \in \mathbb{R}^{384}$.
+2. $e_i$ enters the graph at the SENSOR node, propagates through
+   associators (each applying its randomly-initialized input
+   projection), then integrators, then OUTPUT.
+3. PredictiveSOMA's prediction head outputs a forecast of the *next*
+   such embedding; MSE between forecast and actual drives Hebbian
+   updates, synaptogenesis/neurogenesis/pruning decisions, and
+   the prediction head's own backprop.
+4. For retrieval, we capture the associator activation state
+   per-memory via lateral inhibition (top-3 winners), then derive
+   either a hash-projected fingerprint or a set of active-node IDs
+   for the query-time comparison.
+
+Full architecture is documented in [whitepaper.md](../whitepaper.md).
 
 ### 2.4 Fingerprint and topology signals
 
@@ -205,12 +254,21 @@ validation in §5.
 ### 3.2 Evaluation protocol
 
 **Corpus and queries**. LoCoMo is a 10-conversation long-term memory
-benchmark with 1980 QA pairs across the conversations (avg 198 per
+benchmark with 1986 QA pairs across the conversations (avg 199 per
 conv, min 105, max 260). We merge all turns into a single corpus
 (5882 turns) and index by turn. LongMemEval-oracle is a 500-item
-benchmark; each item has a question, a gold answer, and ~24-36-turn
-haystack. We use the first 100 items, merging their haystacks into a
-3094-turn corpus.
+benchmark comprising question_type labels `temporal-reasoning` and
+`multi-session`; each item has a question, a gold answer, and a
+24-36-turn haystack. We use the first 100 items, merging their
+haystacks into a single 3094-turn corpus.
+
+**Encoder**. All experiments use the pre-trained `sentence-transformers/
+all-MiniLM-L6-v2` model (384-dim) with frozen weights. The only
+experiments that fine-tune the encoder are Phase 4 (SOMA-loss
+backprop — produced 0 gradient updates due to internal tensor
+detaching) and Phase 4b (contrastive FT against graph topology —
+catastrophic; see §5). Both are reported as failures; main-result
+experiments use the frozen encoder.
 
 **Scoring**. For each query, retrieve top-5 passages, score each as
 token-F1 against the gold answer, take the max, and count the query
@@ -242,6 +300,34 @@ We designed five diagnostics to isolate real signal:
    LongMemEval oracle (100 items).
 
 ## 4. Results
+
+**Phases referenced.** We number retrieval experiments by the
+order they were run (Phase 3 onwards — Phases 1-2 were earlier
+exploratory work on the graph reranking baseline, prior to the
+current gated-hybrid formulation). The following experiments
+produced the headline results that we tabulate in §4.1-§4.6 and
+§4.7:
+
+- **Phase 3**: confidence-gated hybrid baseline (+3 hits on slice A,
+  the tuning set).
+- **Phase 9**: associator count scaling sweep (§4.3).
+- **Phase 10**: multi-slice held-out validation (§4.1).
+- **Phase 11**: shuffle diagnostic (§4.2).
+- **Phase 12**: per-query attribution (§4.4).
+- **Phase 13**: topology signal swap (§4.5).
+- **Phase 14**: LongMemEval cross-benchmark validation (§4.6).
+
+We also ran four tangential experiments whose negative/neutral
+findings inform the analysis (§5) but are not tabulated as primary
+results: **Phase 4** (encoder FT via SOMA loss — zero gradient
+updates due to internal tensor detaching), **Phase 4b** (contrastive
+encoder FT against graph topology — catastrophic; described in §5),
+**Phase 5** (learned embedding→fingerprint "semantic lens" — neutral),
+**Phase 6** (adaptive rerank weight — no improvement over fixed
+weight), **Phase 7** (`min_active` sweep — min=3 Pareto optimal),
+and **Phase 8** (learnable input projections via competitive learning
+updates — +1 hit improvement, within the ±2 noise floor observed
+between runs). All are linked in Appendix B.
 
 ### 4.1 Held-out validation: the tuned +3 disappears
 
@@ -280,19 +366,23 @@ magnitude is too small to support the retrieval-enhancement framing.
 ### 4.3 Scaling sweep: scaling hurts
 
 Table 3: Gated hybrid at {8, 32, 64} initial associators (LoCoMo
-slice A, 100 queries).
+slice A, 100 queries). "Δ hits" = hybrid − VecDB; "Net W/L" =
+wins − losses, where a win/loss is defined by a per-query F1
+change exceeding ±0.01 against VecDB.
 
-| n_init | n_final | Hits | VecDB | Delta | W/L  | Runtime |
-|--------|---------|------|-------|-------|------|---------|
-| 8      | 14      | 64   | 63    | +8    | 11/3 | 349s    |
-| 32     | 38      | 61   | 63    | +4    | 13/9 | 1352s   |
-| 64     | 70      | 63   | 63    | -1    | 8/9  | 2904s   |
+| n_init | n_final | Hits | VecDB | Δ hits | Used | Wins | Loss | Net W/L | Runtime |
+|--------|---------|------|-------|--------|------|------|------|---------|---------|
+| 8      | 14      | 64   | 63    | +1     | 40   | 11   | 3    | +8      | 349s    |
+| 32     | 38      | 61   | 63    | −2     | 56   | 13   | 9    | +4      | 1352s   |
+| 64     | 70      | 63   | 63    | 0      | 61   | 8    | 9    | −1      | 2904s   |
 
 The scaling hypothesis fails. We predicted larger $N$ would expand
-fingerprint vocabulary ($C(N, 3)$ scales cubically) and lift hits. In
-practice, gate usage climbs (40→56→61, as expected from more
-confident patterns), but losses triple (3→9) and net wins decline
-(11→8). At $n=64$ the graph is indistinguishable from VecDB.
+the fingerprint vocabulary ($C(N, 3)$ scales cubically in the number
+of applicable nodes) and lift hits. In practice, gate usage climbs
+(40→56→61, as expected from more confident patterns), but losses
+triple (3→9) and net wins decline (11→13→8). Hits are flat-to-falling
+(64→61→63), and at $n=64$ the graph is indistinguishable from VecDB
+on hits.
 
 We interpret this as evidence that the bottleneck is not
 vocabulary but signal quality: the additional fingerprint patterns
@@ -318,12 +408,15 @@ queries. However, the absolute N is too small (31, 36) and delta is
 near zero. The bulk of the positive aggregate (+5) lives in "other"
 — a 44% catch-all bucket — with no semantic pattern.
 
-Temporal queries are the largest single loss source (15W/17L).
-LongMemEval's temporal-reasoning type shows the same pattern
-(§4.6), suggesting the graph's node-winner selection does not
-align with the specific kind of temporal structure QA requires
-("when did X happen, relative to Y") — consistent with the graph's
-fingerprint encoding containment but not ordering.
+Temporal queries are where the graph flips the most rankings
+(15 wins + 17 losses = 32 rank changes, vs "other"'s 17 and
+"cross_entity"'s 4). The delta is near-breakeven, but the variance
+is highest. LongMemEval's `temporal-reasoning` questions show the
+same high-variance pattern (§4.6). The interpretation: SOMA's
+fingerprints encode *which* associator winners fired, but not *in
+what order* those firings occurred — so queries that require
+relative ordering ("when did X happen relative to Y") are
+fundamentally unserved by this representation.
 
 ### 4.5 Signal equivalence: fingerprint ≡ topology
 
@@ -373,27 +466,48 @@ canonical benchmarks yield coin-flip or negative retrieval deltas.
 On tasks SOMA was designed for, the mechanisms demonstrate real
 value:
 
-**Consolidation**: a 300-step develop-then-consolidate-then-QA
-pipeline on synthetic data showed +45% QA improvement vs
-non-consolidated baseline (commit `c553a66`). The consolidation
-cycle reorganizes edges and weights in a way that measurably
-helps subsequent retrieval on the same corpus.
+**Consolidation**: an ad-hoc develop-then-consolidate-then-QA test
+on a synthetic multi-topic corpus (see Limitations §8 for caveats
+on the exact specification) showed QA F1 improving from 0.279
+without consolidation to 0.404 with consolidation (+0.125, +45%
+relative; commit `c553a66`). The consolidation cycle reorganizes
+edges and weights in a way that measurably helps subsequent
+retrieval on the same corpus. This was a single-run, ad-hoc test
+run via the interactive CLI rather than a scripted, repeated
+experiment; we report it as evidence-of-life, not as a tight
+statistic.
 
-**Multi-session development**: saving and loading graph state across
-three sessions (cooking/family → travel/music → cross-session
-recall test) produced +275% graph growth with successful
-cross-session recall (commit `6a0a822`). This demonstrates the
-architecture's capacity to accumulate learned structure across
-use without forgetting.
+**Multi-session development**: we saved and loaded graph state
+across three sequential sessions (cooking/family → travel/music →
+pets/exercise; commit `6a0a822`). Per-session F1 on each session's
+own QA set: S1=0.060 (40 memories, 29 edges, 14 nodes), S2=0.015
+(80 memories, 37 edges, 14 nodes — interference dip as new topics
+compete), S3=0.224 (120 memories, 43 edges, 14 nodes — recovery
+and improvement). F1 grew +275% relative from S1 to S3; memory
+store grew 3x (40→120); edge count grew 48% (29→43); node count
+was static. We did *not* measure true cross-session recall (e.g.
+querying S1 facts from an S3-state graph); the claim here is
+narrower — save/load preserved state cleanly, and cumulative
+development recovered from interference and increased quality by
+S3.
 
 **Adaptation on a sequence-prediction environment**. We built a
 synthetic benchmark where a learner predicts next-observation on a
 stream with four sequential regimes of different dynamics (random
 walk, linear rotation, elementwise sqrt nonlinearity, frozen-MLP
-dynamics). All observations are bounded in $[-1, 1]^{16}$.
+dynamics). All regime step-functions apply a final `tanh` so
+observations remain bounded in $[-1, 1]^{16}$ across regime changes
+(keeping the observation distribution stationary and ruling out
+magnitude drift as a confounder).
 
-On this task, SOMA substantially outperforms a capacity-matched
-online MLP baseline (Table 7):
+On this task, SOMA substantially outperforms a vanilla online MLP
+baseline (2 hidden layers, 64 units ≈ 5.6k parameters; note that
+SOMA is not parameter-matched — its full graph has roughly 15-25k
+parameters depending on growth, so this comparison establishes
+that a standard MLP baseline cannot match SOMA's adaptation curve,
+not that SOMA is more parameter-efficient).
+
+Table 7: Per-regime mean squared error (100-step warmup excluded).
 
 | Regime          | SOMA   | OnlineMLP | FrozenMLP |
 |-----------------|--------|-----------|-----------|
@@ -403,11 +517,31 @@ online MLP baseline (Table 7):
 | mlp_dynamics    | 0.0065 | 0.0227    | 0.1440    |
 
 SOMA achieves 3-33x lower mean squared error than the online MLP
-across all four regimes. At the first regime boundary, SOMA recovers
-to within 1.2x pre-boundary error in 0 steps, versus 80 steps for
-the online MLP. Neurogenesis specifically fires at the first
-strongly nonlinear regime (nodes grow 14 → 29 when the sqrt
-regime begins), matching the mechanism's design intent.
+across all four regimes. Adaptation-window behavior at regime
+boundaries (steps to recover to 1.2x pre-boundary running MSE) is
+more nuanced:
+
+| Boundary                             | SOMA | OnlineMLP | FrozenMLP |
+|--------------------------------------|------|-----------|-----------|
+| random_walk → linear_rotation        | 0    | 80        | 500 (cap) |
+| linear_rotation → nonlinear_sqrt     | 118  | 28        | 0         |
+| nonlinear_sqrt → mlp_dynamics        | 500  | 500       | 1         |
+
+At the first boundary SOMA recovers immediately while OnlineMLP
+takes 80 steps. At later boundaries, the metric becomes degenerate
+because different learners operate at wildly different MSE scales:
+SOMA's pre-boundary MSE in regime 1 was 0.0014, so a 1.2x target is
+0.00168 — an extremely tight bar. OnlineMLP's pre-boundary MSE was
+0.045, making its 1.2x target 0.054 — trivial to hit. FrozenMLP
+"recovers" in 0-1 steps on boundaries 2 and 3 only because it had
+already catastrophically diverged; the metric is vacuous for it.
+The table reports the raw numbers; we believe only the first
+boundary's comparison is informative.
+
+Neurogenesis fires at the first strongly nonlinear regime (nodes
+grow 14 → 29 during the sqrt regime), matching the mechanism's
+design intent — but as the ablation below shows, this growth does
+not correspond to a performance gain.
 
 An ablation across mechanisms, however, reveals a nuance (Table 8):
 
@@ -451,20 +585,23 @@ This is a clean negative result about the plasticity story. The
 structural plasticity mechanism, as currently implemented, adds
 random-weight nodes faster than it extracts useful structure —
 this is not a scale or task-difficulty issue, it's a mechanism
-issue. **The load-bearing contribution is the executable graph
-substrate, specifically:** wave-based topological execution,
-residual connections in node MLPs, and homeostatic gain control.
-The plasticity mechanisms that SOMA (and much of the brain-inspired
-architecture literature) foregrounds are, at least in the current
-implementation, a net cost.
+issue. **Something about SOMA's graph substrate** delivers the
+adaptation advantage over a vanilla MLP; the ablation rules out
+structural plasticity as the mechanism. However, our experiments
+do *not* isolate which substrate component specifically matters —
+wave-based topological execution, residual connections in node
+MLPs, homeostatic gain control, graph connectivity, effective
+depth, or raw parameter count. Isolating these is future work (see
+§8 Limitations). What we can say is that the plasticity mechanisms
+typically foregrounded in the brain-inspired architecture literature
+are, at least in the current SOMA implementation, a net cost.
 
 These results are specifically not retrieval wins. They are
-demonstrations that the mechanisms are load-bearing on tasks
-evaluated by adaptation and capacity metrics rather than
-static retrieval accuracy. And — per the ablation — the central
-load-bearing component is the graph's executable structure, not
-the plasticity mechanisms typically highlighted in brain-inspired
-architecture proposals.
+demonstrations that SOMA's graph substrate helps on tasks evaluated
+by adaptation and capacity metrics rather than static retrieval
+accuracy — and that the plasticity mechanisms typically highlighted
+in brain-inspired architecture proposals are not the source of
+that help.
 
 ## 5. Analysis: why structural ≠ semantic
 
@@ -480,27 +617,36 @@ The consistent picture across §4.1–§4.6 is:
 We argue the cause is that **graph activation is a structural
 signal without semantic grounding**. Concretely:
 
-- SOMA's per-edge input projections are randomly initialized and
-  only weakly trained (Phase 8 learnable-projection experiment
-  gave +1 improvement at the noise floor).
-- Lateral inhibition selects the top 3 associators by raw
-  activation magnitude given these random projections.
+- SOMA's per-associator-node input projections are randomly
+  initialized and only weakly trained (Phase 8 learnable-projection
+  experiment gave +1 improvement at the noise floor; see §4.1).
+- Lateral inhibition selects the top 3 of the non-boundary
+  associator+integrator nodes by raw activation magnitude given these
+  random projections.
 - The identity of "the 3 winners for this input" is therefore a
   structural hash: different inputs land on different winner sets,
-  and the distribution of winner sets is diverse (roughly
-  $C(14, 3) \approx 364$ patterns for our default $n=8$ configuration
-  with ~14 final nodes).
-- But the hash has **no relationship to semantics** — two
+  and the distribution of winner sets is diverse. In the default
+  $n=8$ configuration, we have 8 associators + 4 integrators = 12
+  nodes eligible for the 3-winner pool, giving $C(12, 3) = 220$
+  distinct winner sets. Scaling to $n=32$ or $n=64$ expands this
+  theoretical ceiling but (as §4.3 shows) does not improve
+  retrieval, because:
+- The hash has **no relationship to semantics** — two
   semantically similar inputs may land on different winner sets, and
   two semantically unrelated inputs may collide on the same set.
 
-The contrastive-fine-tuning experiment (Phase 4b, -13 hits) confirms
-this directly. When we trained the encoder to make co-active
-memories have similar embeddings — effectively teaching the encoder
-to match the graph's topology — the encoder catastrophically
-forgot. Training signal pointed at an arbitrary target (the
-identity of randomly-selected winners) destroyed the pretrained
-semantic structure.
+The contrastive-fine-tuning experiment (Phase 4b) confirms this
+directly. We defined a contrastive loss where memories that
+activated overlapping sets of graph nodes should have similar
+encoder embeddings — effectively teaching the encoder to match
+the graph's topology. After 316 fine-tuning updates on the LoCoMo
+slice, the encoder's retrieval performance collapsed: VecDB-only
+hits fell from 63 to 50 (−13), gated-hybrid hits fell from 65 to
+51 (−14), and gate-usage fell from 32/100 queries to 11/100 (the
+graph itself became confused by degraded embeddings). Training
+signal pointed at an arbitrary target — the identity of
+randomly-selected winners — destroyed the pretrained semantic
+structure after barely 300 updates.
 
 This is a **first-principles limit**, not a tuning issue. No
 amount of gate-threshold sweeping, rerank-weight adjustment, or
@@ -530,8 +676,11 @@ expected in this literature:
   Publish at least two independent benchmarks with the same
   hyperparameters.
 - **Scaling and capacity tests**: do gains scale with graph
-  capacity, or plateau? Scaling tests disambiguate "vocabulary
-  bottleneck" from "signal quality bottleneck."
+  capacity, or plateau? In our case, a scaling sweep disambiguated
+  a plausible "vocabulary bottleneck" explanation from the actual
+  "signal quality bottleneck": scaling hurt. Scaling tests are most
+  valuable when both outcomes — gain or flat — are independently
+  plausible from the existing evidence.
 
 ### 6.2 Implications for brain-inspired architecture research
 
@@ -541,8 +690,10 @@ provides. Pretrained encoders already excel at semantic
 similarity on dense text. For a graph memory to improve on dense
 retrieval, its structural encoding would need to correlate with
 semantic content the encoder missed. Random-projection-driven
-graphs — the default in most brain-inspired architectures — do not
-satisfy this condition by construction.
+graphs — which SOMA uses and which, anecdotally, are common in
+brain-inspired architectures — do not satisfy this condition by
+construction: the structural signal is decoupled from semantic
+content.
 
 This suggests two paths forward:
 
@@ -647,14 +798,36 @@ architectures were not benchmarked.
 - **Single reranking weight** ($w = 0.2$). We tested adaptive
   weighting and confidence-gap variations in Phase 6; all came in
   at or below the fixed-weight baseline.
-- **Two benchmarks** (LoCoMo, LongMemEval oracle). Both are
+- **Two benchmarks** (LoCoMo, LongMemEval-oracle). Both are
   conversation-memory style; open question whether structural
   signal would help on other retrieval styles (code, scientific
   literature, web).
+- **Shuffle diagnostic is under-powered**. We ran 5 permutations —
+  sufficient to show real > max-shuffled, but statistically weak.
+  A 100-seed version would quantify the z-score of the real delta
+  against the shuffle distribution. We also observed ~±0.05 F1
+  oscillation between checkpoints in earlier work, indicating a
+  non-trivial run-to-run noise floor; the +0.8%-over-random effect
+  is close to this noise floor and we cannot rule out that a
+  different random seed would flip the sign.
 - **No LLM generation loop**. We measure retrieval hit rate
   directly, not end-to-end QA accuracy. Potential for graph
   signal to help downstream generation in non-hit-dominated
   regimes is not tested.
+- **Consolidation and multi-session evidence is ad-hoc**. The +45%
+  consolidation result (§4.7) and the +275% S1→S3 F1 growth
+  (§4.7) were produced by single-run interactive-CLI sessions on
+  synthetic corpora, not by repeated scripted experiments with
+  explicit controls. They are evidence-of-life for SOMA's sleep
+  and save/load mechanisms, not tight statistics. Reproducing them
+  as scripted multi-seed experiments is pre-submission work.
+- **Substrate components not independently ablated**. The
+  adaptation advantage over a vanilla MLP is ~3-40x, and structural
+  plasticity is disconfirmed as the source, but we do not know
+  whether wave execution, residual connections, homeostatic gain,
+  depth, or parameter count drives it. A structure-matched deep
+  MLP (same total parameters, feedforward) would be a direct
+  control; we did not run it.
 - **Graph architecture choices**. We evaluate one specific graph
   design (SOMA). Other architectures (attractor networks,
   hippocampus-style indexing) may have different ceilings.
@@ -702,10 +875,12 @@ real findings of both kinds.
 
 ## Appendix A: Reproducibility
 
-All experiments run on a single RTX 3090 with the following shared
-hyperparameters unless otherwise noted:
+All experiments run on a single RTX 3090.
 
-- Encoder: sentence-transformers/all-MiniLM-L6-v2 (384-dim)
+### A.1 Retrieval-experiment configuration (§4.1-§4.6)
+
+- Encoder: `sentence-transformers/all-MiniLM-L6-v2` (384-dim,
+  frozen weights).
 - SOMA config: `SOMAConfig.developmental(...)` with
   `sensor_output_dim=384`, `associator_input_dim=192`,
   `associator_hidden_dim=384`, `associator_output_dim=192`,
@@ -714,23 +889,61 @@ hyperparameters unless otherwise noted:
   `max_nodes=50`, `seed=42`.
 - Gated hybrid: `gate_threshold=0.05`, `rerank_weight=0.2`,
   `recall_k=20`, `top_k=5`.
-- Scoring: `token_f1` from `benchmarks/industry/longmemeval/metrics.py`.
+- Scoring: `token_f1` from
+  `benchmarks/industry/longmemeval/metrics.py`.
+
+### A.2 Sequence-prediction environment configuration (§4.7 Tables 7-9)
+
+- SOMA config: `SOMAConfig.developmental(...)` with
+  `sensor_output_dim=16`, `associator_input_dim=16`,
+  `associator_hidden_dim=32`, `associator_output_dim=16`,
+  `integrator_hidden_dim=32`, `integrator_output_dim=16`,
+  `initial_associator_count=8`, `initial_integrator_count=4`,
+  `seed=42`; `max_nodes=50` for v0, `max_nodes=128` for v0.5.
+- Baselines: `OnlineMLP` (`16 → 64 → 64 → 16` GELU + Adam lr=1e-3,
+  trained online on every step); `FrozenMLP` (same, trained during
+  regime 0 only, frozen thereafter).
+- Schedule: `make_default_schedule` (4 regimes, 500 steps each,
+  2000 total) for v0; `make_capacity_schedule` (8 MLP-dynamics
+  regimes of varying depth/width, 500 steps each, 4000 total) for
+  v0.5.
+- Environment: `SequenceEnv` in `src/soma/environments/sequence_env.py`.
+  All regime transition functions apply a final `tanh` so
+  observations remain bounded in $[-1, 1]^{16}$ (early attempts
+  without this bound caused SOMA to diverge numerically at
+  regime boundaries; observation-distribution stationarity matters
+  for this architecture).
+
+### A.3 Scripts and data
 
 Scripts are at `research/developmental/`. Each script is a single
 self-contained entry point (no shared harness) to simplify
-reproducibility. Results logs at
-`research/developmental/results/*.log`.
+reproducibility. Raw results at `research/developmental/results/`
+(JSON data) and `*.log` (console output). The Appendix B table
+maps phase numbers to script filenames and commit hashes.
 
-## Appendix B: Commit trail
+## Appendix B: Commit trail and script map
 
-Key commits backing the results:
+| Phase / Experiment     | Script                                          | Commit    | Section |
+|------------------------|-------------------------------------------------|-----------|---------|
+| Phase 3 (gated hybrid) | `research/developmental/confidence_gated_test.py` | `77f8fd3` | §4 intro, §5 |
+| Phase 4 (encoder FT)   | `research/developmental/encoder_finetune_test.py` | `30cde22` | §4 intro, §5 |
+| Phase 4b (contrastive) | `research/developmental/contrastive_finetune_test.py` | `30cde22` | §5 |
+| Phase 5 (semantic lens)| `research/developmental/semantic_lens_test.py`  | `cddc488` | §4 intro |
+| Phase 6 (adaptive gate)| `research/developmental/adaptive_gate_test.py`  | `c630d69` | §4 intro |
+| Phase 7 (min_active)   | `research/developmental/min_active_sweep.py`    | `59a0662` | §4 intro |
+| Phase 8 (learnable proj)| `research/developmental/learnable_proj_test.py` | `309caeb` | §4 intro, §5 |
+| Phase 9 (scaling)      | `research/developmental/associator_count_sweep.py` | `0275ac6` | §4.3 |
+| Phase 10 (held-out)    | `research/developmental/multi_slice_validation.py` | `3923dbc` | §4.1 |
+| Phase 11 (shuffle)     | `research/developmental/shuffle_diagnostic.py`  | `3923dbc` | §4.2 |
+| Phase 12 (attribution) | `research/developmental/per_query_attribution.py` | `2afe9a7` | §4.4 |
+| Phase 13 (topology)    | `research/developmental/topology_gate_test.py`  | `2afe9a7` | §4.5 |
+| Phase 14 (LongMemEval) | `research/developmental/longmemeval_gated_hybrid.py` | `95820e2` | §4.6 |
+| Env v0                 | `research/developmental/env_sequence_v0.py`     | `c94c274` | §4.7 Table 7 |
+| Env v0 ablation        | `research/developmental/env_sequence_ablation.py` | `c19a0b9` | §4.7 Table 8 |
+| Env v0.5 capacity      | `research/developmental/env_sequence_v05_capacity.py` | `0390590` | §4.7 Table 9 |
+| Consolidation result   | (ad-hoc via `/sleep` CLI)                        | `c553a66` | §4.7 |
+| Multi-session result   | (ad-hoc via developmental CLI)                   | `6a0a822` | §4.7 |
 
-- Phase 3 (gated hybrid baseline): `77f8fd3`
-- Phase 4/4b/5/6 (FT / semantic lens / adaptive gate): `30cde22`, `c630d69`
-- Phase 7 (min_active sweep): `59a0662`
-- Phase 8 (learnable projections): `309caeb`
-- Phase 9 (scaling sweep): `0275ac6`
-- Phase 10-13 (held-out, shuffle, attribution, topology): `3923dbc`, `2afe9a7`
-- Phase 14 (LongMemEval): `95820e2`
-- Consolidation positive result: `c553a66`
-- Multi-session positive result: `6a0a822`
+Environment module: `src/soma/environments/sequence_env.py`.
+Tests: `tests/test_environments/` (11 passing).

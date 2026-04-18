@@ -39,9 +39,14 @@ We further rule out two simple mechanism fixes: an opt-in
 prediction-error-gated neurogenesis mode fires 66% fewer events and
 produces a 46% smaller graph yet changes nothing, and a sweep over
 the new-edge initial weight scale down to zero (silent new edges)
-still loses 8 of 8 regimes to the frozen-topology baseline. The
-disruption is not about when nodes are born or how loudly their
-edges start; it arises from the structural event itself.
+still loses 8 of 8 regimes to the frozen-topology baseline. A
+capacity probe refines the picture: pre-adding 49 frozen nodes
+from $t=0$ also loses to the 14-node baseline by 2-16x MSE on
+every regime, suggesting 14 nodes is a Pareto-optimal capacity
+for this task rather than a plasticity-specific artifact. Growth
+does produce a substantially better 49-node graph than random
+initialization (8x on one regime) — so structural plasticity
+is not pure noise — but that graph is still over-capacity here.
 A consolidation test on synthetic QA shows +45% F1 relative (0.279 →
 0.404). Together the retrieval and adaptation findings suggest
 brain-inspired graph memory is mis-applied as a retrieval plugin
@@ -117,12 +122,19 @@ Our findings:
    relative F1 growth across three sequential sessions with save/
    load preserving state.
 6. **But a targeted ablation finds that structural plasticity is
-   not load-bearing for SOMA's adaptation advantage.** A variant
-   with growth disabled (14 nodes / 24 edges fixed) outperforms
-   the full system on 10 of 12 regimes across both schedules,
-   including under capacity pressure. The advantage is in SOMA's
-   graph substrate; the plasticity mechanisms SOMA foregrounds
-   are, in the current implementation, a net cost.
+   not load-bearing for SOMA's adaptation advantage on this task.**
+   A variant with growth disabled (14 nodes / 24 edges fixed)
+   outperforms the full system on 10 of 12 regimes across both
+   schedules, including under capacity pressure. A follow-up
+   capacity probe shows that pre-adding 49 frozen nodes at $t=0$
+   also loses to the 14-node baseline monotonically, so 14 nodes
+   is apparently the Pareto-optimal capacity for the task — the
+   advantage is not about plasticity vs. frozen topology per se
+   but about matching graph size to task complexity. Growth is
+   still doing useful work: a grown 49-node graph outperforms a
+   random-initialization 49-node graph by ~8x on one regime. It
+   just happens that on this task, neither 49-node variant beats
+   14.
 
 We take these results as evidence that (a) the retrieval-
 enhancement framing is a mismatch for what structural plasticity
@@ -682,18 +694,72 @@ This is a three-way isolation of the plasticity failure:
 3. **The substrate is not the cause.** `no_growth` (the same
    substrate with growth disabled) wins decisively.
 
-Together, these rule out the simplest mechanism-level fixes.
-Whatever the disturbance is, it arises from the structural event
-itself — new nodes entering the topological execution order,
-Hebbian updates operating on edges and paths that did not exist
-before, and/or the homeostatic regulator re-balancing around a
-changed population — rather than from any tunable parameter of
-the edges themselves. Candidates that remain live are: (a)
-pre-adding random frozen nodes at $t=0$ versus organic online
-addition (to isolate "more structure" from "structure added
-online"), and (b) gain-ramped new nodes that stay near-inert
-in execution for $K$ steps via homeostasis, not just through
-zero edges. Both are future work.
+**Follow-up: is the failure about node *count* rather than
+dynamics?** The isolation above rules out two parameters of how
+new edges enter, but does not separate "new nodes appear online"
+from "there are more nodes now." To test the latter, we ran
+frozen-topology variants initialized at three sizes from $t=0$:
+14 nodes (24 edges, the current `no_growth` baseline), 25 nodes
+(46 edges, matching the PE-gated endpoint size), and 49 nodes (94
+edges, matching the full-interval endpoint size). Initial sparse
+connectivity is held constant at roughly 1.7 edges per node; all
+growth intervals are zero. Any difference here is purely about
+starting capacity.
+
+| Regime   | 14n / 24e | 25n / 46e | 49n / 94e |
+|----------|-----------|-----------|-----------|
+| mlp_2x16 | 0.0062    | 0.0133    | 0.0233    |
+| mlp_2x32 | 0.0005    | 0.0023    | 0.0082    |
+| mlp_3x16 | 0.0006    | 0.0020    | 0.0073    |
+| mlp_3x32 | 0.0006    | 0.0023    | 0.0061    |
+| mlp_2x64 | 0.0011    | 0.0035    | 0.0076    |
+| mlp_3x64 | 0.0014    | 0.0044    | 0.0062    |
+| mlp_4x32 | 0.0018    | 0.0040    | 0.0042    |
+| mlp_4x64 | 0.0010    | 0.0044    | 0.0071    |
+
+More frozen structure at the default sparse-initialization density
+is monotonically worse. A 49-node frozen graph with 94 edges is
+2-16x worse than the 14-node baseline on every regime. This
+substantially reframes the earlier findings: the penalty we
+attributed to *growth dynamics* is partly a penalty for simply
+having more of this substrate at this task scale. Fourteen nodes
+appears to be a good capacity match for the 16-dimensional
+prediction task; larger graphs at the default connectivity lose
+on every regime, independent of whether they were grown or
+pre-added.
+
+However, **growth is not the same thing as random pre-addition.**
+The grown 49-node variant from the init-scale sweep achieved
+0.0010 MSE on mlp_2x32 (980 edges; synaptogenesis + neurogenesis
+firing throughout training) versus 0.0082 MSE for the pre-added
+49-node variant at the same node count (94 edges, frozen). Growth
+produces a 49-node graph that is about 8x better on this regime
+than a random-initialization 49-node graph of the same node count.
+So structural plasticity *is* doing useful work given a target
+capacity — it just happens that, on this task, 14 nodes already
+outperforms 49 grown and 14 outperforms 49 pre-added even more.
+
+There is one important confound in this comparison: the grown
+49-node graph has ~980 edges versus 94 for the pre-added
+variant. We cannot cleanly separate "growth dynamics matter"
+from "edge count matters" from "co-occurrence of edges during
+training matters." A cleaner follow-up would pre-add 49 nodes
+with 980 edges (matched density) and compare that against the
+grown 49-node graph directly. This is future work.
+
+The updated reading: on tasks where the base 14-node graph
+already has sufficient capacity, SOMA's growth mechanisms push
+capacity past the Pareto-optimal point and hurt. Growth is not
+pure noise within that push — the edges and wiring it produces
+are substantially better than a random-initialized graph of the
+same size — but the resulting graph is still over-capacity for
+the task. The remaining live integration candidates are (a)
+matched-density pre-added comparison (isolates the edge-count
+confound), (b) gain-ramped new nodes that stay near-inert via
+homeostasis for $K$ steps after creation, and (c) evaluation on
+a task where the 14-node graph is under-capacity, to test
+whether growth helps when scaling up is actually needed. All
+are future work.
 
 These results are specifically not retrieval wins. They are
 demonstrations that SOMA's graph substrate helps on tasks evaluated
@@ -986,27 +1052,39 @@ shifts. Through sixteen diagnostic experiments, we showed that:
   on four base regimes, 9-40x on an 8-regime capacity-pressure
   schedule. The advantage is large and consistent.
 
-- **But the advantage is driven by the graph's executable substrate,
-  not by structural plasticity.** Ablations show that disabling
-  growth (neurogenesis, synaptogenesis, pruning) while keeping the
-  14-node base graph monotonically improves performance — even
-  under explicit capacity pressure (the `no_growth` variant beats
-  `full` on 7 of 8 regimes in the harder schedule, by 5-10x).
+- **But the advantage is not driven by structural plasticity on
+  this task.** Ablations show that disabling growth (neurogenesis,
+  synaptogenesis, pruning) while keeping the 14-node base graph
+  monotonically improves performance — even under explicit
+  capacity pressure (the `no_growth` variant beats `full` on 7 of
+  8 regimes in the harder schedule, by 5-10x). A capacity probe
+  further shows that pre-adding 49 frozen nodes from $t=0$ also
+  loses to the 14-node baseline monotonically, suggesting 14
+  nodes is the Pareto-optimal capacity for this task rather than
+  plasticity being broken. Growth *is* doing useful work given
+  a target node count (a grown 49-node graph outperforms a
+  random-initialization 49-node graph by ~8x on one regime), but
+  the task does not reward expanding past 14 nodes.
 
 These results jointly suggest that brain-inspired architectures
 (at least this one) are: (a) mis-applied as retrieval plugins, and
-(b) mis-promoted when the claim is that structural plasticity is
-the mechanism of interest. The load-bearing contribution is the
-graph substrate itself — wave execution, residual connections,
-homeostatic gain — rather than the plasticity mechanisms typically
-foregrounded in this literature.
+(b) mis-evaluated when capacity matching is not controlled for.
+Our baseline "no_growth vs full" comparison looked like a clean
+negative for structural plasticity until we ran the capacity
+probe — then it became clear that much of the apparent
+plasticity penalty was really a capacity-mismatch penalty. The
+broader methodological claim is that claims of form "mechanism
+X hurts" or "mechanism X helps" in brain-inspired architectures
+need to control for the capacity each variant ends up at, not
+only for which mechanism is toggled.
 
 We release the diagnostic suite and invite others to apply it both
 (1) to brain-inspired retrieval proposals, to replicate the ceiling
 diagnostics; and (2) to structural-plasticity claims more broadly,
 to separate "does the substrate help?" from "does the plasticity
-help?" Both questions matter; conflating them has, in our case, hidden
-real findings of both kinds.
+help?" — and, critically, from "did the two variants end up at
+different capacities?" Conflating these questions has, in our
+case, hidden real findings of all three kinds.
 
 ## Appendix A: Reproducibility
 
@@ -1063,6 +1141,14 @@ All experiments run on a single RTX 3090.
   node. The `0.0` case produces silent new edges whose weights can
   only grow via subsequent Hebbian updates. Legacy behavior
   (`0.01`) is preserved as the default.
+- Pre-added node-count variant (follow-up in §4.7):
+  `SOMAConfig.developmental(initial_associator_count=n,
+  synaptogenesis_interval=0, neurogenesis_interval=0,
+  pruning_interval=0)` for `n ∈ {8, 19, 43}`, giving final
+  node counts of 14, 25, and 49 (plus 4 integrators plus 2
+  boundary in each case). Initial sparse connectivity is held at
+  the default (`sparse_init_connectivity=0.3`), yielding ~1.7
+  edges per node in all three configurations.
 
 ### A.3 Scripts and data
 
@@ -1094,6 +1180,7 @@ maps phase numbers to script filenames and commit hashes.
 | Env v0.5 capacity      | `research/developmental/env_sequence_v05_capacity.py` | `0390590` | §4.7 Table 9 |
 | Env v0.5 PE-gated      | `research/developmental/env_sequence_v05_pe_gated.py` | `bb9637e` | §4.7 (follow-up) |
 | Env v0.5 init-scale    | `research/developmental/env_sequence_v05_init_scale.py` | `963349b` | §4.7 (follow-up) |
+| Env v0.5 pre-add       | `research/developmental/env_sequence_v05_pre_add_nodes.py` | `4cabff4` | §4.7 (follow-up) |
 | Consolidation result   | (ad-hoc via `/sleep` CLI)                        | `c553a66` | §4.7 |
 | Multi-session result   | (ad-hoc via developmental CLI)                   | `6a0a822` | §4.7 |
 

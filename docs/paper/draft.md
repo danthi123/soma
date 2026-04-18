@@ -49,10 +49,12 @@ arbitrary structure. Neurogenesis, which does not consult the
 correlation signal, avoids this trap.
 A consolidation test on synthetic QA shows +45% F1 relative (0.279 →
 0.404). Together the retrieval and adaptation findings suggest
-brain-inspired graph memory is mis-applied as a retrieval plugin
-and mis-attributed when the claim is that structural plasticity
-is the load-bearing mechanism. We release all sixteen diagnostic
-experiments and data.
+brain-inspired graph memory is (a) mis-applied as a retrieval
+plugin when the encoder is already a strong semantic model, and
+(b) evaluated at the wrong granularity when "structural
+plasticity" is treated as a single toggle — since the
+sub-mechanisms have opposite signs. We release the full
+diagnostic suite and data.
 
 ## 1. Introduction
 
@@ -139,13 +141,15 @@ Our findings:
 
 We take these results as evidence that (a) the retrieval-
 enhancement framing is a mismatch for what structural plasticity
-provides, and (b) the widely-promoted mechanisms (neurogenesis,
-synaptogenesis, pruning) are not the load-bearing component of
-SOMA's adaptation advantage; the graph substrate is. We conclude
-with a call both to evaluate brain-inspired architectures on
-problems they are structurally suited to, and to ablate their
-plasticity components when claiming advantage, to distinguish
-"substrate matters" from "plasticity matters."
+provides, and (b) "plasticity" is too coarse a level of analysis:
+the sub-mechanisms (neurogenesis vs. synaptogenesis) have
+opposite effects on our adaptation task, so conclusions of form
+"plasticity helps" or "plasticity hurts" are not well-posed
+until decomposed. We conclude with a call both to evaluate
+brain-inspired architectures on problems they are structurally
+suited to, and to decompose plasticity mechanisms when claiming
+advantage, to distinguish "substrate matters" from "*this specific*
+plasticity mechanism matters."
 
 A broader aim is to offer a **diagnostic template** for
 brain-inspired retrieval claims. Our five-test suite — multi-slice
@@ -576,12 +580,16 @@ An ablation across mechanisms, however, reveals a nuance (Table 8):
 | nonlinear_sqrt  | 0.0008 | **0.0003**| 0.0006    | 0.0008     |
 | mlp_dynamics    | 0.0043 | **0.0013**| 0.0047    | 0.0053     |
 
-**The structural plasticity mechanisms (synaptogenesis, neurogenesis,
-pruning) are not load-bearing on this task scale.** A SOMA variant
-with growth disabled (14 nodes / 24 edges fixed) outperforms the
-full variant on every adaptive regime. Hebbian learning contributes
-modestly (no_hebbian is worst on linear_rotation: 0.0022 vs 0.0012);
-consolidation is roughly neutral.
+**At the composite level, structural plasticity (synaptogenesis +
+neurogenesis + pruning together) is not load-bearing on this
+task scale.** A SOMA variant with growth disabled (14 nodes /
+24 edges fixed) outperforms the full variant on every adaptive
+regime. Hebbian learning contributes modestly (no_hebbian is
+worst on linear_rotation: 0.0022 vs 0.0012); consolidation is
+roughly neutral. A mechanism-level decomposition that appears
+later in this section refines this initial reading: the penalty
+is driven specifically by synaptogenesis, while neurogenesis
+alone is actually mildly beneficial.
 
 We tested whether the plasticity failure was a capacity issue — i.e.,
 would growth help if the task clearly outstripped base capacity? We
@@ -914,6 +922,21 @@ amount of gate-threshold sweeping, rerank-weight adjustment, or
 min-active tuning can recover semantic signal from a structurally
 arbitrary encoding.
 
+This diagnosis also predicts the §4.7 decomposition result.
+Synaptogenesis wires new edges between existing associators based
+on activation *correlations* — the same 3-winner pattern that
+failed retrieval, read now for a different purpose. If the
+pattern is structurally diverse but semantically arbitrary as
+argued above, then the edges synaptogenesis installs reinforce
+arbitrary co-activations, not useful ones. Neurogenesis, by
+contrast, uses only positions (locality in position space) and
+activity magnitudes (to place new nodes near active circuitry)
+— it never reads the correlation structure. The §4.7 finding
+that synaptogenesis is harmful and neurogenesis is not is
+therefore not a separate observation; it is the same
+first-principles limit showing up in the adaptation setting
+through a different mechanism.
+
 ## 6. Discussion
 
 ### 6.1 Implications for brain-inspired retrieval proposals
@@ -956,7 +979,7 @@ brain-inspired architectures — do not satisfy this condition by
 construction: the structural signal is decoupled from semantic
 content.
 
-This suggests two paths forward:
+This suggests three paths forward:
 
 1. **Change what the graph encodes.** Replace random input
    projections with learned projections that explicitly align
@@ -965,15 +988,26 @@ This suggests two paths forward:
    catastrophic (topology target is arbitrary). A more
    principled alternative — e.g., graph structure conditioned on
    encoder's latent space — is an open direction.
-2. **Change the evaluation axis.** Evaluate brain-inspired memory
-   on tasks where its native strengths (adaptation, consolidation,
-   structural plasticity) are the rate-limiting step. Our
-   positive results on consolidation (+45% QA) and multi-session
-   growth (+275%, preserved recall) are in this regime. A
-   developmental-AI benchmark — measuring adaptation speed,
-   novel-concept integration, interference resistance — would
-   likely produce positive results for brain-inspired systems
-   that fail on retrieval.
+2. **Change which sub-mechanisms are used.** The §4.7 decomposition
+   shows synaptogenesis is the specific mechanism that degrades
+   the circuit, because it wires edges based on correlations
+   drawn from the same random-projection-driven activations that
+   failed retrieval. Neurogenesis, which wires new nodes by
+   position rather than correlation, avoids this pathology and
+   is even partially corrective for synaptogenesis damage. A
+   brain-inspired memory that uses neurogenesis-style wiring
+   alone — or that replaces correlation-driven synaptogenesis
+   with positional or semantically-grounded edge creation —
+   would be a reasonable next architecture to try.
+3. **Change the evaluation axis.** Evaluate brain-inspired memory
+   on tasks where its native strengths (adaptation, consolidation)
+   are the rate-limiting step. Our positive results on
+   consolidation (+45% QA), multi-session growth (+275% F1), and
+   the 3-40x adaptation advantage over online MLP are in this
+   regime. A developmental-AI benchmark — measuring adaptation
+   speed, novel-concept integration, interference resistance —
+   would likely produce positive results for brain-inspired
+   systems that fail on retrieval.
 
 ## 7. Related work
 
@@ -1134,7 +1168,9 @@ architectures were not benchmarked.
 We presented a rigorous empirical evaluation of a brain-inspired
 graph memory (SOMA) across two task regimes — retrieval augmentation
 over a pretrained encoder, and sequence-prediction with regime
-shifts. Through sixteen diagnostic experiments, we showed that:
+shifts. Through twenty-three scripted and ad-hoc experiments
+(thirteen on retrieval, eight on adaptation, two ad-hoc on
+consolidation and multi-session state), we showed that:
 
 - **On retrieval augmentation**, the graph-derived signal is real
   but architecturally bounded at roughly +0.8% absolute over random,

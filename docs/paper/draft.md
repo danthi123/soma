@@ -47,11 +47,14 @@ experiments and data.
 Retrieval-augmented generation is dominant in production LLM systems,
 and dense retrieval over pre-trained embeddings is the standard
 backbone. Against this backbone, several recent works propose brain-
-inspired memory architectures that graft graph structure, Hebbian
-learning, or knowledge-graph traversal on top of vector search:
-SYNAPSE [spreading activation], Graphiti [temporal knowledge graph],
-MAGMA [multi-graph with policy-guided traversal], Mem0 [hybrid
-search with fact extraction]. The common premise is that structural
+inspired memory architectures that graft graph structure, activation
+dynamics, or knowledge-graph traversal on top of vector search:
+SYNAPSE [arXiv:2601.02744, spreading activation], Zep/Graphiti
+[Rasmussen et al. 2025, arXiv:2501.13956, temporal knowledge graph],
+MAGMA [arXiv:2601.03236, multi-graph with policy-guided traversal],
+Mem0 [Chhikara et al. 2025, arXiv:2504.19413, fact extraction + hybrid
+search], and MemGPT / Letta [Packer et al. 2023, arXiv:2310.08560,
+OS-inspired memory tiers]. The common premise is that structural
 associations *the pretrained encoder missed* can be captured by the
 graph and surfaced during retrieval.
 
@@ -180,7 +183,8 @@ SOMA is a graph-memory system with:
   weights; analogous to sleep.
 
 We use PredictiveSOMA, a wrapper that drives the graph via next-input
-prediction error (Free Energy Principle). The text processing flow
+prediction error (Free Energy Principle [Friston, *Nature Reviews
+Neuroscience*, 2010, DOI:10.1038/nrn2787]). The text processing flow
 for retrieval experiments is:
 
 1. Text passage $c_i$ is encoded by the frozen pretrained encoder:
@@ -718,41 +722,62 @@ This suggests two paths forward:
 
 ### 7.1 Brain-inspired memory for language model retrieval
 
-A wave of 2024-2026 proposals layer graph structures on pre-trained
-dense retrieval for LLM RAG applications.
+A wave of 2023-2026 proposals layer graph structures on pre-trained
+dense retrieval for LLM RAG applications. Arxiv IDs and headline
+reported numbers:
 
-- **SYNAPSE** proposes a spreading-activation retrieval layer with
-  Hebbian strengthening; published retrieval gains are on
-  conversational benchmarks similar to LoCoMo.
-- **Graphiti** builds a temporal knowledge graph over a dense index,
-  with rerank driven by temporal proximity and entity co-occurrence;
-  reported +18.5% F1 on LongMemEval.
-- **MAGMA** uses multi-graph structures with policy-guided
-  traversal; reported 61.2% on LongMemEval.
-- **Mem0** combines fact-extraction, hybrid vector-keyword search,
-  and conversation-summary layers; widely deployed.
-- **Letta** (formerly MemGPT) manages memory tiers via LLM agent
-  control.
+- **MemGPT / Letta** [Packer et al., 2023, arXiv:2310.08560]
+  introduces a two-tier "virtual context" memory architecture
+  inspired by OS memory management; `letta` is the ongoing platform.
+- **Zep / Graphiti** [Rasmussen et al., 2025, arXiv:2501.13956]
+  builds a temporally-aware knowledge graph (Graphiti) on top of
+  dense retrieval; paired with GPT-4o, Zep reported an aggregate
+  +18.5% accuracy improvement on LongMemEval over a GPT-4o
+  baseline. Graphiti is the underlying open-source knowledge-graph
+  engine; Zep is the hosted memory system built on it.
+- **Mem0** [Chhikara et al., 2025, arXiv:2504.19413] combines
+  LLM-based fact extraction with hybrid vector+BM25+entity
+  retrieval and a graph variant for relational structure.
+- **SYNAPSE** [arXiv:2601.02744] implements spreading-activation
+  retrieval (Collins & Loftus 1975; Anderson 1983) over a dynamic
+  graph with lateral inhibition and temporal decay; retrieval is
+  via spreading activation over the pre-existing network, not via
+  Hebbian weight plasticity. Evaluated on LoCoMo.
+- **MAGMA** [arXiv:2601.03236] represents each memory item across
+  orthogonal semantic, temporal, causal, and entity graphs with
+  policy-guided traversal; reported 61.2% average accuracy on
+  LongMemEval (their Table 1).
 
 These works motivate our central question: does the graph structure
 carry retrievable signal beyond the encoder's own? Our finding (no,
 to within ~0.8% on LoCoMo, negative on LongMemEval) does not directly
 invalidate the above results but motivates rigorous diagnostic
 reporting (shuffle baselines, held-out slices, cross-benchmark) as
-a community norm.
+a community norm. In particular, Zep's reported +18.5% aggregate and
+MAGMA's 61.2% accuracy do not include shuffle-diagnostic or
+held-out-tuning-set baselines in their published evaluations, so the
+magnitude of a "real-signal vs benchmark-overfit" correction for
+these works is not externally known.
 
 ### 7.2 Continual learning and consolidation
 
 SOMA's consolidation mechanism is inspired by complementary learning
-systems (CLS) theory from cognitive science. On the ML side,
-continual-learning literature overlaps most directly:
+systems (CLS) theory [McClelland, McNaughton & O'Reilly 1995]. On
+the ML side, continual-learning literature overlaps most directly:
 
-- **A-GEM** and **GEM** use gradient-episodic memory to constrain
-  updates; our prior work (commit `77f8fd3` and related) showed
-  head-replay at buffer 500 + replay rate 0.5 matches A-GEM's
-  class-incremental performance (ACC=0.808±0.005, BWT=-0.042).
-- **Elastic Weight Consolidation** and its variants regularize
-  weight updates; not directly graph-based.
+- **GEM** [Lopez-Paz & Ranzato, NeurIPS 2017, arXiv:1706.08840]
+  projects new-task gradients to avoid increasing loss on stored
+  examples from past tasks. **A-GEM** [Chaudhry et al., ICLR 2019]
+  is a more efficient approximation that averages the past-task
+  gradient.  Our prior work showed head-replay at buffer 500 +
+  replay rate 0.5 on Permuted-MNIST achieved ACC=0.808±0.005,
+  BWT=−0.042±0.005 (our numbers; a direct head-to-head vs A-GEM
+  on the same code path is an open follow-up rather than a
+  published comparison).
+- **Elastic Weight Consolidation** [Kirkpatrick et al., PNAS 2017,
+  arXiv:1612.00796] constrains important parameters via a
+  Fisher-information-weighted quadratic penalty; not directly
+  graph-based.
 
 Our consolidation-QA positive result (+45%) aligns with CLS-style
 predictions that offline replay consolidates useful structure
@@ -763,18 +788,33 @@ relative to a fully-online baseline.
 Earlier "whole-brain" cognitive architectures proposed mechanisms
 similar to SOMA's:
 
-- **Leabra** (Randall O'Reilly) includes Hebbian learning,
-  differential-contrast error, and cortical/hippocampal division;
-  biological fidelity is higher, task evaluations are smaller-scale.
-- **SPAUN** (Chris Eliasmith) is a 2.5M-neuron spiking network
-  demonstrating many cognitive tasks; closed-world and static.
-- **ACT-R** (John Anderson) is a production-system cognitive
-  architecture with memory decay and spreading activation; not
+- **Leabra** [O'Reilly, Munakata, Frank, Hazy et al., *Computational
+  Cognitive Neuroscience*, 2012; O'Reilly, Hazy & Herd, 2016] is a
+  learning algorithm that balances error-driven and Hebbian updates
+  in a biologically-plausible formulation. The **Complementary
+  Learning Systems** framework [McClelland, McNaughton &
+  O'Reilly, 1995] then layers a cortical/hippocampal division on
+  top: fast hippocampal one-shot encoding plus slow cortical
+  consolidation. Biological fidelity is higher than SOMA's; task
+  evaluations are smaller-scale.
+- **SPAUN** [Eliasmith et al., *Science*, 2012,
+  DOI:10.1126/science.1225266] is a 2.5M-neuron spiking model that
+  performs eight cognitive tasks from visual input to motor output.
+  Closed-world, no structural plasticity at runtime.
+- **ACT-R** [Anderson et al., *Psychological Review*, 2004;
+  Anderson, *How Can the Human Mind Occur in the Physical
+  Universe?*, 2007] is a production-system cognitive architecture
+  with declarative memory decay and spreading activation. Not
   neural, but shares "dynamic structure" goals.
+- **Free Energy Principle / Active Inference** [Friston, *Nature
+  Reviews Neuroscience*, 2010, DOI:10.1038/nrn2787] provides the
+  theoretical frame for SOMA's prediction-error-driven loop: the
+  system adapts structure to minimize long-run prediction error
+  over its inputs.
 
 Our work diverges from these in two ways: (i) we run on modern
 hardware with a modern encoder in the loop, and (ii) we specifically
-evaluate the retrieval-augmentation use-case where CL-era
+evaluate the retrieval-augmentation use-case where these classical
 architectures were not benchmarked.
 
 ### 7.4 Diagnostic methodology
@@ -947,3 +987,85 @@ maps phase numbers to script filenames and commit hashes.
 
 Environment module: `src/soma/environments/sequence_env.py`.
 Tests: `tests/test_environments/` (11 passing).
+
+## References
+
+All external references below were spot-checked against live sources
+during a 2026-04-18 verification pass. Links point to the canonical
+arXiv / DOI / publisher URL for each work.
+
+### Agent-memory systems for language models
+
+- Packer, C., Wooders, S., Lin, K., Fang, V., Patil, S. G.,
+  Stoica, I., & Gonzalez, J. E. (2023). **MemGPT: Towards LLMs as
+  operating systems.** arXiv:2310.08560.
+  https://arxiv.org/abs/2310.08560
+- Rasmussen, P., Paliychuk, P., Beauvais, T., Ryan, J., &
+  Chalef, D. (2025). **Zep: A temporal knowledge graph architecture
+  for agent memory.** arXiv:2501.13956.
+  https://arxiv.org/abs/2501.13956
+- Chhikara, P., Khant, D., Aryan, S., Singh, T., & Yadav, D.
+  (2025). **Mem0: Building production-ready AI agents with
+  scalable long-term memory.** arXiv:2504.19413.
+  https://arxiv.org/abs/2504.19413
+- **SYNAPSE: Structure-aware semantic memory for LLM agents.**
+  (2026). arXiv:2601.02744.
+  https://arxiv.org/abs/2601.02744
+- **MAGMA: Multi-graph memory architecture.** (2026).
+  arXiv:2601.03236. https://arxiv.org/abs/2601.03236
+
+### Retrieval evaluation benchmarks
+
+- Maharana, A., Lee, D.-H., Tulyakov, S., Bansal, M., Barbieri, F.,
+  & Fang, Y. (2024). **Evaluating very long-term conversational
+  memory of LLM agents (LoCoMo).** arXiv:2402.17753.
+  https://arxiv.org/abs/2402.17753
+- Wu, D., Wang, H., Yu, W., Zhang, Y., Chang, K.-W., & Yu, D.
+  (2024). **LongMemEval: Benchmarking chat assistants on long-term
+  interactive memory.** arXiv:2410.10813 (ICLR 2025).
+  https://arxiv.org/abs/2410.10813
+
+### Encoder
+
+- Reimers, N. & Gurevych, I. (2019). **Sentence-BERT: Sentence
+  embeddings using Siamese BERT-networks.** EMNLP 2019,
+  arXiv:1908.10084. Model used:
+  `sentence-transformers/all-MiniLM-L6-v2`.
+  https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2
+
+### Continual learning
+
+- Lopez-Paz, D. & Ranzato, M. (2017). **Gradient Episodic Memory
+  for continual learning.** NeurIPS 2017, arXiv:1706.08840.
+  https://arxiv.org/abs/1706.08840
+- Chaudhry, A., Ranzato, M., Rohrbach, M., & Elhoseiny, M. (2019).
+  **Efficient lifelong learning with A-GEM.** ICLR 2019,
+  arXiv:1812.00420. https://arxiv.org/abs/1812.00420
+- Kirkpatrick, J., Pascanu, R., Rabinowitz, N., et al. (2017).
+  **Overcoming catastrophic forgetting in neural networks.**
+  PNAS 114(13), 3521-3526, arXiv:1612.00796.
+  https://arxiv.org/abs/1612.00796
+
+### Developmental / cognitive architectures
+
+- O'Reilly, R. C., Munakata, Y., Frank, M. J., Hazy, T. E., et al.
+  (2012). **Computational Cognitive Neuroscience** (online book,
+  CCNBook). https://compcogneuro.org/
+- O'Reilly, R. C., Hazy, T. E., & Herd, S. A. (2016). **The Leabra
+  cognitive architecture: How to play 20 principles with nature
+  and win!** In *Oxford Handbook of Cognitive Science*.
+- McClelland, J. L., McNaughton, B. L., & O'Reilly, R. C. (1995).
+  **Why there are complementary learning systems in the hippocampus
+  and neocortex.** *Psychological Review* 102(3), 419-457.
+- Eliasmith, C., Stewart, T. C., Choo, X., Bekolay, T., et al.
+  (2012). **A large-scale model of the functioning brain (SPAUN).**
+  *Science* 338(6111), 1202-1205.
+  https://doi.org/10.1126/science.1225266
+- Anderson, J. R., Bothell, D., Byrne, M. D., Douglass, S.,
+  Lebiere, C., & Qin, Y. (2004). **An integrated theory of the
+  mind (ACT-R).** *Psychological Review* 111(4), 1036-1060.
+- Anderson, J. R. (2007). **How Can the Human Mind Occur in the
+  Physical Universe?** Oxford University Press.
+- Friston, K. (2010). **The free-energy principle: A unified brain
+  theory?** *Nature Reviews Neuroscience* 11(2), 127-138.
+  https://doi.org/10.1038/nrn2787

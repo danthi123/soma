@@ -4,13 +4,19 @@
 **Auditor:** Claude (self-review, fact-checked against repo + prior session)
 **Target:** `docs/paper/draft.md` as of commit `0390590`
 
-## Status — revision pass complete 2026-04-18
+## Status — revision pass complete 2026-04-18 (citations pass 2026-04-18b)
 
-Most audit items have been addressed in a follow-up commit.
-Remaining deferred-to-pre-submission items: **D8** (full citations),
-**E1** (figures), **E3** (structure-control experiment — needs a
-new run), **E5** (Phase 4b FT-curve figure — needs re-running with
-logging).
+Most audit items have been addressed in a follow-up commit. **D8
+(citations)** was closed in the citation-verification pass: every
+arxiv ID / DOI was spot-checked against the live source, a hallucinated
+"Hebbian learning" claim on SYNAPSE was removed, Leabra's description
+was corrected (learning-algorithm distinction from CLS framework),
+and a consolidated References section was added at the end of the
+paper.
+
+Remaining deferred-to-pre-submission items: **E1** (figures),
+**E3** (structure-control experiment — needs a new run), **E5**
+(Phase 4b FT-curve figure — needs re-running with logging).
 
 Key corrections discovered during the revision pass:
 
@@ -165,10 +171,15 @@ SOMA is **slower** on rot→sqrt (118 vs 28). Both hit the 500-step cap on sqrt�
 **Gap:** Claim is "+45% QA on synthetic" but paper doesn't describe the synthetic corpus, eval protocol, or baseline. Reader can't evaluate how strong this result is.
 **Fill:** 3-5 sentence block describing: synthetic corpus shape, consolidation schedule (every N steps), eval method, baseline (non-consolidation or early-stop?), and the 0.279 → 0.404 F1 numbers.
 
-### D8. Related work lacks arxiv IDs / actual citations
-**Location:** §7.
-**Gap:** SYNAPSE, Graphiti, MAGMA, Mem0, Letta are mentioned but have no citations. For a real submission, these need proper references.
-**Fill:** Needs to be done before any submission — compile bibtex entries or arxiv IDs. Note: treat as a future-work item, not a same-day fix.
+### D8. Related work lacks arxiv IDs / actual citations — **RESOLVED 2026-04-18b**
+**Location:** §7, §2.3, new References section.
+**Gap:** SYNAPSE, Graphiti, MAGMA, Mem0, Letta were mentioned with no citations.
+**Fill:** Done. Every citation now has an arxiv ID or DOI and was spot-checked against the live source. Key findings from the verification pass:
+- **Hallucination corrected:** Draft previously claimed SYNAPSE uses "Hebbian learning" — it does not. SYNAPSE uses spreading activation over pre-existing structure (Collins & Loftus 1975 style). Fixed in §1 and §7.1.
+- **Attribution corrected:** The +18.5% improvement previously attributed to Graphiti is actually a Zep result (Zep uses Graphiti as its graph engine). Reattributed in §7.1.
+- **Leabra description corrected:** Leabra is O'Reilly's learning algorithm (balances error-driven + Hebbian); the cortical/hippocampal division belongs to the Complementary Learning Systems framework (McClelland, McNaughton & O'Reilly 1995). Disambiguated in §7.3.
+- Added inline Friston (2010) citation for Free Energy Principle at §2.3.
+- Added consolidated References section at end of paper with live URLs for every claim.
 
 ---
 
@@ -230,7 +241,7 @@ I have the raw JSON data to generate all four. Matplotlib is already a dep.
 These are real gaps but not appropriate to fix in the draft itself:
 
 - **No figures** (E1): figures are a polish step before submission.
-- **Related work citations** (D8): bibtex compilation before submission.
+- ~~**Related work citations** (D8): bibtex compilation before submission.~~ Resolved 2026-04-18b — see D8.
 - **Ablation vs structure control** (E3): additional experiment, not a draft edit.
 - **Broader encoder comparison** (§8 limitation already notes this).
 
@@ -258,7 +269,6 @@ If doing this in one session:
 **Total estimated:** ~2 hours for a polished revision, all verifiable claims.
 
 **Deferred to pre-submission:**
-- D8 (citations)
 - E1 (figures)
 - E3 (structure-control experiment)
 - E5 (Phase 4b figure)

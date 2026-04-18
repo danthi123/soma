@@ -386,10 +386,58 @@ cross-session recall (commit `6a0a822`). This demonstrates the
 architecture's capacity to accumulate learned structure across
 use without forgetting.
 
+**Adaptation on a sequence-prediction environment**. We built a
+synthetic benchmark where a learner predicts next-observation on a
+stream with four sequential regimes of different dynamics (random
+walk, linear rotation, elementwise sqrt nonlinearity, frozen-MLP
+dynamics). All observations are bounded in $[-1, 1]^{16}$.
+
+On this task, SOMA substantially outperforms a capacity-matched
+online MLP baseline (Table 7):
+
+| Regime          | SOMA   | OnlineMLP | FrozenMLP |
+|-----------------|--------|-----------|-----------|
+| random_walk     | 0.0063 | 0.0470    | 0.0453    |
+| linear_rotation | 0.0014 | 0.0455    | 0.1196    |
+| nonlinear_sqrt  | 0.0008 | 0.0052    | 0.3492    |
+| mlp_dynamics    | 0.0065 | 0.0227    | 0.1440    |
+
+SOMA achieves 3-33x lower mean squared error than the online MLP
+across all four regimes. At the first regime boundary, SOMA recovers
+to within 1.2x pre-boundary error in 0 steps, versus 80 steps for
+the online MLP. Neurogenesis specifically fires at the first
+strongly nonlinear regime (nodes grow 14 → 29 when the sqrt
+regime begins), matching the mechanism's design intent.
+
+An ablation across mechanisms, however, reveals a nuance (Table 8):
+
+| Regime          | Full   | no_growth | no_consol | no_hebbian |
+|-----------------|--------|-----------|-----------|------------|
+| random_walk     | 0.0062 | 0.0062    | 0.0063    | 0.0067     |
+| linear_rotation | 0.0012 | **0.0009**| 0.0017    | 0.0022     |
+| nonlinear_sqrt  | 0.0008 | **0.0003**| 0.0006    | 0.0008     |
+| mlp_dynamics    | 0.0043 | **0.0013**| 0.0047    | 0.0053     |
+
+**The structural plasticity mechanisms (synaptogenesis, neurogenesis,
+pruning) are not load-bearing on this task scale.** A SOMA variant
+with growth disabled (14 nodes / 24 edges fixed) outperforms the
+full variant on every adaptive regime. Hebbian learning contributes
+modestly (no_hebbian is worst on linear_rotation: 0.0022 vs 0.0012);
+consolidation is roughly neutral. This suggests two things. First,
+the advantage over baseline MLPs is driven by the graph *structure*
+itself — the wave-based execution with residual connections and
+homeostatic gain — rather than by structural plasticity. Second,
+unbounded growth adds random-weight nodes faster than it adds useful
+structure, destabilizing prediction; growth likely only pays off on
+tasks that demonstrably outstrip base capacity.
+
 These results are specifically not retrieval wins. They are
 demonstrations that the mechanisms are load-bearing on tasks
 evaluated by adaptation and capacity metrics rather than
-static retrieval accuracy.
+static retrieval accuracy. And — per the ablation — the central
+load-bearing component is the graph's executable structure, not
+the plasticity mechanisms typically highlighted in brain-inspired
+architecture proposals.
 
 ## 5. Analysis: why structural ≠ semantic
 

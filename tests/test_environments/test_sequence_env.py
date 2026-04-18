@@ -92,6 +92,27 @@ def test_regimes_produce_different_trajectories() -> None:
     )
 
 
+def test_capacity_schedule_has_eight_regimes() -> None:
+    from soma.environments import make_capacity_schedule
+    schedule = make_capacity_schedule(dim=16, steps_per_regime=100)
+    assert len(schedule.regimes) == 8
+    assert schedule.total_steps == 800
+    # All regime names should be distinct
+    names = [r.name for r in schedule.regimes]
+    assert len(set(names)) == 8
+
+
+def test_capacity_schedule_obs_bounded() -> None:
+    from soma.environments import make_capacity_schedule
+    env = SequenceEnv(
+        dim=16, schedule=make_capacity_schedule(16, 100), seed=0,
+    )
+    for _ in range(800):
+        obs = env.step()
+        assert torch.all(obs >= -1.0)
+        assert torch.all(obs <= 1.0)
+
+
 def test_observations_are_bounded() -> None:
     """All regimes apply tanh so observations stay in [-1, 1]."""
     env = SequenceEnv(dim=16, schedule=make_default_schedule(16, 200), seed=0)

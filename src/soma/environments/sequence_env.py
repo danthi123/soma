@@ -176,6 +176,79 @@ def make_default_schedule(
     )
 
 
+def _make_deep_mlp_dynamics(
+    dim: int,
+    seed: int,
+    hidden: int,
+    depth: int,
+    noise: float = 0.1,
+) -> Regime:
+    """x_{t+1} = tanh(DeepMLP(x_t) + noise).
+
+    A fixed (frozen) `depth`-layer MLP with tanh nonlinearities between
+    layers. Different (depth, hidden) combinations produce regimes
+    whose dynamics span a range of complexity.
+    """
+    gen = torch.Generator().manual_seed(seed)
+    layers: list[tuple[torch.Tensor, torch.Tensor]] = []
+    prev = dim
+    for _ in range(depth - 1):
+        w = torch.randn(prev, hidden, generator=gen) / (prev ** 0.5)
+        b = torch.zeros(hidden)
+        layers.append((w, b))
+        prev = hidden
+    w_out = torch.randn(prev, dim, generator=gen) / (prev ** 0.5)
+    b_out = torch.zeros(dim)
+
+    def step(x: torch.Tensor, rng: torch.Generator) -> torch.Tensor:
+        h = x
+        for w, b in layers:
+            h = torch.tanh(h @ w + b)
+        y = h @ w_out + b_out
+        noise_t = torch.randn(dim, generator=rng) * noise
+        return _bounded(y + noise_t)
+
+    return step
+
+
+def make_capacity_schedule(
+    dim: int,
+    steps_per_regime: int = 500,
+    noise: float = 0.1,
+    seed: int = 42,
+) -> RegimeSchedule:
+    """Eight-regime schedule designed to stress learner capacity.
+
+    Each regime uses a frozen MLP of differing depth and width. The
+    motivation: v0's four simple regimes did not outstrip the 14-node
+    base capacity of SOMA (ablation showed no_growth > full). If the
+    mechanisms are truly capacity-driven, growth should specifically
+    help when a learner faces many distinct dynamics in sequence.
+    """
+    sizes = [
+        ("mlp_2x16", 2, 16),
+        ("mlp_2x32", 2, 32),
+        ("mlp_3x16", 3, 16),
+        ("mlp_3x32", 3, 32),
+        ("mlp_2x64", 2, 64),
+        ("mlp_3x64", 3, 64),
+        ("mlp_4x32", 4, 32),
+        ("mlp_4x64", 4, 64),
+    ]
+    return RegimeSchedule(
+        regimes=[
+            RegimeSpec(
+                name,
+                _make_deep_mlp_dynamics(
+                    dim, seed + idx, hidden=h, depth=d, noise=noise,
+                ),
+                steps_per_regime,
+            )
+            for idx, (name, d, h) in enumerate(sizes)
+        ],
+    )
+
+
 @dataclass
 class SequenceEnv:
     """A sequence-prediction environment driven by a RegimeSchedule.

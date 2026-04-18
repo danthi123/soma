@@ -9,7 +9,13 @@ docs/plans/2026-04-18-open-ended-env-scope.md for rationale.
 from soma.environments.sequence_env import (
     RegimeSchedule,
     SequenceEnv,
+    make_capacity_schedule,
     make_default_schedule,
 )
 
-__all__ = ["RegimeSchedule", "SequenceEnv", "make_default_schedule"]
+__all__ = [
+    "RegimeSchedule",
+    "SequenceEnv",
+    "make_capacity_schedule",
+    "make_default_schedule",
+]

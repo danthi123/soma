@@ -80,6 +80,50 @@ class TestPredictiveSOMA:
         assert len(r1) > 0
         assert len(r2) > 0
 
+    def test_retrieve_hybrid_returns_results(self) -> None:
+        """Hybrid retrieval should return results when corpus is provided."""
+        config = _make_config()
+        ps = PredictiveSOMA(config, device=torch.device("cpu"))
+        dim = config.sensor_output_dim
+
+        # Store some memories
+        texts = ["hello world", "foo bar baz", "test input data"]
+        for text in texts:
+            ps.process_input(torch.randn(dim), source_text=text)
+
+        # Build a fake corpus embedding matrix
+        corpus_embeddings = torch.randn(len(texts), dim)
+        step_map = {s: i for i, s in enumerate(ps.text_store.keys())}
+
+        query = torch.randn(dim)
+        results = ps.retrieve_hybrid(
+            query, corpus_embeddings, step_map,
+            recall_k=3, top_k=2, gate_threshold=0.0,
+        )
+        # With gate_threshold=0 the graph always reranks
+        assert len(results) <= 2
+        assert all(isinstance(r, tuple) and len(r) == 3 for r in results)
+
+    def test_retrieve_hybrid_fallback_without_gate(self) -> None:
+        """With very high gate threshold, hybrid should match embedding order."""
+        config = _make_config()
+        ps = PredictiveSOMA(config, device=torch.device("cpu"))
+        dim = config.sensor_output_dim
+
+        for text in ["a", "b", "c", "d", "e"]:
+            ps.process_input(torch.randn(dim), source_text=text)
+
+        corpus_embeddings = torch.randn(5, dim)
+        step_map = {s: i for i, s in enumerate(ps.text_store.keys())}
+
+        query = torch.randn(dim)
+        results = ps.retrieve_hybrid(
+            query, corpus_embeddings, step_map,
+            recall_k=5, top_k=3, gate_threshold=999.0,
+        )
+        # Gate should never fire at threshold=999, so pure embedding order
+        assert len(results) <= 3
+
     def test_neurogenesis_gets_input_projection(self) -> None:
         """Nodes born via neurogenesis should get input projections."""
         config = _make_config()

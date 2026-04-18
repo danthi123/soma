@@ -804,20 +804,65 @@ sidesteps this failure mode. The same first-principles limit
 that bounds retrieval also predicts which growth mechanism will
 fail.
 
-A remaining live confound: `synap_only` ran 157 synaptogenesis
-events whereas `full` ran 653 (synaptogenesis rate scales with
-node count, and `full` has more nodes available). We have not
-separated "synaptogenesis mechanism" from "synaptogenesis volume
-under large graphs" as the source of harm, though the fact that
-even 157 events at 14 nodes already hurts on 7/8 regimes suggests
-the mechanism is the issue, not the volume.
+**Follow-up: is it the synaptogenesis *mechanism*, or the *volume*
+of synaptogenesis events that damages?** In the 2×2, `synap_only`
+at 14 nodes fired 157 events whereas `full` at 48 nodes fired
+653 (the synaptogenesis rate scales with node count). To
+separate mechanism from volume, we ran pre-added frozen graphs
+with synaptogenesis enabled and neurogenesis disabled at three
+sizes, producing a monotonic volume sweep while isolating the
+synaptogenesis mechanism:
+
+| Regime   | no_growth | synap_pre_25 (455 ev) | synap_pre_48 (890 ev) |
+|----------|-----------|-----------------------|------------------------|
+| mlp_2x16 | 0.0062    | 0.0095                | 0.0118                 |
+| mlp_2x32 | 0.0005    | 0.0016                | 0.0024                 |
+| mlp_3x16 | 0.0006    | 0.0016                | 0.0029                 |
+| mlp_3x32 | 0.0006    | 0.0021                | 0.0024                 |
+| mlp_2x64 | 0.0011    | 0.0039                | 0.0048                 |
+| mlp_3x64 | 0.0014    | 0.0054                | 0.0061                 |
+| mlp_4x32 | 0.0018    | 0.0050                | 0.0054                 |
+| mlp_4x64 | 0.0010    | 0.0081                | 0.0108                 |
+
+Synaptogenesis damage scales monotonically with event volume —
+157 events at 14 nodes hurt mildly (2×2 `synap_only`, 7/8), 455
+events at 25 nodes hurt more, and 890 events at 48 nodes hurt
+the most (8/8, 2-11x worse than `no_growth`). But the damage
+is already present at low volumes: the mechanism is the cause,
+volume is the amplifier.
+
+**Unexpected cross-check: neurogenesis partially rescues
+synaptogenesis damage.** The pre-added 48-node + synap-only
+variant fires 890 synap events (more than `full`'s 653) yet
+loses to `full` on every regime:
+
+| Regime   | full (48n, 653 synap, 34 neuro) | synap_pre_48 (48n, 890 synap, 0 neuro) |
+|----------|----------------------------------|-----------------------------------------|
+| mlp_2x32 | 0.0014                           | 0.0024                                  |
+| mlp_3x32 | 0.0017                           | 0.0024                                  |
+| mlp_2x64 | 0.0031                           | 0.0048                                  |
+| mlp_4x64 | 0.0066                           | 0.0108                                  |
+
+At matched or higher synap volume, having neurogenesis mixed in
+makes the damage less severe. The neurogenesis-wired lateral
+structure — each new node bidirectionally connected to its 5
+nearest positional neighbors — apparently offsets some of the
+arbitrary-correlation harm that synaptogenesis produces, even
+though synap events fire at higher rate under `full` than under
+the pre-added 48 + synap-only variant. A plausible account: the
+positional-neighbor wiring creates structured lateral paths that
+compete with (and dilute) the spurious-correlation paths
+synaptogenesis installs. We do not prove this mechanism, only
+observe the rescue effect.
 
 These results are specifically not retrieval wins. They are
 demonstrations that (i) SOMA's graph substrate helps on tasks
 evaluated by adaptation metrics rather than retrieval accuracy,
 and (ii) within SOMA's plasticity mechanisms, neurogenesis is
-beneficial while synaptogenesis is the specific mechanism that
-degrades the prediction circuit on this task.
+beneficial (and even partially corrective for synaptogenesis
+damage), while synaptogenesis is the specific mechanism that
+degrades the prediction circuit on this task — a pathology
+with the same origin as the retrieval ceiling in §5.
 
 ## 5. Analysis: why structural ≠ semantic
 
@@ -1206,6 +1251,13 @@ All experiments run on a single RTX 3090.
   `full` keeps both at the developmental defaults. Pruning is
   disabled in every variant (`pruning_interval=0`) so removed
   edges/nodes do not confound.
+- Synap-volume sweep (follow-up in §4.7):
+  `SOMAConfig.developmental(initial_associator_count=n,
+  neurogenesis_interval=0, pruning_interval=0)` for `n ∈ {19, 42}`
+  giving 25 or 48 initial nodes, with synaptogenesis left at the
+  developmental default. Volume of synaptogenesis events is
+  measured per variant; results are tabulated vs `no_growth_14`
+  and 2×2 `neuro_only` as references.
 
 ### A.3 Scripts and data
 
@@ -1239,6 +1291,7 @@ maps phase numbers to script filenames and commit hashes.
 | Env v0.5 init-scale    | `research/developmental/env_sequence_v05_init_scale.py` | `963349b` | §4.7 (follow-up) |
 | Env v0.5 pre-add       | `research/developmental/env_sequence_v05_pre_add_nodes.py` | `4cabff4` | §4.7 (follow-up) |
 | Env v0.5 2x2 growth    | `research/developmental/env_sequence_v05_growth_2x2.py` | `2a1bbcc` | §4.7 (follow-up) |
+| Env v0.5 synap volume  | `research/developmental/env_sequence_v05_synap_volume.py` | `283ed22` | §4.7 (follow-up) |
 | Consolidation result   | (ad-hoc via `/sleep` CLI)                        | `c553a66` | §4.7 |
 | Multi-session result   | (ad-hoc via developmental CLI)                   | `6a0a822` | §4.7 |
 

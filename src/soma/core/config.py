@@ -353,8 +353,11 @@ class SOMAConfig:
             "synaptogenesis_interval": 10,
             "synaptogenesis_rate": 2.0,
             "neurogenesis_interval": 25,
-            "neurogenesis_threshold": 1.02,
+            "neurogenesis_threshold": 1.1,
             "pruning_interval": 200,
+            # Cap graph size to prevent runaway growth when encoder
+            # training creates non-stationary input distributions.
+            "max_nodes": 50,
             "consolidation_interval": 50,
             "consolidation_replay_steps": 20,
             # Lower thresholds for developmental graphs

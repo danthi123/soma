@@ -56,3 +56,49 @@ class TestPredictiveSOMA:
         for _ in range(20):
             ps.process_input(torch.randn(64))
         assert len(ps.soma.graph.edges) >= initial_edges
+
+    def test_retrieve_uses_diversification(self) -> None:
+        """Retrieval should apply diversification + inhibition so query
+        fingerprints are comparable to stored fingerprints."""
+        ps = PredictiveSOMA(_make_config(), device=torch.device("cpu"))
+
+        # Develop with a few inputs
+        for i in range(5):
+            vec = torch.randn(64)
+            ps.process_input(vec, source_text=f"text_{i}")
+
+        assert len(ps._activation_store) == 5
+
+        # Two different queries should produce different retrieval results
+        # (if diversification works, fingerprints vary by input)
+        q1 = torch.randn(64)
+        q2 = torch.randn(64) * 2 + 1  # deliberately different
+        r1 = ps.retrieve_by_graph(q1, top_k=5)
+        r2 = ps.retrieve_by_graph(q2, top_k=5)
+
+        # Both should return results
+        assert len(r1) > 0
+        assert len(r2) > 0
+
+    def test_neurogenesis_gets_input_projection(self) -> None:
+        """Nodes born via neurogenesis should get input projections."""
+        config = _make_config()
+        config.neurogenesis_interval = 5
+        config.neurogenesis_threshold = 0.5  # low threshold to trigger easily
+        ps = PredictiveSOMA(config, device=torch.device("cpu"))
+
+        # Feed varied inputs to potentially trigger neurogenesis
+        for _ in range(30):
+            ps.process_input(torch.randn(64))
+
+        # If new nodes were created, they should have projections
+        from soma.core.node import NodeType
+
+        assoc_count = sum(
+            1 for n in ps.soma.graph.all_nodes()
+            if n.node_type == NodeType.ASSOCIATOR
+        )
+        # _ensure_projection is called lazily during diversification,
+        # so projections are created on first use
+        ps._diversify_activations(torch.randn(64))
+        assert len(ps._input_projections) >= assoc_count

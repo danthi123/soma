@@ -8,7 +8,9 @@ signal (Free Energy Principle).
 
 from __future__ import annotations
 
+import hashlib
 from collections import deque
+from collections.abc import Callable
 from typing import Any
 
 import torch
@@ -74,6 +76,28 @@ class PredictiveSOMA(nn.Module):
         # Activation fingerprints: maps step → fixed-size tensor.
         # Hash-bucketed so fingerprint size is stable across neurogenesis.
         self._activation_store: dict[int, torch.Tensor] = {}
+        # Token cache: maps step → set of BPE token IDs for token-overlap
+        # retrieval. Populated during process_input when a tokenizer is
+        # available (set by the caller via set_tokenizer).
+        self._token_cache: dict[int, set[int]] = {}
+        self._tokenizer_fn: Callable[[str], list[int]] | None = None
+        # Node activation index: for each node, which memory steps
+        # had this node among the top-K active. This enables
+        # topology-based retrieval — finding memories that share
+        # active nodes with a query, which captures learned structural
+        # associations that fingerprint comparison misses.
+        self._node_memory_index: dict[str, set[int]] = {}
+        # Cache SHA256 digests for fingerprint hash positions
+        self._node_hash_cache: dict[str, bytes] = {}
+        # Precomputed index arrays for fingerprint: node_id -> (src_indices, tgt_indices)
+        self._fp_index_cache: dict[str, tuple[torch.Tensor, torch.Tensor]] = {}
+
+    def set_tokenizer(self, tokenize_fn: Callable[[str], list[int]]) -> None:
+        """Register a tokenization function for token-overlap retrieval.
+
+        ``tokenize_fn(text) -> list[int]`` should return BPE token IDs.
+        """
+        self._tokenizer_fn = tokenize_fn
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -97,49 +121,63 @@ class PredictiveSOMA(nn.Module):
 
         return torch.zeros(dim, device=self.device)
 
-    def _get_node_fingerprint(
-        self, inhibition_ratio: float = 0.1,
-    ) -> torch.Tensor:
-        """Build a sparse fingerprint via lateral inhibition.
+    def _get_node_fingerprint(self) -> torch.Tensor:
+        """Build a fixed-size fingerprint from node activations.
 
-        Projects each node's activation into a fixed-size hash bucket,
-        so the fingerprint size doesn't change when neurogenesis adds
-        nodes.  Suppressed nodes (below top ``inhibition_ratio``) are
-        zeroed out, creating input-dependent sparse patterns.
+        Uses ALL active nodes (lateral inhibition has already zeroed
+        suppressed nodes). Each node's activation is projected to a
+        short vector via a deterministic hash-based projection, then
+        scattered at the node's hash position. This preserves
+        directional information while keeping per-node footprint small
+        enough to avoid collision saturation.
         """
+        from soma.core.node import NodeType
+
         nodes = self.soma.graph.all_nodes()
-        fingerprint_dim = 256  # fixed size regardless of node count
+        fingerprint_dim = 256
+        values_per_node = 16  # project activation to this many values
 
-        # Collect activations and magnitudes
-        node_data: list[tuple[str, float, torch.Tensor | None]] = []
-        for node in nodes:
-            if node.last_activation is not None:
-                mag = node.last_activation.norm().item()
-                node_data.append((node.id, mag, node.last_activation.detach()))
-            else:
-                node_data.append((node.id, 0.0, None))
-
-        if not node_data:
-            return torch.zeros(fingerprint_dim, device=self.device)
-
-        # Lateral inhibition: keep only top-K by magnitude
-        k = max(1, int(len(node_data) * inhibition_ratio))
-        threshold = sorted([m for _, m, _ in node_data], reverse=True)[
-            min(k - 1, len(node_data) - 1)
-        ]
-
-        # Hash each active node's activation into fixed-size buckets
         fp = torch.zeros(fingerprint_dim, device=self.device)
-        for nid, mag, act in node_data:
-            if mag < threshold or act is None:
+
+        for node in nodes:
+            # Skip boundary nodes — sensor = raw input (same for all),
+            # output = graph's final computation (dominated by one path)
+            if node.node_type in (NodeType.SENSOR, NodeType.OUTPUT):
                 continue
-            # Hash node ID to a starting bucket
-            bucket = hash(nid) % fingerprint_dim
-            # Scatter the activation vector into the fingerprint
+            act = node.last_activation
+            if act is None:
+                continue
+            mag = act.norm().item()
+            if mag < 1e-8:
+                continue
+
             act_flat = act.reshape(-1)
-            for i in range(min(len(act_flat), fingerprint_dim)):
-                idx = (bucket + i) % fingerprint_dim
-                fp[idx] += act_flat[i]
+            n = act_flat.shape[0]
+
+            # Precompute index arrays once per node (cached).
+            cache_key = node.id
+            if cache_key not in self._fp_index_cache:
+                if cache_key not in self._node_hash_cache:
+                    self._node_hash_cache[cache_key] = hashlib.sha256(
+                        cache_key.encode()
+                    ).digest()
+                h = self._node_hash_cache[cache_key]
+                base_src = int.from_bytes(h[:8], "little")
+                base_tgt = int.from_bytes(h[8:16], "little")
+                stride_src = (int.from_bytes(h[16:20], "little") | 1) % n or 1
+                stride_tgt = (int.from_bytes(h[20:24], "little") | 1) % fingerprint_dim or 1
+                src_idx = torch.tensor(
+                    [(base_src + i * stride_src) % n for i in range(values_per_node)],
+                    dtype=torch.long, device=self.device,
+                )
+                tgt_idx = torch.tensor(
+                    [(base_tgt + i * stride_tgt) % fingerprint_dim for i in range(values_per_node)],
+                    dtype=torch.long, device=self.device,
+                )
+                self._fp_index_cache[cache_key] = (src_idx, tgt_idx)
+
+            src_idx, tgt_idx = self._fp_index_cache[cache_key]
+            fp.scatter_add_(0, tgt_idx, act_flat[src_idx])
 
         return fp
 
@@ -170,75 +208,112 @@ class PredictiveSOMA(nn.Module):
         # diversification already prevents over-connection. Keep pruning
         # at the static default (200 steps).
 
-    def _diversify_activations(self, input_tensor: torch.Tensor) -> None:
+    def _ensure_projection(self, node_id: str) -> None:
+        """Create a random input projection for a node if missing.
+
+        Called lazily when new nodes are born via neurogenesis, ensuring
+        every associator has its own "receptive field" for diversification.
+        """
+        if node_id in self._input_projections:
+            return
+        dim = self.config.sensor_output_dim
+        proj = torch.randn(dim, dim).to(self.device)
+        proj = proj / (proj.norm(dim=1, keepdim=True) + 1e-8)
+        self._input_projections[node_id] = proj
+
+    def _diversify_activations(
+        self, input_tensor: torch.Tensor, temperature: float = 5.0,
+    ) -> None:
         """Modulate each associator's activation by its unique input view.
 
-        Multiplies each associator's ``last_activation`` element-wise by
-        the dot product of the input with that node's random projection.
-        Nodes whose projection aligns well with the input get amplified;
-        others get dampened. This creates genuinely different activation
-        patterns across nodes for different inputs.
+        Each node has a frozen random projection ("receptive field").
+        The dot product of the projection with the input determines a
+        scalar gain. High temperature makes the gain sharply selective:
+        nodes whose projection aligns well get boosted, others get
+        nearly zeroed. This creates genuinely different winner sets
+        for different inputs.
+
+        ``temperature`` controls selectivity:
+        - 1.0: gentle modulation (gains ≈ [0.5, 2.0])
+        - 5.0: sharp selection (gains bimodal: near 0 or near 2)
         """
+        from soma.core.node import NodeType
+
         inp = input_tensor.detach().to(self.device)
-        for node_id, proj in self._input_projections.items():
-            if node_id not in self.soma.graph.nodes:
+        inp_norm_sq = inp.norm() ** 2 + 1e-8
+
+        for node in self.soma.graph.all_nodes():
+            if node.node_type != NodeType.ASSOCIATOR:
                 continue
-            node = self.soma.graph.nodes[node_id]
             if node.last_activation is None:
                 continue
 
-            # Compute a scalar gain from the projection: how well
-            # does this node's random "receptive field" match the input?
+            self._ensure_projection(node.id)
+            proj = self._input_projections[node.id]
+
             alignment = torch.dot(torch.mv(proj, inp), inp)
-            # Normalize to a gain factor centered on 1.0
-            gain = 0.5 + 1.5 * torch.sigmoid(alignment / (inp.norm() ** 2 + 1e-8))
-            # Scale this node's activation by the gain
+            # Temperature-scaled sigmoid: higher T = sharper selection
+            gain = 0.5 + 1.5 * torch.sigmoid(
+                temperature * alignment / inp_norm_sq
+            )
             node.last_activation = node.last_activation * gain.item()
 
-    def _apply_lateral_inhibition(self, keep_ratio: float = 0.1) -> None:
+    def _apply_lateral_inhibition(
+        self, keep_ratio: float = 0.1, min_active: int = 3,
+    ) -> list[str]:
         """Suppress weakest nodes' last_activation in-place.
 
         After SOMA.step(), zero out the activations of the least active
         nodes.  This affects the stored fingerprint AND future
         synaptogenesis (suppressed nodes aren't counted as co-active).
+
+        ``min_active`` ensures at least this many nodes survive even in
+        small graphs where ``keep_ratio`` would leave only 1-2 winners,
+        making fingerprints too coarse to discriminate inputs.
+
+        Returns the IDs of suppressed nodes (used by anti-Hebbian
+        learning to push suppressed nodes away from the input).
         """
         from soma.core.node import NodeType
 
         nodes = self.soma.graph.all_nodes()
-        # Don't inhibit SENSOR/OUTPUT boundary nodes
         eligible = [
             n for n in nodes
             if n.node_type not in (NodeType.SENSOR, NodeType.OUTPUT)
             and n.last_activation is not None
         ]
         if not eligible:
-            return
+            return []
 
         mags = [(n, n.last_activation.norm().item()) for n in eligible]
-        k = max(1, int(len(mags) * keep_ratio))
+        k = max(min_active, int(len(mags) * keep_ratio))
+        k = min(k, len(mags))
         threshold = sorted([m for _, m in mags], reverse=True)[min(k - 1, len(mags) - 1)]
 
+        suppressed: list[str] = []
         for node, mag in mags:
             if mag < threshold:
                 node.last_activation = torch.zeros_like(node.last_activation)
+                suppressed.append(node.id)
+        return suppressed
 
     def _competitive_learning(
         self,
         input_tensor: torch.Tensor,
+        suppressed_ids: list[str] | None = None,
         lr: float = 0.001,
-        margin: float = 1.2,
+        anti_lr: float = 0.0003,
     ) -> None:
-        """Competitive learning: winner node adapts toward the input.
+        """Competitive learning with anti-Hebbian suppression.
 
-        After lateral inhibition, the most active non-boundary node
-        is the "winner" — but only if it's at least ``margin`` times
-        more active than the runner-up.  This prevents a single node
-        from claiming all inputs.
+        Winner node (most surprised by this input) adapts toward it.
+        Suppressed nodes adapt AWAY — anti-Hebbian learning makes them
+        less responsive to this pattern, freeing them to specialize
+        for other inputs.
 
-        The winner's first-layer weights are nudged toward the input,
-        making it more responsive to similar inputs in the future.
-        Suppressed and losing nodes don't learn, so they remain
-        available to specialize for other inputs.
+        Biology: inhibited cortical neurons undergo synaptic depression
+        for the active input pattern, making them selectively responsive
+        to different stimuli over time.
         """
         from soma.core.node import NodeType
 
@@ -251,41 +326,48 @@ class PredictiveSOMA(nn.Module):
         if len(eligible) < 2:
             return
 
-        # Score by how much this activation DEVIATES from the node's
-        # running average — not raw magnitude. A node that fires
-        # equally for everything has low surprise; a node that fires
-        # unusually strongly for this input is genuinely selective.
+        # Score by surprise (deviation from running average)
         scored = []
         for n in eligible:
             mag = n.last_activation.norm().item()
-            avg = n.activation_ema  # running average magnitude
+            avg = n.activation_ema
             surprise = mag - avg if avg > 0 else mag
             scored.append((surprise, n))
 
         scored.sort(key=lambda t: -t[0])
         winner = scored[0][1]
 
-        # Only update if the winner is genuinely surprised (above avg)
-        if scored[0][0] <= 0:
-            return
+        # Prepare input vector for weight updates
+        inp = input_tensor.detach().to(winner.linear1.weight.device)
+        w_shape = winner.linear1.weight.shape[1]
+        if inp.shape[0] != w_shape:
+            if inp.shape[0] > w_shape:
+                inp = inp[:w_shape]
+            else:
+                padded = torch.zeros(w_shape, device=inp.device)
+                padded[: inp.shape[0]] = inp
+                inp = padded
 
-        # Adapt winner's first-layer weights toward the input
-        with torch.no_grad():
-            w = winner.linear1.weight  # (hidden_dim, input_dim)
-            inp = input_tensor.detach().to(w.device)
+        # Hebbian: winner adapts toward input
+        if scored[0][0] > 0:
+            with torch.no_grad():
+                w = winner.linear1.weight
+                delta = inp.unsqueeze(0) - w
+                w.add_(delta, alpha=lr)
 
-            # Resize input to match weight's input_dim
-            if inp.shape[0] != w.shape[1]:
-                if inp.shape[0] > w.shape[1]:
-                    inp = inp[: w.shape[1]]
-                else:
-                    padded = torch.zeros(w.shape[1], device=w.device)
-                    padded[: inp.shape[0]] = inp
-                    inp = padded
-
-            # SOM update: w_new = w + lr * (input - w)
-            delta = inp.unsqueeze(0) - w
-            w.add_(delta, alpha=lr)
+        # Anti-Hebbian: suppressed nodes adapt away from input
+        if suppressed_ids:
+            with torch.no_grad():
+                for nid in suppressed_ids:
+                    if nid not in self.soma.graph.nodes:
+                        continue
+                    node = self.soma.graph.nodes[nid]
+                    w = node.linear1.weight
+                    if w.shape[1] != inp.shape[0]:
+                        continue
+                    # Push weights AWAY from input
+                    delta = inp.unsqueeze(0) - w
+                    w.add_(delta, alpha=-anti_lr)
 
     def retrieve_by_graph(
         self,
@@ -310,17 +392,134 @@ class PredictiveSOMA(nn.Module):
         self.soma.step(
             {modality: query_tensor}, eval_mode=True,
         )
+
+        # Apply the same diversification + inhibition pipeline used
+        # during storage so query fingerprints are comparable.
+        self._diversify_activations(query_tensor)
+        self._apply_lateral_inhibition()
         query_act = self._get_node_fingerprint()
 
-        # Cosine similarity against stored fingerprints
-        scored: list[tuple[float, int]] = []
-        for step, stored_fp in self._activation_store.items():
-            sim = float(torch.nn.functional.cosine_similarity(
-                query_act.unsqueeze(0),
-                stored_fp.unsqueeze(0),
-            ).item())
-            scored.append((sim, step))
+        # Batched cosine similarity against all stored fingerprints.
+        steps = list(self._activation_store.keys())
+        stored_matrix = torch.stack(
+            [self._activation_store[s] for s in steps]
+        )  # (N, fp_dim)
+        sims = torch.nn.functional.cosine_similarity(
+            query_act.unsqueeze(0), stored_matrix, dim=1,
+        )  # (N,)
 
+        # Top-k indices
+        k = min(top_k, len(steps))
+        top_sims, top_indices = torch.topk(sims, k)
+
+        results: list[tuple[int, str, float]] = []
+        for i in range(k):
+            step = steps[top_indices[i].item()]
+            text = self.text_store.get(step, "")
+            if text:
+                results.append((step, text, float(top_sims[i].item())))
+        return results
+
+    def retrieve_by_tokens(
+        self,
+        query_tokens: set[int],
+        top_k: int = 5,
+    ) -> list[tuple[int, str, float]]:
+        """Retrieve stored texts by BPE token overlap (Jaccard sim).
+
+        A simpler retrieval method that uses character-level token
+        overlap instead of graph activation fingerprints. Outperforms
+        graph-based retrieval when the encoder uses random (untrained)
+        embeddings, because token overlap directly captures subword
+        sharing without depending on learned graph structure.
+
+        ``query_tokens`` should be a set of BPE token IDs from the
+        query text. The caller is responsible for tokenizing.
+        """
+        if not self.text_store:
+            return []
+
+        scored: list[tuple[float, int]] = []
+        for step, _text in self.text_store.items():
+            if step not in self._token_cache:
+                continue
+            t_ids = self._token_cache[step]
+            if not query_tokens or not t_ids:
+                scored.append((0.0, step))
+                continue
+            overlap = len(query_tokens & t_ids)
+            union = len(query_tokens | t_ids)
+            jaccard = overlap / union if union > 0 else 0.0
+            scored.append((jaccard, step))
+
+        scored.sort(key=lambda t: -t[0])
+        k = min(top_k, len(scored))
+        results: list[tuple[int, str, float]] = []
+        for sim, step in scored[:k]:
+            text = self.text_store.get(step, "")
+            if text:
+                results.append((step, text, sim))
+        return results
+
+    def retrieve_by_topology(
+        self,
+        query_tensor: torch.Tensor,
+        top_k: int = 5,
+    ) -> list[tuple[int, str, float]]:
+        """Retrieve stored texts by shared active nodes in the graph.
+
+        Instead of comparing activation fingerprint vectors, this method
+        finds which graph nodes the query activates and looks up which
+        stored memories activated the SAME nodes. Memories that share
+        more active nodes with the query rank higher.
+
+        This captures learned structural associations: if SOMA's graph
+        learns (through Hebbian + synaptogenesis) that certain nodes
+        respond to both "art" and "dogs," then a query about art will
+        retrieve dog memories through their shared active nodes —
+        cross-domain association that fingerprint comparison cannot do.
+        """
+        if not self._node_memory_index:
+            return []
+
+        query_tensor = query_tensor.to(self.device)
+        modality = self.config.input_modalities[0]
+
+        # Run query through graph
+        self.soma.step({modality: query_tensor}, eval_mode=True)
+        self._diversify_activations(query_tensor)
+        self._apply_lateral_inhibition()
+
+        # Find which nodes are active for this query
+        from soma.core.node import NodeType
+
+        active_nodes: set[str] = set()
+        for node in self.soma.graph.all_nodes():
+            if node.node_type in (NodeType.SENSOR, NodeType.OUTPUT):
+                continue
+            if (
+                node.last_activation is not None
+                and node.last_activation.norm().item() > 1e-8
+            ):
+                active_nodes.add(node.id)
+
+        if not active_nodes:
+            return []
+
+        # Count how many active nodes each stored memory shares
+        memory_scores: dict[int, float] = {}
+        for nid in active_nodes:
+            if nid not in self._node_memory_index:
+                continue
+            for step in self._node_memory_index[nid]:
+                memory_scores[step] = memory_scores.get(step, 0) + 1.0
+
+        # Normalize by total active nodes for a Jaccard-like score
+        n_active = len(active_nodes)
+        scored = [
+            (count / n_active, step)
+            for step, count in memory_scores.items()
+        ]
         scored.sort(key=lambda t: -t[0])
 
         results: list[tuple[int, str, float]] = []
@@ -357,6 +556,10 @@ class PredictiveSOMA(nn.Module):
             "text_store": self.text_store,
             "activation_store": {
                 k: v.cpu() for k, v in self._activation_store.items()
+            },
+            "token_cache": self._token_cache,
+            "node_memory_index": {
+                k: list(v) for k, v in self._node_memory_index.items()
             },
             "input_projections": {
                 k: v.cpu() for k, v in self._input_projections.items()
@@ -398,6 +601,11 @@ class PredictiveSOMA(nn.Module):
         self.text_store = state["text_store"]
         self._activation_store = {
             k: v.to(self.device) for k, v in state["activation_store"].items()
+        }
+        self._token_cache = state.get("token_cache", {})
+        raw_index = state.get("node_memory_index", {})
+        self._node_memory_index = {
+            k: set(v) for k, v in raw_index.items()
         }
         self._input_projections = {
             k: v.to(self.device)
@@ -470,23 +678,42 @@ class PredictiveSOMA(nn.Module):
         # This drives specialization — synaptogenesis only wires
         # co-active (non-suppressed) nodes, so different inputs
         # strengthen different subgraphs over time.
-        self._apply_lateral_inhibition()
+        suppressed = self._apply_lateral_inhibition()
 
-        # Competitive learning: winner node adapts toward the input.
-        # Requires sparse_init_connectivity < 1.0 so nodes receive
-        # different input subsets and can genuinely specialize.
-        self._competitive_learning(input_tensor)
+        # Competitive learning with anti-Hebbian suppression:
+        # winner adapts toward input, suppressed nodes adapt away.
+        # This drives node specialization without requiring sparse
+        # initial connectivity.
+        self._competitive_learning(input_tensor, suppressed_ids=suppressed)
 
         # Store original text for retrieval/verbalization
         step_num = step_result.get("global_step", len(self.text_store))
         if source_text is not None:
             self.text_store[step_num] = source_text
+            # Cache BPE token IDs for token-overlap retrieval
+            if self._tokenizer_fn is not None:
+                self._token_cache[step_num] = set(
+                    self._tokenizer_fn(source_text)
+                )
 
         current_summary = self._get_activation_summary(step_result)
 
         # Store activation fingerprint for graph-driven retrieval
         if source_text is not None:
             self._activation_store[step_num] = self._get_node_fingerprint()
+            # Index which nodes were active for this memory (for
+            # topology-based retrieval)
+            from soma.core.node import NodeType as _NT
+
+            for node in self.soma.graph.all_nodes():
+                if (
+                    node.last_activation is not None
+                    and node.last_activation.norm().item() > 1e-8
+                    and node.node_type not in (_NT.SENSOR, _NT.OUTPUT)
+                ):
+                    if node.id not in self._node_memory_index:
+                        self._node_memory_index[node.id] = set()
+                    self._node_memory_index[node.id].add(step_num)
 
         # Train prediction head: re-predict from last summary,
         # compare to current summary, backprop.

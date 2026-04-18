@@ -40,6 +40,8 @@ class InteractionLoop:
         llm_api_base: str = "http://localhost:11434",
         *,
         device: torch.device | None = None,
+        train_encoder: bool = False,
+        encoder_lr: float = 0.001,
     ) -> None:
         self.config = config
         self.llm_model = llm_model
@@ -48,6 +50,9 @@ class InteractionLoop:
         self.predictive_soma = PredictiveSOMA(config, device=self.device)
         self.tracker = DevelopmentTracker()
         self._encoder: TextEncoder | None = None
+        self._train_encoder = train_encoder
+        self._encoder_lr = encoder_lr
+        self._encoder_optimizer: torch.optim.Optimizer | None = None
 
     # ------------------------------------------------------------------
     # Tokenizer / encoding
@@ -64,17 +69,82 @@ class InteractionLoop:
             embed_dim=self.config.text_embed_dim,
             device=self.device,
         )
+        if self._train_encoder:
+            self._encoder_optimizer = torch.optim.Adam(
+                self._encoder.parameters(), lr=self._encoder_lr,
+            )
+        # Register tokenizer with PredictiveSOMA for token-overlap retrieval
+        self.predictive_soma.set_tokenizer(self._encoder.tokenize)
 
-    def encode_text(self, text: str) -> torch.Tensor:
-        """Encode *text* into a single mean-pooled embedding vector."""
+    def encode_text(
+        self, text: str, *, keep_grad: bool | None = None,
+    ) -> torch.Tensor:
+        """Encode *text* into a single mean-pooled embedding vector.
+
+        When ``keep_grad`` is True (default when encoder training is
+        enabled), the returned tensor retains its grad_fn so SOMA's
+        backward pass can propagate gradients into the encoder.
+        """
         if self._encoder is None:
             raise RuntimeError(
                 "Tokenizer not initialised — call train_tokenizer() first."
             )
+        if keep_grad is None:
+            keep_grad = self._train_encoder and self._encoder_optimizer is not None
+
         tokens = self._encoder.encode_batch(text)  # (T, embed_dim)
         if tokens.shape[0] == 0:
             return torch.zeros(self.config.text_embed_dim, device=self.device)
-        return tokens.mean(dim=0)
+        vec = tokens.mean(dim=0)
+        if not keep_grad:
+            vec = vec.detach()
+        return vec
+
+    # ------------------------------------------------------------------
+    # Persistence
+    # ------------------------------------------------------------------
+
+    def save(self, path: str) -> None:
+        """Save full state: SOMA + encoder + tracker."""
+        from pathlib import Path
+
+        save_dir = Path(path)
+        self.predictive_soma.save(str(save_dir))
+        self.tracker.save(str(save_dir / "tracker.json"))
+
+        if self._encoder is not None:
+            torch.save({
+                "encoder_state": self._encoder.state_dict(),
+                "encoder_optimizer": (
+                    self._encoder_optimizer.state_dict()
+                    if self._encoder_optimizer is not None else None
+                ),
+            }, save_dir / "encoder_state.pt")
+
+    def load(self, path: str) -> None:
+        """Load saved state. Tokenizer must be initialized first."""
+        from pathlib import Path
+
+        save_dir = Path(path)
+        self.predictive_soma.load(str(save_dir))
+        tracker_path = save_dir / "tracker.json"
+        if tracker_path.exists():
+            self.tracker.load(str(tracker_path))
+
+        encoder_path = save_dir / "encoder_state.pt"
+        if encoder_path.exists() and self._encoder is not None:
+            state = torch.load(
+                encoder_path, map_location="cpu", weights_only=False,
+            )
+            self._encoder.load_state_dict(state["encoder_state"])
+            self._encoder.to(self.device)
+            if (
+                self._encoder_optimizer is not None
+                and state.get("encoder_optimizer") is not None
+            ):
+                self._encoder_optimizer.load_state_dict(
+                    state["encoder_optimizer"]
+                )
 
     # ------------------------------------------------------------------
     # LLM integration
@@ -121,10 +191,32 @@ class InteractionLoop:
             input_vec, source_text=text,
         )
 
-        # Graph-driven retrieval: process query through SOMA's graph
-        # and find stored texts with similar activation patterns.
-        # The quality of retrieval depends on SOMA's structural development.
-        recalled = self.predictive_soma.retrieve_by_graph(input_vec, top_k=5)
+        # Apply encoder gradients from SOMA's backward pass.
+        # SOMA.step() → update_step() calls loss.backward(), which
+        # propagates through the graph back to the encoder. The
+        # encoder params now have .grad tensors — apply and zero them.
+        if self._encoder_optimizer is not None and self._encoder is not None:
+            has_grad = any(
+                p.grad is not None for p in self._encoder.parameters()
+            )
+            if has_grad:
+                torch.nn.utils.clip_grad_norm_(
+                    self._encoder.parameters(), max_norm=1.0,
+                )
+                self._encoder_optimizer.step()
+                self._encoder_optimizer.zero_grad()
+
+        # Graph-driven retrieval: only run when results are needed
+        # (e.g., for LLM verbalization). Skip during development-only
+        # steps. Uses graph activation fingerprints — SOMA's genuine
+        # contribution. Token overlap is available as a baseline but
+        # can't learn cross-domain associations (the graph can).
+        recalled: list = []
+        if call_llm:
+            query_vec = input_vec.detach()
+            recalled = self.predictive_soma.retrieve_by_graph(
+                query_vec, top_k=5,
+            )
 
         soma_state = verbalize_state(
             self.predictive_soma.soma,

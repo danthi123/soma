@@ -66,6 +66,11 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default="soma_dev_state",
         help="Directory to save state on /save or exit (default: soma_dev_state)",
     )
+    parser.add_argument(
+        "--no-train-encoder",
+        action="store_true",
+        help="Disable encoder training (embeddings stay fixed)",
+    )
     return parser.parse_args(argv)
 
 
@@ -80,6 +85,7 @@ def main(argv: list[str] | None = None) -> None:
         llm_model=args.model,
         llm_api_base=args.api_base,
         device=device,
+        train_encoder=not args.no_train_encoder,
     )
 
     # Seed tokenizer
@@ -88,7 +94,7 @@ def main(argv: list[str] | None = None) -> None:
     # Load saved state if requested
     if args.load:
         print(f"Loading state from {args.load}...")
-        loop.predictive_soma.load(args.load)
+        loop.load(args.load)
         print(f"  Loaded: step {loop.predictive_soma.soma.global_step}, "
               f"{len(loop.predictive_soma.text_store)} memories")
 
@@ -129,8 +135,7 @@ def main(argv: list[str] | None = None) -> None:
                 continue
 
             if user_input.lower() == "/save":
-                loop.predictive_soma.save(args.save_dir)
-                loop.tracker.save(f"{args.save_dir}/tracker.json")
+                loop.save(args.save_dir)
                 print(f"State saved to {args.save_dir}/")
                 continue
 
@@ -147,7 +152,7 @@ def main(argv: list[str] | None = None) -> None:
                         "mature"
                 errors = list(ps.error_history)
                 avg_err = sum(errors[-50:]) / max(len(errors[-50:]), 1)
-                print(f"\n  Development Report")
+                print("\n  Development Report")
                 print(f"  Stage: {stage} (step {soma.global_step})")
                 print(f"  Graph: {n_nodes} nodes, {n_edges} edges")
                 print(f"  Memories: {n_mem} stored")

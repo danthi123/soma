@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field, fields
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import yaml
 
@@ -112,6 +112,18 @@ class SOMAConfig:
     consolidation_error_threshold: float = 0.5
     pruning_interval: int = 1000
     checkpoint_interval: int = 5000
+
+    # --- Growth trigger mode ---------------------------------------------
+    # "interval": fire at fixed step cadence (neurogenesis_interval),
+    #   gated by neurogenesis_threshold internally. Historic default.
+    # "pe_gated": check every step; fire when the PE trigger ratio
+    #   exceeds neurogenesis_threshold AND the cooldown has elapsed
+    #   since the last firing. Tracks prediction error spikes rather
+    #   than wall-clock cadence. See env_sequence_v05 findings
+    #   (2026-04-18) for motivation.
+    neurogenesis_mode: Literal["interval", "pe_gated"] = "interval"
+    # Minimum gap between neurogenesis events in pe_gated mode.
+    neurogenesis_cooldown: int = 200
 
     # --- Curiosity --------------------------------------------------------
     num_curiosity_domains: int = 8
@@ -214,11 +226,18 @@ class SOMAConfig:
             "neurogenesis_interval",
             "consolidation_interval",
             "pruning_interval",
+            "neurogenesis_cooldown",
         ]
         for name in non_negative_ints:
             value = getattr(self, name)
             if not isinstance(value, int) or value < 0:
                 raise ValueError(f"SOMAConfig.{name} must be a non-negative int, got {value!r}")
+
+        if self.neurogenesis_mode not in ("interval", "pe_gated"):
+            raise ValueError(
+                f"SOMAConfig.neurogenesis_mode must be 'interval' or 'pe_gated', "
+                f"got {self.neurogenesis_mode!r}"
+            )
 
         if not 0.0 < self.wm_decay_rate <= 1.0:
             raise ValueError(

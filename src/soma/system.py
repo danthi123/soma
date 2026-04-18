@@ -137,6 +137,10 @@ class SOMA:
         self.global_step: int = 0
         self._recent_errors: list[float] = []
         self._recent_errors_cap: int = 1000
+        # Last step at which neurogenesis fired — used by pe_gated mode to
+        # enforce the cooldown. -inf-equivalent sentinel so the first
+        # eligible trigger can fire.
+        self._last_neurogenesis_step: int = -(10**9)
 
         self.graph = Graph()
         self._initialize_seed_graph(config)
@@ -542,6 +546,30 @@ class SOMA:
             }
         )
 
+    def _should_attempt_neurogenesis(self) -> bool:
+        """Gate for the neurogenesis call in ``_maybe_grow``.
+
+        Two modes via ``config.neurogenesis_mode``:
+        - ``"interval"`` (default): step aligned on ``neurogenesis_interval``.
+        - ``"pe_gated"``: allow every step, but enforce
+          ``neurogenesis_cooldown`` since the last firing. The PE ratio
+          check itself stays in ``neurogenesis()``; this gate only
+          controls *when* it is polled.
+        """
+        config = self.config
+        if not self.homeostasis.allow_neurogenesis:
+            return False
+        mode = config.neurogenesis_mode
+        if mode == "interval":
+            return (
+                config.neurogenesis_interval > 0
+                and self.global_step % config.neurogenesis_interval == 0
+            )
+        if mode == "pe_gated":
+            cooldown = max(1, config.neurogenesis_cooldown)
+            return self.global_step - self._last_neurogenesis_step >= cooldown
+        raise ValueError(f"unknown neurogenesis_mode: {mode!r}")
+
     def _maybe_grow(
         self,
         activations: dict[str, torch.Tensor],
@@ -570,11 +598,7 @@ class SOMA:
                         source=edge.source_id,
                         target=edge.target_id,
                     )
-            if (
-                config.neurogenesis_interval > 0
-                and self.global_step % config.neurogenesis_interval == 0
-                and self.homeostasis.allow_neurogenesis
-            ):
+            if self._should_attempt_neurogenesis():
                 new_node = neurogenesis(
                     self.graph,
                     self._recent_errors,
@@ -584,6 +608,7 @@ class SOMA:
                 )
                 if new_node is not None:
                     ratio = _neurogenesis_trigger_ratio(self._recent_errors)
+                    self._last_neurogenesis_step = self.global_step
                     self.record_growth_event(
                         "neurogenesis",
                         node_id=new_node.id,
@@ -861,6 +886,7 @@ class SOMA:
             "last_curiosity": self.last_curiosity,
             # Serialize as a plain list — deque reconstituted on load.
             "growth_log": list(self.growth_log),
+            "last_neurogenesis_step": self._last_neurogenesis_step,
         }
         payload = to_cpu_state(payload)
         wrapped = wrap_payload(payload, soma_version=_current_soma_version())
@@ -910,6 +936,12 @@ class SOMA:
         # checkpoints omit it — default to an empty journal so pre-Task-8
         # bundles load without error.
         self.growth_log = deque(state.get("growth_log", []), maxlen=10_000)
+        # ``last_neurogenesis_step`` tracks pe_gated cooldown. Older
+        # checkpoints omit it; fall back to the sentinel so the first
+        # eligible step after load can fire.
+        self._last_neurogenesis_step = int(
+            state.get("last_neurogenesis_step", -(10**9))
+        )
 
     # ------------------------------------------------------------------
     # Directory-shaped brain bundle (brain.pt + tokenizer + encoder + manifest)

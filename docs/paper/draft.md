@@ -35,18 +35,18 @@ ablation finds that structural plasticity (neurogenesis, synaptogenesis,
 pruning) does *not* drive the advantage — a `no_growth` variant with
 frozen topology outperforms the full system on 10 of 12 regimes
 across two schedules, including under explicit capacity pressure.
-We further rule out two simple mechanism fixes: an opt-in
-prediction-error-gated neurogenesis mode fires 66% fewer events and
-produces a 46% smaller graph yet changes nothing, and a sweep over
-the new-edge initial weight scale down to zero (silent new edges)
-still loses 8 of 8 regimes to the frozen-topology baseline. A
-capacity probe refines the picture: pre-adding 49 frozen nodes
-from $t=0$ also loses to the 14-node baseline by 2-16x MSE on
-every regime, suggesting 14 nodes is a Pareto-optimal capacity
-for this task rather than a plasticity-specific artifact. Growth
-does produce a substantially better 49-node graph than random
-initialization (8x on one regime) — so structural plasticity
-is not pure noise — but that graph is still over-capacity here.
+Decomposing "growth" into synaptogenesis (new edges between
+existing associators, wired by activation correlations) and
+neurogenesis (new nodes, wired to nearest positional neighbors)
+reveals that the penalty is mechanism-specific: synaptogenesis
+alone hurts on 7 of 8 regimes, while neurogenesis alone matches
+or beats the no-growth baseline on 8 of 8 and substantially
+beats the full-growth variant on every regime. The failure is
+not "plasticity" as a whole; it is synaptogenesis reading from
+the same random-projection-driven activation patterns that
+produced the retrieval ceiling (§5) and reinforcing their
+arbitrary structure. Neurogenesis, which does not consult the
+correlation signal, avoids this trap.
 A consolidation test on synthetic QA shows +45% F1 relative (0.279 →
 0.404). Together the retrieval and adaptation findings suggest
 brain-inspired graph memory is mis-applied as a retrieval plugin
@@ -121,20 +121,21 @@ Our findings:
    synthetic-QA test. Multi-session development produces +275%
    relative F1 growth across three sequential sessions with save/
    load preserving state.
-6. **But a targeted ablation finds that structural plasticity is
-   not load-bearing for SOMA's adaptation advantage on this task.**
-   A variant with growth disabled (14 nodes / 24 edges fixed)
-   outperforms the full system on 10 of 12 regimes across both
-   schedules, including under capacity pressure. A follow-up
-   capacity probe shows that pre-adding 49 frozen nodes at $t=0$
-   also loses to the 14-node baseline monotonically, so 14 nodes
-   is apparently the Pareto-optimal capacity for the task — the
-   advantage is not about plasticity vs. frozen topology per se
-   but about matching graph size to task complexity. Growth is
-   still doing useful work: a grown 49-node graph outperforms a
-   random-initialization 49-node graph by ~8x on one regime. It
-   just happens that on this task, neither 49-node variant beats
-   14.
+6. **But a mechanism-specific ablation finds that synaptogenesis
+   — not neurogenesis — is what degrades SOMA's adaptation
+   performance.** A 2×2 decomposition of growth shows that
+   `neuro_only` matches or beats the `no_growth` baseline on 8 of
+   8 regimes and substantially beats the `full` variant on every
+   regime, while `synap_only` hurts on 7 of 8. The structural-
+   without-semantic ceiling identified in §5 for retrieval has a
+   direct mechanism-level analogue: synaptogenesis reads the same
+   random-projection-driven activation correlations that failed
+   retrieval, and reinforces arbitrary structure; neurogenesis
+   (which places new nodes by position and activity magnitude,
+   not by correlation) does not. What looked like "structural
+   plasticity hurts" across the earlier experiments was really
+   "synaptogenesis hurts, and synaptogenesis is the dominant
+   contributor to edge count under the default schedule."
 
 We take these results as evidence that (a) the retrieval-
 enhancement framing is a mismatch for what structural plasticity
@@ -747,26 +748,76 @@ training matters." A cleaner follow-up would pre-add 49 nodes
 with 980 edges (matched density) and compare that against the
 grown 49-node graph directly. This is future work.
 
-The updated reading: on tasks where the base 14-node graph
-already has sufficient capacity, SOMA's growth mechanisms push
-capacity past the Pareto-optimal point and hurt. Growth is not
-pure noise within that push — the edges and wiring it produces
-are substantially better than a random-initialized graph of the
-same size — but the resulting graph is still over-capacity for
-the task. The remaining live integration candidates are (a)
-matched-density pre-added comparison (isolates the edge-count
-confound), (b) gain-ramped new nodes that stay near-inert via
-homeostasis for $K$ steps after creation, and (c) evaluation on
-a task where the 14-node graph is under-capacity, to test
-whether growth helps when scaling up is actually needed. All
-are future work.
+**Follow-up: decomposing growth into synaptogenesis vs.
+neurogenesis.** "Growth" in SOMA is actually two mechanisms:
+*synaptogenesis* (new edges between existing associators, wired
+based on activation correlations) and *neurogenesis* (new nodes,
+each wired bidirectionally to its 5 nearest positional neighbors).
+Prior variants toggled both together. We ran a 2×2 with
+pruning disabled in every cell:
+
+| Regime   | no_growth | synap_only | neuro_only | full   |
+|----------|-----------|------------|------------|--------|
+| mlp_2x16 | 0.0062    | 0.0064     | 0.0062     | 0.0069 |
+| mlp_2x32 | 0.0005    | 0.0006     | 0.0005     | 0.0014 |
+| mlp_3x16 | 0.0006    | 0.0009     | 0.0005     | 0.0020 |
+| mlp_3x32 | 0.0006    | 0.0011     | **0.0001** | 0.0017 |
+| mlp_2x64 | 0.0011    | 0.0025     | 0.0008     | 0.0031 |
+| mlp_3x64 | 0.0014    | 0.0039     | 0.0011     | 0.0045 |
+| mlp_4x32 | 0.0018    | 0.0040     | 0.0017     | 0.0042 |
+| mlp_4x64 | 0.0010    | 0.0053     | 0.0008     | 0.0066 |
+
+Final graph sizes and event counts: `no_growth` 14n / 24e, 0
+events; `synap_only` 14n / 181e, 157 synap events; `neuro_only`
+50n / 384e, 36 neuro events; `full` 48n / 960e, 34 neuro + 653
+synap events.
+
+**This reverses the previous reading.** Neurogenesis alone matches
+or beats the `no_growth` baseline on 8 of 8 regimes (strictly
+better on 6) and beats `full` on every regime. Synaptogenesis
+alone hurts on 7 of 8 regimes. So the penalty attributed to
+"structural plasticity" is specifically a penalty for
+synaptogenesis — the mechanism that adds edges between existing
+associators, wired based on correlations in the same random-
+projection-driven activation patterns that produced the +0.8%
+retrieval ceiling in §4.1–§4.6. Neurogenesis, which places new
+nodes near active circuitry and wires them to nearest positional
+neighbors without consulting the correlation signal, does not
+exhibit the same pathology.
+
+This also clarifies the pre-add-nodes finding above: the
+pre-added 49-node graph (94 edges, no assoc-assoc lateral
+structure) loses to `no_growth`, but `neuro_only` at 50 nodes
+with 384 edges (including the neurogenesis-wired lateral
+connections) matches `no_growth`. It is not "more nodes" that
+hurt per se; it is the absence of useful lateral structure in
+the pre-added case, combined with the presence of synaptogenesis-
+created spurious structure in the full case.
+
+Connecting this back to §5: the retrieval ceiling diagnosis was
+that random projections create *structurally diverse but
+semantically arbitrary* activation patterns. Synaptogenesis
+reads those arbitrary patterns and builds edges from them, so it
+reinforces arbitrary structure. Neurogenesis reads only positions
+and activity magnitudes, not correlation patterns, so it
+sidesteps this failure mode. The same first-principles limit
+that bounds retrieval also predicts which growth mechanism will
+fail.
+
+A remaining live confound: `synap_only` ran 157 synaptogenesis
+events whereas `full` ran 653 (synaptogenesis rate scales with
+node count, and `full` has more nodes available). We have not
+separated "synaptogenesis mechanism" from "synaptogenesis volume
+under large graphs" as the source of harm, though the fact that
+even 157 events at 14 nodes already hurts on 7/8 regimes suggests
+the mechanism is the issue, not the volume.
 
 These results are specifically not retrieval wins. They are
-demonstrations that SOMA's graph substrate helps on tasks evaluated
-by adaptation and capacity metrics rather than static retrieval
-accuracy — and that the plasticity mechanisms typically highlighted
-in brain-inspired architecture proposals are not the source of
-that help.
+demonstrations that (i) SOMA's graph substrate helps on tasks
+evaluated by adaptation metrics rather than retrieval accuracy,
+and (ii) within SOMA's plasticity mechanisms, neurogenesis is
+beneficial while synaptogenesis is the specific mechanism that
+degrades the prediction circuit on this task.
 
 ## 5. Analysis: why structural ≠ semantic
 
@@ -1052,39 +1103,37 @@ shifts. Through sixteen diagnostic experiments, we showed that:
   on four base regimes, 9-40x on an 8-regime capacity-pressure
   schedule. The advantage is large and consistent.
 
-- **But the advantage is not driven by structural plasticity on
-  this task.** Ablations show that disabling growth (neurogenesis,
-  synaptogenesis, pruning) while keeping the 14-node base graph
-  monotonically improves performance — even under explicit
-  capacity pressure (the `no_growth` variant beats `full` on 7 of
-  8 regimes in the harder schedule, by 5-10x). A capacity probe
-  further shows that pre-adding 49 frozen nodes from $t=0$ also
-  loses to the 14-node baseline monotonically, suggesting 14
-  nodes is the Pareto-optimal capacity for this task rather than
-  plasticity being broken. Growth *is* doing useful work given
-  a target node count (a grown 49-node graph outperforms a
-  random-initialization 49-node graph by ~8x on one regime), but
-  the task does not reward expanding past 14 nodes.
+- **And the penalty from "growth" is mechanism-specific.** A 2×2
+  decomposition shows that neurogenesis alone matches or beats
+  the no-growth baseline on 8 of 8 regimes and substantially
+  beats the full variant on every regime, while synaptogenesis
+  alone hurts on 7 of 8. The same first-principles limit that
+  bounds retrieval (§5) also predicts which growth mechanism
+  fails: synaptogenesis wires new edges from activation
+  correlations driven by random projections, and those
+  correlations are arbitrary; neurogenesis wires new nodes by
+  position and activity magnitude and avoids the correlation
+  signal, so it does not reinforce arbitrary structure.
 
 These results jointly suggest that brain-inspired architectures
 (at least this one) are: (a) mis-applied as retrieval plugins, and
-(b) mis-evaluated when capacity matching is not controlled for.
-Our baseline "no_growth vs full" comparison looked like a clean
-negative for structural plasticity until we ran the capacity
-probe — then it became clear that much of the apparent
-plasticity penalty was really a capacity-mismatch penalty. The
-broader methodological claim is that claims of form "mechanism
-X hurts" or "mechanism X helps" in brain-inspired architectures
-need to control for the capacity each variant ends up at, not
-only for which mechanism is toggled.
+(b) evaluated at the wrong granularity when "growth" is treated
+as a single toggle. Our initial `no_growth` vs `full` comparison
+looked like a clean negative for structural plasticity until we
+decomposed it — then it became clear that neurogenesis and
+synaptogenesis have opposite signs. The broader methodological
+point is that "mechanism X hurts/helps" claims in brain-inspired
+architectures should decompose composite mechanisms to the level
+at which the claim actually lives: a shared name ("growth",
+"plasticity") can hide two mechanisms that do opposite things.
 
 We release the diagnostic suite and invite others to apply it both
 (1) to brain-inspired retrieval proposals, to replicate the ceiling
 diagnostics; and (2) to structural-plasticity claims more broadly,
-to separate "does the substrate help?" from "does the plasticity
-help?" — and, critically, from "did the two variants end up at
-different capacities?" Conflating these questions has, in our
-case, hidden real findings of all three kinds.
+to separate "does the substrate help?" from "does *this specific*
+plasticity mechanism help?" Conflating mechanism-level
+questions under a single composite toggle has, in our case,
+hidden real findings of opposite sign.
 
 ## Appendix A: Reproducibility
 
@@ -1149,6 +1198,14 @@ All experiments run on a single RTX 3090.
   boundary in each case). Initial sparse connectivity is held at
   the default (`sparse_init_connectivity=0.3`), yielding ~1.7
   edges per node in all three configurations.
+- 2×2 growth decomposition (follow-up in §4.7): `no_growth`
+  sets `synaptogenesis_interval=neurogenesis_interval=0`;
+  `synap_only` keeps `synaptogenesis_interval=10` but sets
+  `neurogenesis_interval=0`; `neuro_only` sets
+  `synaptogenesis_interval=0` but keeps `neurogenesis_interval=25`;
+  `full` keeps both at the developmental defaults. Pruning is
+  disabled in every variant (`pruning_interval=0`) so removed
+  edges/nodes do not confound.
 
 ### A.3 Scripts and data
 
@@ -1181,6 +1238,7 @@ maps phase numbers to script filenames and commit hashes.
 | Env v0.5 PE-gated      | `research/developmental/env_sequence_v05_pe_gated.py` | `bb9637e` | §4.7 (follow-up) |
 | Env v0.5 init-scale    | `research/developmental/env_sequence_v05_init_scale.py` | `963349b` | §4.7 (follow-up) |
 | Env v0.5 pre-add       | `research/developmental/env_sequence_v05_pre_add_nodes.py` | `4cabff4` | §4.7 (follow-up) |
+| Env v0.5 2x2 growth    | `research/developmental/env_sequence_v05_growth_2x2.py` | `2a1bbcc` | §4.7 (follow-up) |
 | Consolidation result   | (ad-hoc via `/sleep` CLI)                        | `c553a66` | §4.7 |
 | Multi-session result   | (ad-hoc via developmental CLI)                   | `6a0a822` | §4.7 |
 

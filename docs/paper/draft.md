@@ -35,10 +35,13 @@ ablation finds that structural plasticity (neurogenesis, synaptogenesis,
 pruning) does *not* drive the advantage — a `no_growth` variant with
 frozen topology outperforms the full system on 10 of 12 regimes
 across two schedules, including under explicit capacity pressure.
-We further isolate the failure to *integration*, not *triggering*:
-an opt-in prediction-error-gated neurogenesis mode fires 66% fewer
-events and produces a 46% smaller graph, yet prediction quality is
-unchanged and still 2-6x worse than the frozen-topology baseline.
+We further rule out two simple mechanism fixes: an opt-in
+prediction-error-gated neurogenesis mode fires 66% fewer events and
+produces a 46% smaller graph yet changes nothing, and a sweep over
+the new-edge initial weight scale down to zero (silent new edges)
+still loses 8 of 8 regimes to the frozen-topology baseline. The
+disruption is not about when nodes are born or how loudly their
+edges start; it arises from the structural event itself.
 A consolidation test on synthetic QA shows +45% F1 relative (0.279 →
 0.404). Together the retrieval and adaptation findings suggest
 brain-inspired graph memory is mis-applied as a retrieval plugin
@@ -635,10 +638,62 @@ MSE is statistically indistinguishable from interval mode and
 remains 2-6x worse than `no_growth` on every regime. This
 isolates the failure further: cutting the event count by two-
 thirds with a principled PE-based trigger does not recover the
-benefit. The failure mode is not *when* neurogenesis fires; it
-is *how* new nodes are integrated (initial edge weights, neighbor
-selection, no gain warm-up). Integration-mechanism fixes — not
-better triggering — are the logical next line of work.
+benefit. The failure mode is not *when* neurogenesis fires.
+
+**Follow-up: is the failure about initial edge *magnitude*?** The
+next integration candidate is the weight scale of the new bidirectional
+edges wired out of each newborn node. The default scale (0.01 × randn)
+was chosen for the whitepaper's 50K-node regime and may simply be
+too loud for a 14-node starter graph — a new node starts fully
+connected to 5 neighbors in both directions, with each edge carrying
+a randn-drawn weight that is immediately part of the next wave's
+propagation. We added `neurogenesis_init_weight_scale` to
+SOMAConfig (Appendix A.2) and swept it over {0.01, 0.001, 0.0001, 0.0}
+against `no_growth` on the same schedule. Scale = 0 is the
+falsification case: new edges carry literally no signal until Hebbian
+updates raise them. If the disturbance is about magnitude, quieter
+initialization should narrow the gap.
+
+| Regime   | s=0.01 | s=0.001 | s=0.0001 | s=0.0  | no_growth |
+|----------|--------|---------|----------|--------|-----------|
+| mlp_2x16 | 0.0072 | 0.0067  | 0.0068   | 0.0068 | 0.0062    |
+| mlp_2x32 | 0.0010 | 0.0011  | 0.0009   | 0.0011 | 0.0005    |
+| mlp_3x16 | 0.0016 | 0.0022  | 0.0013   | 0.0018 | 0.0006    |
+| mlp_3x32 | 0.0014 | 0.0022  | 0.0010   | 0.0019 | 0.0006    |
+| mlp_2x64 | 0.0024 | 0.0035  | 0.0030   | 0.0041 | 0.0011    |
+| mlp_3x64 | 0.0038 | 0.0048  | 0.0046   | 0.0056 | 0.0014    |
+| mlp_4x32 | 0.0039 | 0.0045  | 0.0044   | 0.0051 | 0.0018    |
+| mlp_4x64 | 0.0064 | 0.0058  | 0.0064   | 0.0073 | 0.0010    |
+
+`no_growth` wins 8 of 8 regimes at every scale tested. Even
+`scale = 0` — new edges that contribute nothing until Hebbian
+updates fire — still produces a graph that is 2-7x worse than
+`no_growth` on every regime. The final graphs across scales are
+effectively equivalent in size (46-50 nodes, 920-1000 edges, 32-36
+neurogenesis events): the knob does not affect growth rate, only
+the magnitude at which each new edge enters the circuit.
+
+This is a three-way isolation of the plasticity failure:
+
+1. **Trigger timing is not the cause.** PE-gated firing (66% fewer
+   events) produces the same MSE as interval-based firing.
+2. **Initial edge magnitude is not the cause.** Scale = 0 new
+   edges still degrade the graph.
+3. **The substrate is not the cause.** `no_growth` (the same
+   substrate with growth disabled) wins decisively.
+
+Together, these rule out the simplest mechanism-level fixes.
+Whatever the disturbance is, it arises from the structural event
+itself — new nodes entering the topological execution order,
+Hebbian updates operating on edges and paths that did not exist
+before, and/or the homeostatic regulator re-balancing around a
+changed population — rather than from any tunable parameter of
+the edges themselves. Candidates that remain live are: (a)
+pre-adding random frozen nodes at $t=0$ versus organic online
+addition (to isolate "more structure" from "structure added
+online"), and (b) gain-ramped new nodes that stay near-inert
+in execution for $K$ steps via homeostasis, not just through
+zero edges. Both are future work.
 
 These results are specifically not retrieval wins. They are
 demonstrations that SOMA's graph substrate helps on tasks evaluated
@@ -1001,6 +1056,13 @@ All experiments run on a single RTX 3090.
   inside `neurogenesis()` is unchanged. Interval mode
   (the default) continues to fire on aligned steps per
   `neurogenesis_interval=25`.
+- Init-scale variant (follow-up in §4.7):
+  `SOMAConfig.developmental(neurogenesis_init_weight_scale=s)` for
+  `s ∈ {0.01, 0.001, 0.0001, 0.0}`. Controls the randn scale of
+  initial weights on the bidirectional edges wired out of a newborn
+  node. The `0.0` case produces silent new edges whose weights can
+  only grow via subsequent Hebbian updates. Legacy behavior
+  (`0.01`) is preserved as the default.
 
 ### A.3 Scripts and data
 
@@ -1031,6 +1093,7 @@ maps phase numbers to script filenames and commit hashes.
 | Env v0 ablation        | `research/developmental/env_sequence_ablation.py` | `c19a0b9` | §4.7 Table 8 |
 | Env v0.5 capacity      | `research/developmental/env_sequence_v05_capacity.py` | `0390590` | §4.7 Table 9 |
 | Env v0.5 PE-gated      | `research/developmental/env_sequence_v05_pe_gated.py` | `bb9637e` | §4.7 (follow-up) |
+| Env v0.5 init-scale    | `research/developmental/env_sequence_v05_init_scale.py` | `963349b` | §4.7 (follow-up) |
 | Consolidation result   | (ad-hoc via `/sleep` CLI)                        | `c553a66` | §4.7 |
 | Multi-session result   | (ad-hoc via developmental CLI)                   | `6a0a822` | §4.7 |
 

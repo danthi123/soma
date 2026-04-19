@@ -44,6 +44,8 @@ class SomaAdapter(BaseMemorySystem):
         faiss_index_type: str = "flat",
         faiss_threshold: int = 10_000,
         eager_stable_capture: bool = True,
+        synap_locality: float = 0.0,
+        seed: int | None = None,
     ) -> None:
         self._use_sbert = use_sbert
         self._attach_soma = attach_soma
@@ -54,6 +56,18 @@ class SomaAdapter(BaseMemorySystem):
         self._faiss_index_type = faiss_index_type
         self._faiss_threshold = faiss_threshold
         self._eager_stable_capture = eager_stable_capture
+        # Hard positional-locality cutoff for synaptogenesis. 0.0 (default)
+        # disables the filter; 0.5 enables the "locality" mechanism that
+        # multi-seed validation on the v0.5 capacity schedule identified
+        # as the key design principle for structural plasticity on this
+        # substrate (commits 2ba566b, 28c5329). Opt-in here so existing
+        # benchmarks reproduce exactly; retrieval/plasticity benchmarks
+        # that want to compare locality on/off flip this flag.
+        self._synap_locality = synap_locality
+        # SOMA config seed. None (default) preserves pre-existing
+        # nondeterministic behavior; explicit seed is useful for paired
+        # comparisons (e.g. locality on/off at matched rng init).
+        self._seed = seed
         self._mem: MemoryLayer | None = None
         self._bundle_path: Path | None = None
 
@@ -89,6 +103,8 @@ class SomaAdapter(BaseMemorySystem):
                 text_embed_dim=32,
                 sensor_output_dim=32,
                 max_input_tokens=128,
+                synaptogenesis_max_distance=self._synap_locality,
+                seed=self._seed,
             )
             soma = SOMA(config)
             # SOMA's graph operates on its own small TextEncoder regardless

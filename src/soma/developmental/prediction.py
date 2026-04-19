@@ -40,9 +40,9 @@ class PredictiveSOMA(nn.Module):
         self.soma = SOMA(config, device=device)
         self.config = config
         self.device = device or torch.device("cpu")
-        self.prediction_head = nn.Linear(
-            config.sensor_output_dim, config.sensor_output_dim
-        ).to(self.device)
+        self.prediction_head = nn.Linear(config.sensor_output_dim, config.sensor_output_dim).to(
+            self.device
+        )
 
         # Random input diversifier: for each associator node, a frozen
         # random projection that transforms the input differently.
@@ -76,7 +76,7 @@ class PredictiveSOMA(nn.Module):
             if config.seed is not None:
                 proj_gen.manual_seed(config.seed + 31)
             projector = torch.randn(
-                config.sensor_output_dim ** 2,
+                config.sensor_output_dim**2,
                 config.position_dim,
                 generator=proj_gen,
             ).to(self.device)
@@ -97,9 +97,7 @@ class PredictiveSOMA(nn.Module):
                 original = node.position
                 if original is None:
                     continue
-                param = torch.nn.Parameter(
-                    original.detach().clone().to(self.device)
-                )
+                param = torch.nn.Parameter(original.detach().clone().to(self.device))
                 node.position = param
                 self._initial_position_norms[node.id] = param.norm().item()
         self._last_prediction: torch.Tensor | None = None
@@ -120,20 +118,20 @@ class PredictiveSOMA(nn.Module):
                 {"params": list(self.prediction_head.parameters()), "lr": 0.0003},
                 {
                     "params": [
-                        p for p in self._input_projections.values()
+                        p
+                        for p in self._input_projections.values()
                         if isinstance(p, torch.nn.Parameter)
                     ],
                     "lr": config.projection_lr,
                 },
             ]
             if position_params:
-                param_groups.append(
-                    {"params": position_params, "lr": config.projection_lr}
-                )
+                param_groups.append({"params": position_params, "lr": config.projection_lr})
             self._pred_optimizer = torch.optim.Adam(param_groups)
         else:
             self._pred_optimizer = torch.optim.Adam(
-                self.prediction_head.parameters(), lr=0.0003,
+                self.prediction_head.parameters(),
+                lr=0.0003,
             )
         self.prediction_error: float = 0.0
         self.error_history: deque[float] = deque(maxlen=error_history_size)
@@ -242,9 +240,7 @@ class PredictiveSOMA(nn.Module):
             cache_key = node.id
             if cache_key not in self._fp_index_cache:
                 if cache_key not in self._node_hash_cache:
-                    self._node_hash_cache[cache_key] = hashlib.sha256(
-                        cache_key.encode()
-                    ).digest()
+                    self._node_hash_cache[cache_key] = hashlib.sha256(cache_key.encode()).digest()
                 h = self._node_hash_cache[cache_key]
                 base_src = int.from_bytes(h[:8], "little")
                 base_tgt = int.from_bytes(h[8:16], "little")
@@ -252,11 +248,13 @@ class PredictiveSOMA(nn.Module):
                 stride_tgt = (int.from_bytes(h[20:24], "little") | 1) % fingerprint_dim or 1
                 src_idx = torch.tensor(
                     [(base_src + i * stride_src) % n for i in range(values_per_node)],
-                    dtype=torch.long, device=self.device,
+                    dtype=torch.long,
+                    device=self.device,
                 )
                 tgt_idx = torch.tensor(
                     [(base_tgt + i * stride_tgt) % fingerprint_dim for i in range(values_per_node)],
-                    dtype=torch.long, device=self.device,
+                    dtype=torch.long,
+                    device=self.device,
                 )
                 self._fp_index_cache[cache_key] = (src_idx, tgt_idx)
 
@@ -293,7 +291,8 @@ class PredictiveSOMA(nn.Module):
         # at the static default (200 steps).
 
     def _build_projection(
-        self, gen: torch.Generator | None = None,
+        self,
+        gen: torch.Generator | None = None,
     ) -> torch.Tensor:
         """Build a new input projection respecting ``config.projection_mode``.
 
@@ -331,10 +330,7 @@ class PredictiveSOMA(nn.Module):
         # Learnable projections need to be registered with the
         # optimizer; new nodes born via neurogenesis would otherwise
         # have parameters that torch.optim never sees.
-        if (
-            self.config.projection_mode == "learnable"
-            and isinstance(proj, torch.nn.Parameter)
-        ):
+        if self.config.projection_mode == "learnable" and isinstance(proj, torch.nn.Parameter):
             self._pred_optimizer.add_param_group(
                 {"params": [proj], "lr": self.config.projection_lr}
             )
@@ -359,17 +355,15 @@ class PredictiveSOMA(nn.Module):
         if node.position is None:
             return
 
-        param = torch.nn.Parameter(
-            node.position.detach().clone().to(self.device)
-        )
+        param = torch.nn.Parameter(node.position.detach().clone().to(self.device))
         node.position = param
         self._initial_position_norms[node_id] = param.norm().item()
-        self._pred_optimizer.add_param_group(
-            {"params": [param], "lr": self.config.projection_lr}
-        )
+        self._pred_optimizer.add_param_group({"params": [param], "lr": self.config.projection_lr})
 
     def _diversify_activations(
-        self, input_tensor: torch.Tensor, temperature: float = 5.0,
+        self,
+        input_tensor: torch.Tensor,
+        temperature: float = 5.0,
     ) -> None:
         """Modulate each associator's activation by its unique input view.
 
@@ -401,13 +395,13 @@ class PredictiveSOMA(nn.Module):
 
             alignment = torch.dot(torch.mv(proj, inp), inp)
             # Temperature-scaled sigmoid: higher T = sharper selection
-            gain = 0.5 + 1.5 * torch.sigmoid(
-                temperature * alignment / inp_norm_sq
-            )
+            gain = 0.5 + 1.5 * torch.sigmoid(temperature * alignment / inp_norm_sq)
             node.last_activation = node.last_activation * gain.item()
 
     def _apply_lateral_inhibition(
-        self, keep_ratio: float = 0.1, min_active: int = 3,
+        self,
+        keep_ratio: float = 0.1,
+        min_active: int = 3,
     ) -> list[str]:
         """Suppress weakest nodes' last_activation in-place.
 
@@ -426,7 +420,8 @@ class PredictiveSOMA(nn.Module):
 
         nodes = self.soma.graph.all_nodes()
         eligible = [
-            n for n in nodes
+            n
+            for n in nodes
             if n.node_type not in (NodeType.SENSOR, NodeType.OUTPUT)
             and n.last_activation is not None
         ]
@@ -467,7 +462,8 @@ class PredictiveSOMA(nn.Module):
 
         nodes = self.soma.graph.all_nodes()
         eligible = [
-            n for n in nodes
+            n
+            for n in nodes
             if n.node_type not in (NodeType.SENSOR, NodeType.OUTPUT)
             and n.last_activation is not None
         ]
@@ -537,7 +533,8 @@ class PredictiveSOMA(nn.Module):
                 for nid in suppressed_ids:
                     if nid in self._input_projections:
                         self._input_projections[nid].add_(
-                            outer, alpha=-proj_lr * 0.3,
+                            outer,
+                            alpha=-proj_lr * 0.3,
                         )
 
     def retrieve_by_graph(
@@ -561,7 +558,8 @@ class PredictiveSOMA(nn.Module):
 
         # Run query through graph WITHOUT learning
         self.soma.step(
-            {modality: query_tensor}, eval_mode=True,
+            {modality: query_tensor},
+            eval_mode=True,
         )
 
         # Apply the same diversification + inhibition pipeline used
@@ -572,11 +570,11 @@ class PredictiveSOMA(nn.Module):
 
         # Batched cosine similarity against all stored fingerprints.
         steps = list(self._activation_store.keys())
-        stored_matrix = torch.stack(
-            [self._activation_store[s] for s in steps]
-        )  # (N, fp_dim)
+        stored_matrix = torch.stack([self._activation_store[s] for s in steps])  # (N, fp_dim)
         sims = torch.nn.functional.cosine_similarity(
-            query_act.unsqueeze(0), stored_matrix, dim=1,
+            query_act.unsqueeze(0),
+            stored_matrix,
+            dim=1,
         )  # (N,)
 
         # Top-k indices
@@ -668,10 +666,7 @@ class PredictiveSOMA(nn.Module):
         for node in self.soma.graph.all_nodes():
             if node.node_type in (NodeType.SENSOR, NodeType.OUTPUT):
                 continue
-            if (
-                node.last_activation is not None
-                and node.last_activation.norm().item() > 1e-8
-            ):
+            if node.last_activation is not None and node.last_activation.norm().item() > 1e-8:
                 active_nodes.add(node.id)
 
         if not active_nodes:
@@ -687,10 +682,7 @@ class PredictiveSOMA(nn.Module):
 
         # Normalize by total active nodes for a Jaccard-like score
         n_active = len(active_nodes)
-        scored = [
-            (count / n_active, step)
-            for step, count in memory_scores.items()
-        ]
+        scored = [(count / n_active, step) for step, count in memory_scores.items()]
         scored.sort(key=lambda t: -t[0])
 
         results: list[tuple[int, str, float]] = []
@@ -762,7 +754,9 @@ class PredictiveSOMA(nn.Module):
 
         # Step 1: Embedding recall
         sims = torch.nn.functional.cosine_similarity(
-            query_tensor.unsqueeze(0), corpus_embeddings, dim=1,
+            query_tensor.unsqueeze(0),
+            corpus_embeddings,
+            dim=1,
         )
         k = min(recall_k, len(corpus_embeddings))
         top_k_sims, top_k_indices = torch.topk(sims, k)
@@ -784,10 +778,7 @@ class PredictiveSOMA(nn.Module):
             cidx = top_k_indices[i].item()
             step_num = cidx_to_step.get(cidx)
             fp_sim = 0.0
-            if (
-                step_num is not None
-                and step_num in self._activation_store
-            ):
+            if step_num is not None and step_num in self._activation_store:
                 fp_sim = torch.nn.functional.cosine_similarity(
                     query_fp.unsqueeze(0),
                     self._activation_store[step_num].unsqueeze(0),
@@ -797,9 +788,7 @@ class PredictiveSOMA(nn.Module):
         # Step 4: Confidence gate
         if fp_sims:
             fp_sorted = sorted(fp_sims, reverse=True)
-            confidence = fp_sorted[0] - (
-                fp_sorted[1] if len(fp_sorted) > 1 else 0.0
-            )
+            confidence = fp_sorted[0] - (fp_sorted[1] if len(fp_sorted) > 1 else 0.0)
         else:
             confidence = 0.0
 
@@ -811,8 +800,7 @@ class PredictiveSOMA(nn.Module):
                 w = rerank_weight * max(0.0, min(fp_sorted_vals[0], 1.0))
             scored = [
                 (
-                    (1 - w) * top_k_sims[i].item()
-                    + w * fp_sims[i],
+                    (1 - w) * top_k_sims[i].item() + w * fp_sims[i],
                     top_k_indices[i].item(),
                 )
                 for i in range(k)
@@ -820,10 +808,7 @@ class PredictiveSOMA(nn.Module):
             scored.sort(key=lambda t: -t[0])
             final_indices = [idx for _, idx in scored[:top_k]]
         else:
-            final_indices = [
-                top_k_indices[i].item()
-                for i in range(min(top_k, k))
-            ]
+            final_indices = [top_k_indices[i].item() for i in range(min(top_k, k))]
 
         # Step 6: Build results
         results: list[tuple[int, str, float]] = []
@@ -856,33 +841,26 @@ class PredictiveSOMA(nn.Module):
         self.soma.save_state(save_dir / "soma_state.pt")
 
         # Save PredictiveSOMA additions
-        torch.save({
-            "prediction_head": self.prediction_head.state_dict(),
-            "prediction_error": self.prediction_error,
-            "error_history": list(self.error_history),
-            "text_store": self.text_store,
-            "activation_store": {
-                k: v.cpu() for k, v in self._activation_store.items()
+        torch.save(
+            {
+                "prediction_head": self.prediction_head.state_dict(),
+                "prediction_error": self.prediction_error,
+                "error_history": list(self.error_history),
+                "text_store": self.text_store,
+                "activation_store": {k: v.cpu() for k, v in self._activation_store.items()},
+                "token_cache": self._token_cache,
+                "node_memory_index": {k: list(v) for k, v in self._node_memory_index.items()},
+                "input_projections": {k: v.cpu() for k, v in self._input_projections.items()},
+                "win_counts": self._win_counts,
+                "last_summary": (
+                    self._last_summary.cpu() if self._last_summary is not None else None
+                ),
+                "last_prediction": (
+                    self._last_prediction.cpu() if self._last_prediction is not None else None
+                ),
             },
-            "token_cache": self._token_cache,
-            "node_memory_index": {
-                k: list(v) for k, v in self._node_memory_index.items()
-            },
-            "input_projections": {
-                k: v.cpu() for k, v in self._input_projections.items()
-            },
-            "win_counts": self._win_counts,
-            "last_summary": (
-                self._last_summary.cpu()
-                if self._last_summary is not None
-                else None
-            ),
-            "last_prediction": (
-                self._last_prediction.cpu()
-                if self._last_prediction is not None
-                else None
-            ),
-        }, save_dir / "predictive_state.pt")
+            save_dir / "predictive_state.pt",
+        )
 
     def load(self, path: str) -> None:
         """Load full developmental state from disk."""
@@ -903,7 +881,8 @@ class PredictiveSOMA(nn.Module):
         self.prediction_head.to(self.device)
         self.prediction_error = state["prediction_error"]
         self.error_history = deque(
-            state["error_history"], maxlen=self.error_history.maxlen,
+            state["error_history"],
+            maxlen=self.error_history.maxlen,
         )
         self.text_store = state["text_store"]
         self._activation_store = {
@@ -911,9 +890,7 @@ class PredictiveSOMA(nn.Module):
         }
         self._token_cache = state.get("token_cache", {})
         raw_index = state.get("node_memory_index", {})
-        self._node_memory_index = {
-            k: set(v) for k, v in raw_index.items()
-        }
+        self._node_memory_index = {k: set(v) for k, v in raw_index.items()}
         # Preserve projection type across load: when config says
         # learnable, reconstruct as nn.Parameter so gradients continue
         # to flow. Otherwise stay as plain Tensor.
@@ -932,7 +909,8 @@ class PredictiveSOMA(nn.Module):
                     {"params": list(self.prediction_head.parameters()), "lr": 0.0003},
                     {
                         "params": [
-                            p for p in self._input_projections.values()
+                            p
+                            for p in self._input_projections.values()
                             if isinstance(p, torch.nn.Parameter)
                         ],
                         "lr": self.config.projection_lr,
@@ -941,9 +919,7 @@ class PredictiveSOMA(nn.Module):
             )
         self._win_counts = state.get("win_counts", {})
         self._last_summary = (
-            state["last_summary"].to(self.device)
-            if state["last_summary"] is not None
-            else None
+            state["last_summary"].to(self.device) if state["last_summary"] is not None else None
         )
         self._last_prediction = (
             state["last_prediction"].to(self.device)
@@ -990,10 +966,7 @@ class PredictiveSOMA(nn.Module):
         for node in self.soma.graph.all_nodes():
             if node.node_type in (NodeType.SENSOR, NodeType.OUTPUT):
                 continue
-            if (
-                node.last_activation is not None
-                and node.last_activation.norm().item() > 1e-8
-            ):
+            if node.last_activation is not None and node.last_activation.norm().item() > 1e-8:
                 active_nodes.add(node.id)
 
         if not active_nodes:
@@ -1009,9 +982,9 @@ class PredictiveSOMA(nn.Module):
         negatives: list[int] = []
         for step in all_steps:
             overlap = sum(
-                1 for nid in active_nodes
-                if nid in self._node_memory_index
-                and step in self._node_memory_index[nid]
+                1
+                for nid in active_nodes
+                if nid in self._node_memory_index and step in self._node_memory_index[nid]
             )
             ratio = overlap / n_active
             if ratio >= 0.5:
@@ -1025,12 +998,8 @@ class PredictiveSOMA(nn.Module):
         # Contrastive loss: pull query toward positive fingerprints,
         # push away from negative fingerprints.
         # Uses the stored fingerprints as anchors (detached).
-        pos_fps = torch.stack(
-            [self._activation_store[s].detach() for s in positives[:8]]
-        )
-        neg_fps = torch.stack(
-            [self._activation_store[s].detach() for s in negatives[:8]]
-        )
+        pos_fps = torch.stack([self._activation_store[s].detach() for s in positives[:8]])
+        neg_fps = torch.stack([self._activation_store[s].detach() for s in negatives[:8]])
 
         # Project query embedding to fingerprint space for comparison
         query_fp = self._get_node_fingerprint()  # detached from graph
@@ -1052,7 +1021,11 @@ class PredictiveSOMA(nn.Module):
         # This is a simplified contrastive objective:
         # minimize distance to positive centroid, maximize to negative
         fp_dim = pos_mean.shape[0]
-        q_proj = query_embedding[:fp_dim] if query_embedding.shape[0] >= fp_dim else torch.nn.functional.pad(query_embedding, (0, fp_dim - query_embedding.shape[0]))
+        q_proj = (
+            query_embedding[:fp_dim]
+            if query_embedding.shape[0] >= fp_dim
+            else torch.nn.functional.pad(query_embedding, (0, fp_dim - query_embedding.shape[0]))
+        )
 
         pos_dist = torch.nn.functional.mse_loss(q_proj, pos_mean)
         neg_dist = torch.nn.functional.mse_loss(q_proj, neg_mean)
@@ -1130,9 +1103,7 @@ class PredictiveSOMA(nn.Module):
             self.text_store[step_num] = source_text
             # Cache BPE token IDs for token-overlap retrieval
             if self._tokenizer_fn is not None:
-                self._token_cache[step_num] = set(
-                    self._tokenizer_fn(source_text)
-                )
+                self._token_cache[step_num] = set(self._tokenizer_fn(source_text))
 
         current_summary = self._get_activation_summary(step_result)
 
@@ -1165,10 +1136,7 @@ class PredictiveSOMA(nn.Module):
             # pred_loss -> prediction_head -> projected_last
             #    -> mean(proj @ _last_summary for each proj)
             #    -> each projection's parameters.
-            if (
-                self.config.projection_mode == "learnable"
-                and self._input_projections
-            ):
+            if self.config.projection_mode == "learnable" and self._input_projections:
                 projected_views = []
                 for proj in self._input_projections.values():
                     # Treat _last_summary as detached input (it was
@@ -1180,7 +1148,8 @@ class PredictiveSOMA(nn.Module):
                 pred_input = self._last_summary
             predicted = self.prediction_head(pred_input)
             pred_loss = torch.nn.functional.mse_loss(
-                predicted, current_summary.detach(),
+                predicted,
+                current_summary.detach(),
             )
             self.prediction_error = pred_loss.item()
 
@@ -1192,7 +1161,7 @@ class PredictiveSOMA(nn.Module):
             # student sensor_output_dim); truncate/pad to align.
             distill_loss: torch.Tensor | None = None
             if (
-                self.config.projection_distillation_target == "llm_embedding"
+                self.config.projection_distillation_target in ("llm_embedding", "llm_spatial")
                 and self._teacher is not None
                 and source_text is not None
                 and self.config.projection_mode == "learnable"
@@ -1205,14 +1174,58 @@ class PredictiveSOMA(nn.Module):
                 else:
                     teacher_aligned = torch.zeros(s_dim, device=self.device)
                     teacher_aligned[: teacher_emb.shape[0]] = teacher_emb
-                cos = torch.nn.functional.cosine_similarity(
-                    pred_input.unsqueeze(0),
-                    teacher_aligned.detach().unsqueeze(0),
-                    dim=1,
-                )
-                distill_loss = (
-                    1.0 - cos.squeeze()
-                ) * self.config.projection_distillation_weight
+                teacher_aligned = teacher_aligned.detach()
+
+                K = self.config.projection_distillation_winners
+                if K <= 0:
+                    # Direction 4a: mean-target cosine loss. All
+                    # associators share the same gradient signal via
+                    # the averaged pred_input view.
+                    cos = torch.nn.functional.cosine_similarity(
+                        pred_input.unsqueeze(0),
+                        teacher_aligned.unsqueeze(0),
+                        dim=1,
+                    )
+                    distill_loss = (
+                        1.0 - cos.squeeze()
+                    ) * self.config.projection_distillation_weight
+                else:
+                    # Direction 4b: competitive top-K winners. Only the
+                    # K most-activated associator nodes receive distill
+                    # gradient on their per-node projection — different
+                    # inputs activate different nodes, so projections
+                    # diverge per-node rather than collapsing toward a
+                    # shared target (Direction 4a's degeneracy).
+                    from soma.core.node import NodeType as _NT_D4b
+
+                    scored_nodes: list[tuple[float, str]] = []
+                    for node in self.soma.graph.all_nodes():
+                        if node.node_type != _NT_D4b.ASSOCIATOR:
+                            continue
+                        if node.id not in self._input_projections:
+                            continue
+                        if node.last_activation is None:
+                            continue
+                        mag = node.last_activation.norm().item()
+                        scored_nodes.append((mag, node.id))
+                    scored_nodes.sort(key=lambda t: -t[0])
+                    winners = [nid for _, nid in scored_nodes[:K]]
+
+                    if winners:
+                        per_winner_losses = []
+                        for nid in winners:
+                            proj = self._input_projections[nid]
+                            view = proj @ self._last_summary
+                            cos = torch.nn.functional.cosine_similarity(
+                                view.unsqueeze(0),
+                                teacher_aligned.unsqueeze(0),
+                                dim=1,
+                            )
+                            per_winner_losses.append(1.0 - cos.squeeze())
+                        distill_loss = (
+                            torch.stack(per_winner_losses).mean()
+                            * self.config.projection_distillation_weight
+                        )
 
             # Only update if error is still meaningful — prevent
             # over-convergence that collapses all fingerprints.

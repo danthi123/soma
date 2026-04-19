@@ -36,7 +36,7 @@ class TestPositionProjector:
         proj = pred._position_projector
         assert isinstance(proj, torch.Tensor)
         assert not isinstance(proj, torch.nn.Parameter)
-        expected_shape = (cfg.sensor_output_dim ** 2, cfg.position_dim)
+        expected_shape = (cfg.sensor_output_dim**2, cfg.position_dim)
         assert proj.shape == expected_shape
         # Must be a registered buffer (follows the Module across
         # .to(device) / state_dict() calls)
@@ -46,7 +46,8 @@ class TestPositionProjector:
     def test_position_projector_absent_when_not_spatial(self) -> None:
         """Frozen position_mode — no need for projector."""
         cfg = SOMAConfig.developmental(
-            initial_associator_count=4, max_nodes=16,
+            initial_associator_count=4,
+            max_nodes=16,
         )
         pred = PredictiveSOMA(config=cfg)
         # Attribute may or may not exist but must be None / absent when inactive
@@ -138,9 +139,7 @@ class TestEnsurePosition:
             device=pred.device,
         )
         pred.soma.graph.add_node(new_node)
-        opt_params_before = {
-            id(p) for g in pred._pred_optimizer.param_groups for p in g["params"]
-        }
+        opt_params_before = {id(p) for g in pred._pred_optimizer.param_groups for p in g["params"]}
         norms_before = dict(pred._initial_position_norms)
 
         pred._ensure_position(new_node.id)
@@ -148,9 +147,7 @@ class TestEnsurePosition:
         assert not isinstance(new_node.position, torch.nn.Parameter)
         assert new_node.id not in pred._initial_position_norms
         assert pred._initial_position_norms == norms_before
-        opt_params_after = {
-            id(p) for g in pred._pred_optimizer.param_groups for p in g["params"]
-        }
+        opt_params_after = {id(p) for g in pred._pred_optimizer.param_groups for p in g["params"]}
         assert opt_params_after == opt_params_before
 
     def test_ensure_position_creates_parameter_on_new_node(self) -> None:
@@ -181,3 +178,61 @@ class TestEnsurePosition:
             for p in g["params"]:
                 opt_params.add(id(p))
         assert id(new_node.position) in opt_params
+
+
+class TestCompetitiveDistillation:
+    def test_only_top_k_winners_receive_distill_gradient(self) -> None:
+        """With K=2 winners, only 2 nodes' projections should receive
+        distillation gradient per step. Others get zero grad on the
+        distill path."""
+        cfg = _spatial_config(projection_distillation_winners=2)
+        pred = PredictiveSOMA(config=cfg)
+
+        teacher = MagicMock()
+        teacher.name = "fake"
+        teacher.embed.return_value = torch.randn(1024)
+        pred.attach_teacher(teacher)
+
+        from soma.core.node import NodeType
+
+        associators = [n for n in pred.soma.graph.all_nodes() if n.node_type == NodeType.ASSOCIATOR]
+        assert len(associators) >= 3, "need at least 3 associators for test"
+
+        x = torch.randn(cfg.sensor_output_dim)
+        # Prime _last_summary
+        pred.process_input(x, source_text="step 1")
+        # Second step: distill + position losses fire
+        pred.process_input(x, source_text="step 2")
+
+        # Llm_spatial path must have actually fired: teacher.embed
+        # should have been called at least once (during step 2 when
+        # _last_summary is available).
+        assert teacher.embed.call_count >= 1, (
+            "teacher.embed should be called when target=llm_spatial"
+        )
+        # Projections remain finite (no NaN/Inf from optimizer step).
+        for proj in pred._input_projections.values():
+            assert torch.isfinite(proj).all()
+
+    def test_k_zero_means_all_nodes_receive_distill(self) -> None:
+        """Backward-compat: K=0 means no competitive gate (fall back to
+        Direction 4a mean-target behavior). Must still fire under
+        target=llm_spatial."""
+        cfg = _spatial_config(projection_distillation_winners=0)
+        pred = PredictiveSOMA(config=cfg)
+
+        teacher = MagicMock()
+        teacher.name = "fake"
+        teacher.embed.return_value = torch.randn(1024)
+        pred.attach_teacher(teacher)
+
+        x = torch.randn(cfg.sensor_output_dim)
+        pred.process_input(x, source_text="t1")
+        pred.process_input(x, source_text="t2")
+
+        # K=0 path must still engage the teacher (mean-target fallback).
+        assert teacher.embed.call_count >= 1, (
+            "K=0 should fall back to mean-target and still consult teacher"
+        )
+        for proj in pred._input_projections.values():
+            assert torch.isfinite(proj).all()

@@ -7,26 +7,24 @@ Architecture (different from run_locomo_locality):
 This runner uses PredictiveSOMA **directly** (not via MemoryLayer +
 attach_soma) because the distillation loss lives inside
 ``PredictiveSOMA.process_input``. MemoryLayer's ``attach_soma`` attaches
-a plain SOMA that doesn't exercise the distillation path, so its
-graph rerank can't benefit from distilled projections.
+a plain SOMA that doesn't exercise the distillation path.
 
-Systems (3 minimal, expandable to 5):
+LoCoMo protocol: each conversation is evaluated independently. For
+each sample, we build a fresh memory, process that sample's turns,
+then answer that sample's queries. Evidence is expected to be within
+the same conversation (cross-sample matches are false positives).
+
+Systems (3 minimal):
 - ``chroma-mxbai``       Chroma with mxbai-embed-large embeddings.
 - ``soma-random``        PredictiveSOMA, frozen random projections,
                          retrieve_hybrid(alpha=0.3).
 - ``soma-distilled``     PredictiveSOMA, learnable projections +
                          distillation, retrieve_hybrid(alpha=0.3).
 
-All use the same mxbai-embed-large teacher/encoder for the
-**embedding** step so the difference is purely in graph re-ranking.
-
 Usage:
-    python -m benchmarks.run_locomo_distill \\
-        --max-samples 2 \\  # quick subset first
+    python -u -m benchmarks.run_locomo_distill \\
+        --max-samples 2 \\
         --out benchmarks/reports/locomo_distill_subset.md
-
-    python -m benchmarks.run_locomo_distill \\
-        --out benchmarks/reports/locomo_distill_full.md
 """
 from __future__ import annotations
 
@@ -34,7 +32,7 @@ import argparse
 import json
 import time
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -61,7 +59,6 @@ class DistillResult:
     recall_by_category: dict[str, dict[int, float]]
     store_total_s: float
     retrieve_avg_ms: float
-    facts_stored: int
 
 
 K_VALUES = [1, 5, 10]
@@ -72,8 +69,8 @@ def embed_corpus_with_mxbai(
     texts: list[str],
     target_dim: int,
 ) -> torch.Tensor:
-    """Embed a list of texts, truncate to target_dim, L2-normalize rows."""
-    batches = []
+    """Embed, truncate to target_dim, L2-normalize rows."""
+    out = []
     for t in texts:
         e = teacher.embed(t)
         if e.shape[0] >= target_dim:
@@ -82,134 +79,114 @@ def embed_corpus_with_mxbai(
             pad = torch.zeros(target_dim)
             pad[: e.shape[0]] = e
             e = pad
-        # L2 normalize for cosine similarity
         e = e / (e.norm() + 1e-8)
-        batches.append(e)
-    return torch.stack(batches)
+        out.append(e)
+    return torch.stack(out)
 
 
-def _score_queries(
-    hits_list: list[list[tuple[int, str, float]]],
-    queries: list[LoCoMoQuery],
-    turn_id_to_step: dict[str, int],
+def _embed_query(teacher: CachedEmbedder, text: str, target_dim: int) -> torch.Tensor:
+    e = teacher.embed(text)
+    if e.shape[0] >= target_dim:
+        e = e[:target_dim]
+    else:
+        pad = torch.zeros(target_dim)
+        pad[: e.shape[0]] = e
+        e = pad
+    return e / (e.norm() + 1e-8)
+
+
+def _aggregate_recall(
+    per_sample: list[tuple[dict[int, int], dict[int, int], dict[str, dict[int, int]], dict[str, int]]],
 ) -> tuple[dict[int, float], dict[str, dict[int, float]]]:
-    """For each query, compute R@k based on evidence turn IDs.
-
-    A "hit" is credited if any of the top-k results corresponds to an
-    evidence turn of the query.
+    """Merge per-sample (hit_counts, total_counts, cat_hits, cat_totals)
+    into dataset-wide R@k and R@k by category.
     """
-    recall_hits: dict[int, int] = {k: 0 for k in K_VALUES}
-    by_cat: dict[str, dict[int, int]] = {
-        name: {k: 0 for k in K_VALUES} for name in CATEGORY_NAMES.values()
-    }
-    by_cat_total: dict[str, int] = {name: 0 for name in CATEGORY_NAMES.values()}
+    total_hits: dict[int, int] = {k: 0 for k in K_VALUES}
+    total_queries: dict[int, int] = {k: 0 for k in K_VALUES}
+    cat_hits: dict[str, dict[int, int]] = defaultdict(lambda: {k: 0 for k in K_VALUES})
+    cat_totals: dict[str, int] = defaultdict(int)
 
-    for query, hits in zip(queries, hits_list, strict=False):
-        cat_name = CATEGORY_NAMES.get(query.category, "unknown")
-        if cat_name in by_cat_total:
-            by_cat_total[cat_name] += 1
-
-        evidence_steps = {
-            turn_id_to_step[tid] for tid in query.evidence
-            if tid in turn_id_to_step
-        }
-        if not evidence_steps:
-            continue
-
-        # Hits is list of (step, text, score) or (step, doc_id, score)
+    for hit_counts, total_counts, ch, ct in per_sample:
         for k in K_VALUES:
-            if any(
-                h[0] in evidence_steps for h in hits[:k]
-            ):
-                recall_hits[k] += 1
-                if cat_name in by_cat:
-                    by_cat[cat_name][k] += 1
+            total_hits[k] += hit_counts[k]
+            total_queries[k] += total_counts[k]
+        for name, kmap in ch.items():
+            for k in K_VALUES:
+                cat_hits[name][k] += kmap[k]
+        for name, n in ct.items():
+            cat_totals[name] += n
 
-    n = len(queries)
-    recall = {k: recall_hits[k] / max(1, n) for k in K_VALUES}
-    recall_by_cat = {
-        name: {k: by_cat[name][k] / max(1, by_cat_total[name]) for k in K_VALUES}
-        for name in by_cat
+    recall = {k: total_hits[k] / max(1, total_queries[k]) for k in K_VALUES}
+    recall_by_cat: dict[str, dict[int, float]] = {
+        name: {k: cat_hits[name][k] / max(1, cat_totals[name]) for k in K_VALUES}
+        for name in cat_totals
     }
     return recall, recall_by_cat
 
 
-def run_chroma_mxbai(
+def _score_sample_queries(
+    queries: list[LoCoMoQuery],
+    hits_list: list[list[str]],   # retrieved dia_ids per query, in rank order
+) -> tuple[dict[int, int], dict[int, int], dict[str, dict[int, int]], dict[str, int]]:
+    """Compute per-query R@k hits within a single sample."""
+    hit_counts: dict[int, int] = {k: 0 for k in K_VALUES}
+    total_counts: dict[int, int] = {k: 0 for k in K_VALUES}
+    cat_hits: dict[str, dict[int, int]] = {
+        name: {k: 0 for k in K_VALUES} for name in CATEGORY_NAMES.values()
+    }
+    cat_totals: dict[str, int] = {name: 0 for name in CATEGORY_NAMES.values()}
+
+    for q, retrieved in zip(queries, hits_list, strict=False):
+        cat_name = CATEGORY_NAMES.get(q.category, "unknown")
+        if cat_name in cat_totals:
+            cat_totals[cat_name] += 1
+        for k in K_VALUES:
+            total_counts[k] += 1
+            if any(e in retrieved[:k] for e in q.evidence):
+                hit_counts[k] += 1
+                if cat_name in cat_hits:
+                    cat_hits[cat_name][k] += 1
+    return hit_counts, total_counts, cat_hits, cat_totals
+
+
+def _run_chroma_on_sample(
+    sample_id: str,
     turns: list[LoCoMoTurn],
     queries: list[LoCoMoQuery],
     teacher: CachedEmbedder,
     target_dim: int,
-) -> DistillResult:
-    """Chroma with pre-computed mxbai embeddings."""
+) -> tuple[tuple, float, float]:
     import chromadb
 
     client = chromadb.EphemeralClient()
+    # Unique collection name per sample; safe IDs = dia_ids (unique within sample)
     col = client.get_or_create_collection(
-        name="locomo_mxbai", metadata={"hnsw:space": "cosine"},
+        name=f"locomo_{sample_id}", metadata={"hnsw:space": "cosine"},
     )
-
-    # Each turn becomes a doc whose ID is its dia_id so we can look up
-    # the turn index from the evidence list later.
-    t0 = time.perf_counter()
     texts = [t.text for t in turns]
     ids = [t.dia_id for t in turns]
-    print(f"  Embedding {len(texts)} turns with mxbai...")
+    t0 = time.perf_counter()
     embeddings = embed_corpus_with_mxbai(teacher, texts, target_dim)
-    # Chroma accepts embeddings as list[list[float]]
-    col.add(
-        ids=ids,
-        documents=texts,
-        embeddings=embeddings.tolist(),
-    )
-    store_total = time.perf_counter() - t0
+    col.add(ids=ids, documents=texts, embeddings=embeddings.tolist())
+    store_s = time.perf_counter() - t0
 
-    # Map dia_id -> "step" (just its index for consistent scoring with SOMA)
-    turn_id_to_step = {t.dia_id: i for i, t in enumerate(turns)}
-
-    hits_list: list[list[tuple[int, str, float]]] = []
-    retrieve_times = []
-    print(f"  Running {len(queries)} queries...")
+    retrieved_per_q: list[list[str]] = []
+    rt_start = time.perf_counter()
     for q in queries:
-        q_emb = teacher.embed(q.question)
-        if q_emb.shape[0] >= target_dim:
-            q_emb = q_emb[:target_dim]
-        else:
-            pad = torch.zeros(target_dim)
-            pad[: q_emb.shape[0]] = q_emb
-            q_emb = pad
-        q_emb = q_emb / (q_emb.norm() + 1e-8)
-
-        t0 = time.perf_counter()
+        q_emb = _embed_query(teacher, q.question, target_dim)
         result = col.query(
             query_embeddings=[q_emb.tolist()],
             n_results=max(K_VALUES),
         )
-        retrieve_times.append(time.perf_counter() - t0)
-        result_ids = result.get("ids", [[]])[0]
-        result_docs = result.get("documents", [[]])[0]
-        result_dists = result.get("distances", [[]])[0]
-        hits = [
-            (turn_id_to_step.get(nid, -1), doc, 1.0 - float(d))
-            for nid, doc, d in zip(result_ids, result_docs, result_dists, strict=False)
-        ]
-        hits_list.append(hits)
+        retrieved_per_q.append(result.get("ids", [[]])[0])
+    retrieve_s = time.perf_counter() - rt_start
 
-    recall, recall_by_cat = _score_queries(hits_list, queries, turn_id_to_step)
-
-    return DistillResult(
-        system="chroma-mxbai",
-        n_turns=len(turns),
-        n_queries=len(queries),
-        recall_at_k=recall,
-        recall_by_category=recall_by_cat,
-        store_total_s=store_total,
-        retrieve_avg_ms=sum(retrieve_times) * 1000 / max(1, len(retrieve_times)),
-        facts_stored=len(turns),
-    )
+    score_tuple = _score_sample_queries(queries, retrieved_per_q)
+    return score_tuple, store_s, retrieve_s
 
 
-def run_soma_predictive(
-    system_name: str,
+def _run_soma_on_sample(
+    sample_id: str,
     turns: list[LoCoMoTurn],
     queries: list[LoCoMoQuery],
     teacher: CachedEmbedder,
@@ -220,14 +197,10 @@ def run_soma_predictive(
     distillation_weight: float,
     synap_locality: float,
     device: torch.device,
-    seed: int = 0,
-    rerank_weight: float = 0.3,
-    gate_threshold: float = 0.05,
-) -> DistillResult:
-    """PredictiveSOMA-based retrieval using mxbai for embedding +
-    graph fingerprint for rerank.
-    """
-    # Build a developmental PredictiveSOMA sized to the target embedding dim
+    seed: int,
+    rerank_weight: float,
+    gate_threshold: float,
+) -> tuple[tuple, float, float]:
     config = SOMAConfig.developmental(
         sensor_output_dim=target_dim,
         text_embed_dim=target_dim,
@@ -241,45 +214,34 @@ def run_soma_predictive(
         projection_distillation_target=distillation_target,
         projection_distillation_weight=distillation_weight,
         synaptogenesis_max_distance=synap_locality,
-        neurogenesis_interval=0,  # synap-only per plan
+        neurogenesis_interval=0,
         seed=seed,
     )
     pred = PredictiveSOMA(config=config, device=device)
     if distillation_target == "llm_embedding":
         pred.attach_teacher(teacher)
 
-    # Storage phase: embed all turns (mxbai) + process through SOMA
-    print(f"  Storing {len(turns)} turns...")
-    t0 = time.perf_counter()
+    # Storage: embed turns and feed through SOMA
     texts = [t.text for t in turns]
     corpus_embeddings = embed_corpus_with_mxbai(teacher, texts, target_dim).to(device)
-    turn_id_to_step: dict[str, int] = {}
+    dia_ids = [t.dia_id for t in turns]
+    step_to_dia_id: dict[int, str] = {}
     step_to_corpus_idx: dict[int, int] = {}
+
+    t0 = time.perf_counter()
     for i, t in enumerate(turns):
         result = pred.process_input(
             corpus_embeddings[i], source_text=t.text,
         )
         step = result.get("global_step", i)
-        turn_id_to_step[t.dia_id] = step
+        step_to_dia_id[step] = t.dia_id
         step_to_corpus_idx[step] = i
-    store_total = time.perf_counter() - t0
-    print(f"    store_total={store_total:.1f}s")
+    store_s = time.perf_counter() - t0
 
-    # Retrieval phase: embed query (mxbai) + hybrid retrieval
-    hits_list: list[list[tuple[int, str, float]]] = []
-    retrieve_times = []
-    print(f"  Running {len(queries)} queries...")
+    retrieved_per_q: list[list[str]] = []
+    rt_start = time.perf_counter()
     for q in queries:
-        q_emb = teacher.embed(q.question)
-        if q_emb.shape[0] >= target_dim:
-            q_emb = q_emb[:target_dim]
-        else:
-            pad = torch.zeros(target_dim)
-            pad[: q_emb.shape[0]] = q_emb
-            q_emb = pad
-        q_emb = (q_emb / (q_emb.norm() + 1e-8)).to(device)
-
-        t0 = time.perf_counter()
+        q_emb = _embed_query(teacher, q.question, target_dim).to(device)
         hits = pred.retrieve_hybrid(
             q_emb,
             corpus_embeddings=corpus_embeddings,
@@ -289,25 +251,115 @@ def run_soma_predictive(
             gate_threshold=gate_threshold,
             rerank_weight=rerank_weight,
         )
-        retrieve_times.append(time.perf_counter() - t0)
-        hits_list.append(hits)
+        # hits are (step, text, score); map step → dia_id
+        retrieved_dia_ids = [
+            step_to_dia_id.get(h[0], "")
+            for h in hits
+        ]
+        retrieved_per_q.append(retrieved_dia_ids)
+    retrieve_s = time.perf_counter() - rt_start
 
-    recall, recall_by_cat = _score_queries(hits_list, queries, turn_id_to_step)
+    score_tuple = _score_sample_queries(queries, retrieved_per_q)
+    return score_tuple, store_s, retrieve_s
 
+
+def run_chroma_mxbai(
+    samples: list[str],
+    turns_by_sample: dict[str, list[LoCoMoTurn]],
+    queries_by_sample: dict[str, list[LoCoMoQuery]],
+    teacher: CachedEmbedder,
+    target_dim: int,
+) -> DistillResult:
+    per_sample = []
+    total_store = 0.0
+    total_retrieve = 0.0
+    n_turns = 0
+    n_queries = 0
+    for sid in samples:
+        sample_turns = turns_by_sample[sid]
+        sample_queries = queries_by_sample.get(sid, [])
+        if not sample_queries:
+            continue
+        print(f"  chroma-mxbai sample={sid} turns={len(sample_turns)} queries={len(sample_queries)}")
+        score_tuple, ss, rs = _run_chroma_on_sample(
+            sid, sample_turns, sample_queries, teacher, target_dim,
+        )
+        per_sample.append(score_tuple)
+        total_store += ss
+        total_retrieve += rs
+        n_turns += len(sample_turns)
+        n_queries += len(sample_queries)
+
+    recall, recall_by_cat = _aggregate_recall(per_sample)
     return DistillResult(
-        system=system_name,
-        n_turns=len(turns),
-        n_queries=len(queries),
+        system="chroma-mxbai",
+        n_turns=n_turns,
+        n_queries=n_queries,
         recall_at_k=recall,
         recall_by_category=recall_by_cat,
-        store_total_s=store_total,
-        retrieve_avg_ms=sum(retrieve_times) * 1000 / max(1, len(retrieve_times)),
-        facts_stored=len(turns),
+        store_total_s=total_store,
+        retrieve_avg_ms=total_retrieve * 1000 / max(1, n_queries),
+    )
+
+
+def run_soma_predictive(
+    system_name: str,
+    samples: list[str],
+    turns_by_sample: dict[str, list[LoCoMoTurn]],
+    queries_by_sample: dict[str, list[LoCoMoQuery]],
+    teacher: CachedEmbedder,
+    target_dim: int,
+    *,
+    projection_mode: str,
+    distillation_target: str,
+    distillation_weight: float,
+    synap_locality: float,
+    device: torch.device,
+    seed: int = 0,
+    rerank_weight: float = 0.3,
+    gate_threshold: float = 0.05,
+) -> DistillResult:
+    per_sample = []
+    total_store = 0.0
+    total_retrieve = 0.0
+    n_turns = 0
+    n_queries = 0
+    for sid in samples:
+        sample_turns = turns_by_sample[sid]
+        sample_queries = queries_by_sample.get(sid, [])
+        if not sample_queries:
+            continue
+        print(f"  {system_name} sample={sid} turns={len(sample_turns)} queries={len(sample_queries)}")
+        score_tuple, ss, rs = _run_soma_on_sample(
+            sid, sample_turns, sample_queries, teacher, target_dim,
+            projection_mode=projection_mode,
+            distillation_target=distillation_target,
+            distillation_weight=distillation_weight,
+            synap_locality=synap_locality,
+            device=device,
+            seed=seed,
+            rerank_weight=rerank_weight,
+            gate_threshold=gate_threshold,
+        )
+        per_sample.append(score_tuple)
+        total_store += ss
+        total_retrieve += rs
+        n_turns += len(sample_turns)
+        n_queries += len(sample_queries)
+
+    recall, recall_by_cat = _aggregate_recall(per_sample)
+    return DistillResult(
+        system=system_name,
+        n_turns=n_turns,
+        n_queries=n_queries,
+        recall_at_k=recall,
+        recall_by_category=recall_by_cat,
+        store_total_s=total_store,
+        retrieve_avg_ms=total_retrieve * 1000 / max(1, n_queries),
     )
 
 
 def format_markdown(results: list[DistillResult]) -> str:
-    """Generate the markdown report table."""
     lines = [
         "# LoCoMo distillation ablation",
         "",
@@ -346,7 +398,6 @@ def format_markdown(results: list[DistillResult]) -> str:
             row.append(f"{val:.3f}")
         lines.append("| " + " | ".join(row) + " |")
 
-    # Primary comparison
     sys_by_name = {r.system: r for r in results}
     if "chroma-mxbai" in sys_by_name and "soma-distilled" in sys_by_name:
         baseline_r5 = sys_by_name["chroma-mxbai"].recall_at_k.get(5, 0)
@@ -381,7 +432,7 @@ def main() -> None:
     p.add_argument(
         "--skip-chroma",
         action="store_true",
-        help="skip the chroma-mxbai baseline (for when chromadb isn't installed)",
+        help="skip the chroma-mxbai baseline",
     )
     args = p.parse_args()
 
@@ -394,12 +445,18 @@ def main() -> None:
     if args.max_samples is not None:
         samples = samples[: args.max_samples]
 
-    turns = [t for t in all_turns if t.sample_id in set(samples)]
-    queries = [q for q in all_queries if q.sample_id in set(samples)]
-    print(
-        f"  {len(samples)} conversations, {len(turns)} turns, "
-        f"{len(queries)} queries."
-    )
+    samples_set = set(samples)
+    turns_by_sample: dict[str, list[LoCoMoTurn]] = defaultdict(list)
+    queries_by_sample: dict[str, list[LoCoMoQuery]] = defaultdict(list)
+    for t in all_turns:
+        if t.sample_id in samples_set:
+            turns_by_sample[t.sample_id].append(t)
+    for q in all_queries:
+        if q.sample_id in samples_set:
+            queries_by_sample[q.sample_id].append(q)
+    n_turns = sum(len(v) for v in turns_by_sample.values())
+    n_queries = sum(len(v) for v in queries_by_sample.values())
+    print(f"  {len(samples)} conversations, {n_turns} turns, {n_queries} queries.")
 
     cache_dir = Path("benchmarks/.teacher_cache")
     cache_dir.mkdir(parents=True, exist_ok=True)
@@ -412,15 +469,15 @@ def main() -> None:
     if not args.skip_chroma:
         print("\n=== chroma-mxbai ===")
         try:
-            r = run_chroma_mxbai(turns, queries, teacher, args.target_dim)
+            r = run_chroma_mxbai(samples, turns_by_sample, queries_by_sample, teacher, args.target_dim)
             results.append(r)
-            print(f"  R@5={r.recall_at_k[5]:.3f} retrieve={r.retrieve_avg_ms:.1f}ms")
+            print(f"  R@1={r.recall_at_k[1]:.3f} R@5={r.recall_at_k[5]:.3f} R@10={r.recall_at_k[10]:.3f} retrieve={r.retrieve_avg_ms:.1f}ms")
         except ImportError as e:
             print(f"  SKIP: {e}")
 
-    print("\n=== soma-random (frozen random projections) ===")
+    print("\n=== soma-random (frozen projections) ===")
     r = run_soma_predictive(
-        "soma-random", turns, queries, teacher, args.target_dim,
+        "soma-random", samples, turns_by_sample, queries_by_sample, teacher, args.target_dim,
         projection_mode="frozen_random",
         distillation_target="none",
         distillation_weight=0.0,
@@ -428,11 +485,11 @@ def main() -> None:
         device=device,
     )
     results.append(r)
-    print(f"  R@5={r.recall_at_k[5]:.3f} retrieve={r.retrieve_avg_ms:.1f}ms")
+    print(f"  R@1={r.recall_at_k[1]:.3f} R@5={r.recall_at_k[5]:.3f} R@10={r.recall_at_k[10]:.3f} retrieve={r.retrieve_avg_ms:.1f}ms")
 
-    print("\n=== soma-distilled (learnable + mxbai distillation) ===")
+    print("\n=== soma-distilled (learnable + mxbai distill) ===")
     r = run_soma_predictive(
-        "soma-distilled", turns, queries, teacher, args.target_dim,
+        "soma-distilled", samples, turns_by_sample, queries_by_sample, teacher, args.target_dim,
         projection_mode="learnable",
         distillation_target="llm_embedding",
         distillation_weight=0.5,
@@ -440,9 +497,8 @@ def main() -> None:
         device=device,
     )
     results.append(r)
-    print(f"  R@5={r.recall_at_k[5]:.3f} retrieve={r.retrieve_avg_ms:.1f}ms")
+    print(f"  R@1={r.recall_at_k[1]:.3f} R@5={r.recall_at_k[5]:.3f} R@10={r.recall_at_k[10]:.3f} retrieve={r.retrieve_avg_ms:.1f}ms")
 
-    # Write out
     args.out.parent.mkdir(parents=True, exist_ok=True)
     md = format_markdown(results)
     args.out.write_text(md, encoding="utf-8")
@@ -451,8 +507,8 @@ def main() -> None:
         json.dumps(
             {
                 "n_samples": len(samples),
-                "n_turns": len(turns),
-                "n_queries": len(queries),
+                "n_turns": n_turns,
+                "n_queries": n_queries,
                 "results": [
                     {
                         "system": r.system,

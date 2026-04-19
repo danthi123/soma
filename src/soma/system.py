@@ -141,6 +141,15 @@ class SOMA:
         # enforce the cooldown. -inf-equivalent sentinel so the first
         # eligible trigger can fire.
         self._last_neurogenesis_step: int = -(10**9)
+        # PE-supervised synaptogenesis (Direction 1) bookkeeping.
+        # Keys are unordered (sorted) pair tuples; values are running EMAs
+        # of (loss[t] - loss[t-1]) observed when the pair was co-active.
+        # ``_synap_pe_counts`` is the per-pair observation count used by
+        # the "min_observations" cold-start guard. ``_last_pe`` holds the
+        # previous step's loss for computing deltas.
+        self._synap_pe_ema: dict[tuple[str, str], float] = {}
+        self._synap_pe_counts: dict[tuple[str, str], int] = {}
+        self._last_pe: float | None = None
 
         self.graph = Graph()
         self._initialize_seed_graph(config)
@@ -409,6 +418,10 @@ class SOMA:
         self.last_curiosity = self._update_curiosity(inputs, loss_value)
 
         if not eval_mode:
+            # Update per-pair PE-delta EMA BEFORE growth so synaptogenesis
+            # (called from _maybe_grow) sees the freshest evidence for
+            # this step's co-active pairs.
+            self._maybe_update_synap_pe(activations, loss_value)
             self._maybe_grow(activations, loss_value, rng=rng)
             self._maybe_consolidate(rng=rng)
 
@@ -546,6 +559,84 @@ class SOMA:
             }
         )
 
+    # ------------------------------------------------------------------
+    # PE-supervised synaptogenesis helpers (Direction 1)
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _synap_pair_key(a: str, b: str) -> tuple[str, str]:
+        """Produce the canonical unordered pair key.
+
+        Co-activation is symmetric, so (a, b) and (b, a) share the same
+        evidence slot. Sorting gives a stable canonical tuple without
+        needing a frozenset (simpler serialization surface).
+        """
+        return (a, b) if a <= b else (b, a)
+
+    def _update_synap_pe_ema(
+        self, active_ids: set[str] | frozenset[str], pe_delta: float
+    ) -> None:
+        """Update the per-pair PE-delta EMA for every co-active pair.
+
+        Called once per step when supervision is enabled AND a previous
+        PE sample is available. Every pair of ids in ``active_ids`` gets
+        its EMA nudged toward ``pe_delta`` with smoothing
+        ``config.synaptogenesis_pe_ema_alpha``.
+        """
+        if len(active_ids) < 2:
+            return
+        alpha = self.config.synaptogenesis_pe_ema_alpha
+        sorted_ids = sorted(active_ids)
+        for i in range(len(sorted_ids)):
+            a = sorted_ids[i]
+            for j in range(i + 1, len(sorted_ids)):
+                b = sorted_ids[j]
+                key = (a, b)  # already sorted
+                prev = self._synap_pe_ema.get(key, 0.0)
+                self._synap_pe_ema[key] = alpha * prev + (1.0 - alpha) * pe_delta
+                self._synap_pe_counts[key] = self._synap_pe_counts.get(key, 0) + 1
+
+    def _coactive_ids_for_supervision(
+        self, activations: dict[str, torch.Tensor]
+    ) -> set[str]:
+        """Return the set of node ids whose RMS magnitude exceeds the
+        activation threshold, mirroring synaptogenesis's own gating so
+        the EMA signal tracks the same notion of co-activation that the
+        edge admission pass uses.
+        """
+        threshold = self.config.activation_threshold
+        active: set[str] = set()
+        for nid, act in activations.items():
+            tensor = act.detach()
+            numel = tensor.numel()
+            if numel == 0:
+                continue
+            mag = float(tensor.norm().item()) / math.sqrt(numel)
+            if mag > threshold and nid in self.graph.nodes:
+                active.add(nid)
+        return active
+
+    def _maybe_update_synap_pe(
+        self,
+        activations: dict[str, torch.Tensor],
+        loss_value: float | None,
+    ) -> None:
+        """Step-level integration point for PE-supervised synaptogenesis.
+
+        Guards: supervision off, non-finite loss, first step (no prior
+        PE sample). On eligible steps: compute delta, update EMA for all
+        co-active pairs, then stash the current loss as the next step's
+        baseline.
+        """
+        if self.config.synaptogenesis_supervision != "pe_conditional":
+            return
+        if loss_value is None or not math.isfinite(loss_value):
+            return
+        if self._last_pe is not None:
+            pe_delta = loss_value - self._last_pe
+            active = self._coactive_ids_for_supervision(activations)
+            self._update_synap_pe_ema(active, pe_delta)
+        self._last_pe = loss_value
+
     def _should_attempt_neurogenesis(self) -> bool:
         """Gate for the neurogenesis call in ``_maybe_grow``.
 
@@ -590,6 +681,8 @@ class SOMA:
                     step=self.global_step,
                     config=config,
                     rng=rng,
+                    pe_ema=self._synap_pe_ema,
+                    pe_counts=self._synap_pe_counts,
                 )
                 for edge in new_edges:
                     self.record_growth_event(
@@ -887,6 +980,11 @@ class SOMA:
             # Serialize as a plain list — deque reconstituted on load.
             "growth_log": list(self.growth_log),
             "last_neurogenesis_step": self._last_neurogenesis_step,
+            # Direction 1 supervision state. EMA keys are (sorted) string
+            # tuples; torch.save preserves them round-trip.
+            "synap_pe_ema": dict(self._synap_pe_ema),
+            "synap_pe_counts": dict(self._synap_pe_counts),
+            "last_pe": self._last_pe,
         }
         payload = to_cpu_state(payload)
         wrapped = wrap_payload(payload, soma_version=_current_soma_version())
@@ -942,6 +1040,21 @@ class SOMA:
         self._last_neurogenesis_step = int(
             state.get("last_neurogenesis_step", -(10**9))
         )
+        # Direction 1 supervision state. Legacy checkpoints omit these
+        # fields — start fresh so supervision ramps up from zero rather
+        # than using stale evidence that never existed.
+        raw_ema = state.get("synap_pe_ema", {}) or {}
+        self._synap_pe_ema = {
+            (tuple(k) if not isinstance(k, tuple) else k): float(v)
+            for k, v in raw_ema.items()
+        }
+        raw_counts = state.get("synap_pe_counts", {}) or {}
+        self._synap_pe_counts = {
+            (tuple(k) if not isinstance(k, tuple) else k): int(v)
+            for k, v in raw_counts.items()
+        }
+        stored_last_pe = state.get("last_pe", None)
+        self._last_pe = float(stored_last_pe) if stored_last_pe is not None else None
 
     # ------------------------------------------------------------------
     # Directory-shaped brain bundle (brain.pt + tokenizer + encoder + manifest)

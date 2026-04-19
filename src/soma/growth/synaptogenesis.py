@@ -35,11 +35,28 @@ def synaptogenesis(
     config: SOMAConfig,
     *,
     rng: torch.Generator | None = None,
+    pe_ema: Mapping[tuple[str, str], float] | None = None,
+    pe_counts: Mapping[tuple[str, str], int] | None = None,
 ) -> list[Edge]:
     """Propose and add new edges between co-active nodes.
 
     Returns the list of newly-created ``Edge`` instances (may be empty).
     Mutation order within the call is deterministic given ``rng``.
+
+    When ``config.synaptogenesis_supervision == "pe_conditional"``, a
+    pair is only admitted if the running EMA of (loss[t] - loss[t-1])
+    observed when the pair was co-active satisfies both:
+
+    - ``pe_counts[key] >= config.synaptogenesis_pe_min_observations``
+      (enough evidence to act on), AND
+    - ``pe_ema[key] < config.synaptogenesis_pe_threshold`` (the pair's
+      co-activation has historically preceded PE reduction).
+
+    ``key`` is the sorted tuple ``(min(a, b), max(a, b))`` — co-activation
+    is symmetric, so both directional candidates share one evidence slot.
+    Missing/None EMA or counts are treated as universal cold start and
+    block all admissions under the gate. When supervision is ``"none"``
+    the kwargs are ignored even if supplied, matching legacy behavior.
     """
     if step < 0:
         raise ValueError(f"step must be non-negative, got {step}")
@@ -47,6 +64,17 @@ def synaptogenesis(
     threshold = config.activation_threshold
     rate = config.synaptogenesis_rate
     locality = config.locality_scale
+    supervision_on = config.synaptogenesis_supervision == "pe_conditional"
+    if supervision_on:
+        ema_map = pe_ema if pe_ema is not None else {}
+        count_map = pe_counts if pe_counts is not None else {}
+        min_obs = config.synaptogenesis_pe_min_observations
+        pe_threshold = config.synaptogenesis_pe_threshold
+    else:
+        ema_map = {}
+        count_map = {}
+        min_obs = 0
+        pe_threshold = 0.0
 
     active_ids: list[str] = []
     magnitudes: dict[str, float] = {}
@@ -82,6 +110,25 @@ def synaptogenesis(
             if graph.has_edge(source_id, target_id):
                 continue
             target_node = graph.nodes[target_id]
+
+            # PE-supervised gate (Direction 1): filter out pairs whose
+            # co-activation has no history of reducing prediction error.
+            # The gate runs BEFORE the coact / locality / probability
+            # computation so filtered pairs never consume rng draws —
+            # keeping determinism of the legacy path intact on
+            # supervision='none' while pruning wasted work under
+            # 'pe_conditional'.
+            if supervision_on:
+                pair_key = (source_id, target_id) if source_id <= target_id else (
+                    target_id,
+                    source_id,
+                )
+                pair_count = int(count_map.get(pair_key, 0))
+                if pair_count < min_obs:
+                    continue
+                pair_ema = float(ema_map.get(pair_key, 0.0))
+                if pair_ema >= pe_threshold:
+                    continue
 
             source_mag = magnitudes[source_id]
             target_mag = magnitudes[target_id]

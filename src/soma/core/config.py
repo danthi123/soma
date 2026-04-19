@@ -131,6 +131,34 @@ class SOMAConfig:
     # co-activation to support it. 0.01 preserves legacy behavior.
     neurogenesis_init_weight_scale: float = 0.01
 
+    # --- Synaptogenesis supervision (Direction 1, 2026-04-18) ----------
+    # "none": legacy behavior — any co-active pair is a candidate, the
+    #   random draw gates admission. Produces structurally diverse but
+    #   semantically arbitrary edges on v0.5 (see grounding-plasticity
+    #   plan doc).
+    # "pe_conditional": admit only pairs whose co-activation has
+    #   historically preceded prediction-error drops. SOMA tracks a
+    #   per-pair EMA of (loss[t] - loss[t-1]) for each co-active pair;
+    #   synaptogenesis skips admission when either:
+    #     (a) the pair has fewer than synaptogenesis_pe_min_observations
+    #         samples (cold start), or
+    #     (b) the EMA is >= synaptogenesis_pe_threshold (no evidence
+    #         that this pair's co-activation helps reduce PE).
+    #   Intended to filter out the "random projection" noise that makes
+    #   v0.5 synap-only configurations underperform no-growth.
+    synaptogenesis_supervision: Literal["none", "pe_conditional"] = "none"
+    # EMA smoothing factor for the per-pair PE-delta signal. Higher =
+    # longer memory. 0.99 averages over ~100 samples at equilibrium.
+    synaptogenesis_pe_ema_alpha: float = 0.99
+    # Admit pairs whose PE-delta EMA is strictly less than this value.
+    # 0.0 means "admit only pairs whose co-activation has historically
+    # coincided with PE dropping"; negative values are stricter.
+    synaptogenesis_pe_threshold: float = 0.0
+    # Minimum number of observed co-activations before the gate starts
+    # filtering. Below this count the pair is considered cold-start and
+    # NOT admitted — the gate is conservative by design.
+    synaptogenesis_pe_min_observations: int = 5
+
     # --- Curiosity --------------------------------------------------------
     num_curiosity_domains: int = 8
 
@@ -249,6 +277,25 @@ class SOMAConfig:
             raise ValueError(
                 f"SOMAConfig.neurogenesis_init_weight_scale must be >= 0, "
                 f"got {self.neurogenesis_init_weight_scale!r}"
+            )
+
+        if self.synaptogenesis_supervision not in ("none", "pe_conditional"):
+            raise ValueError(
+                f"SOMAConfig.synaptogenesis_supervision must be 'none' or "
+                f"'pe_conditional', got {self.synaptogenesis_supervision!r}"
+            )
+        if not 0.0 <= self.synaptogenesis_pe_ema_alpha < 1.0:
+            raise ValueError(
+                f"SOMAConfig.synaptogenesis_pe_ema_alpha must be in [0, 1), "
+                f"got {self.synaptogenesis_pe_ema_alpha!r}"
+            )
+        if (
+            not isinstance(self.synaptogenesis_pe_min_observations, int)
+            or self.synaptogenesis_pe_min_observations < 0
+        ):
+            raise ValueError(
+                f"SOMAConfig.synaptogenesis_pe_min_observations must be a "
+                f"non-negative int, got {self.synaptogenesis_pe_min_observations!r}"
             )
 
         if not 0.0 < self.wm_decay_rate <= 1.0:

@@ -6,6 +6,7 @@ import pytest
 import torch
 
 from soma.core.config import SOMAConfig
+from soma.core.edge import Edge
 from soma.core.graph import Graph
 from soma.core.node import Node, NodeType
 from soma.growth.synaptogenesis import synaptogenesis
@@ -213,3 +214,178 @@ class TestProbabilityClamp:
         # Both are bounded by the max (5*4=20 directed pairs).
         assert huge <= 20
         assert mod <= 20
+
+
+def _pair_key(a: str, b: str) -> tuple[str, str]:
+    return (a, b) if a <= b else (b, a)
+
+
+class TestPeConditionalGate:
+    """Direction 1 — admit only pairs whose co-activation has historically
+    preceded PE reduction. Gate is engaged by passing ``pe_ema`` and
+    ``pe_counts`` kwargs when ``config.synaptogenesis_supervision`` is
+    ``"pe_conditional"``. When supervision is off, the kwargs (if any)
+    must be ignored."""
+
+    def _make_triplet(
+        self, config: SOMAConfig, *, dim: int = 8
+    ) -> tuple[Graph, Node, Node, Node]:
+        graph = Graph()
+        pos = torch.zeros(config.position_dim)
+        a = Node(NodeType.ASSOCIATOR, dim, dim * 2, dim, 0, config, position=pos)
+        b = Node(NodeType.ASSOCIATOR, dim, dim * 2, dim, 0, config, position=pos)
+        c = Node(NodeType.ASSOCIATOR, dim, dim * 2, dim, 0, config, position=pos)
+        for n in (a, b, c):
+            graph.add_node(n)
+        return graph, a, b, c
+
+    def test_cold_start_pair_is_rejected(self) -> None:
+        cfg = SOMAConfig(
+            synaptogenesis_rate=10.0,
+            activation_threshold=0.01,
+            synaptogenesis_supervision="pe_conditional",
+            synaptogenesis_pe_min_observations=5,
+            synaptogenesis_pe_threshold=0.0,
+        )
+        graph, a, b, _c = self._make_triplet(cfg)
+        acts = {a.id: torch.ones(8), b.id: torch.ones(8)}
+        rng = torch.Generator().manual_seed(0)
+        # No EMA evidence at all: cold start => no admissions.
+        new = synaptogenesis(
+            graph, acts, step=100, config=cfg, rng=rng, pe_ema={}, pe_counts={}
+        )
+        assert new == []
+        assert graph.num_edges == 0
+
+    def test_insufficient_observations_rejected(self) -> None:
+        cfg = SOMAConfig(
+            synaptogenesis_rate=10.0,
+            activation_threshold=0.01,
+            synaptogenesis_supervision="pe_conditional",
+            synaptogenesis_pe_min_observations=10,
+            synaptogenesis_pe_threshold=0.0,
+        )
+        graph, a, b, _c = self._make_triplet(cfg)
+        key = _pair_key(a.id, b.id)
+        # Plenty of signal (-0.1 EMA) but only 3 observations, below the
+        # 10-sample minimum.
+        ema = {key: -0.1}
+        counts = {key: 3}
+        acts = {a.id: torch.ones(8), b.id: torch.ones(8)}
+        rng = torch.Generator().manual_seed(0)
+        new = synaptogenesis(
+            graph, acts, step=100, config=cfg, rng=rng, pe_ema=ema, pe_counts=counts
+        )
+        assert new == []
+
+    def test_positive_ema_rejected_even_with_observations(self) -> None:
+        """EMA >= 0 means co-activation hasn't been helping; skip."""
+        cfg = SOMAConfig(
+            synaptogenesis_rate=10.0,
+            activation_threshold=0.01,
+            synaptogenesis_supervision="pe_conditional",
+            synaptogenesis_pe_min_observations=5,
+            synaptogenesis_pe_threshold=0.0,
+        )
+        graph, a, b, _c = self._make_triplet(cfg)
+        key = _pair_key(a.id, b.id)
+        ema = {key: 0.02}  # positive = pair didn't help
+        counts = {key: 50}  # plenty of observations
+        acts = {a.id: torch.ones(8), b.id: torch.ones(8)}
+        rng = torch.Generator().manual_seed(0)
+        new = synaptogenesis(
+            graph, acts, step=100, config=cfg, rng=rng, pe_ema=ema, pe_counts=counts
+        )
+        assert new == []
+
+    def test_negative_ema_allows_admission(self) -> None:
+        """EMA < threshold AND enough observations => admit normally."""
+        cfg = SOMAConfig(
+            synaptogenesis_rate=10.0,
+            activation_threshold=0.01,
+            synaptogenesis_supervision="pe_conditional",
+            synaptogenesis_pe_min_observations=5,
+            synaptogenesis_pe_threshold=0.0,
+        )
+        graph, a, b, _c = self._make_triplet(cfg)
+        key = _pair_key(a.id, b.id)
+        ema = {key: -0.1}  # negative = pair's co-activation helps
+        counts = {key: 50}
+        acts = {a.id: torch.ones(8), b.id: torch.ones(8)}
+        rng = torch.Generator().manual_seed(0)
+        new = synaptogenesis(
+            graph, acts, step=100, config=cfg, rng=rng, pe_ema=ema, pe_counts=counts
+        )
+        # High synaptogenesis_rate means the random draw almost surely
+        # passes. At least one edge should be admitted.
+        assert len(new) >= 1
+        for edge in new:
+            # Every admitted edge must be between a <-> b.
+            assert {edge.source_id, edge.target_id} == {a.id, b.id}
+
+    def test_filtering_is_per_pair_not_global(self) -> None:
+        """Admissible pairs (evidence supports them) must pass while
+        inadmissible pairs in the same call are rejected."""
+        cfg = SOMAConfig(
+            synaptogenesis_rate=10.0,
+            activation_threshold=0.01,
+            synaptogenesis_supervision="pe_conditional",
+            synaptogenesis_pe_min_observations=5,
+            synaptogenesis_pe_threshold=0.0,
+        )
+        graph, a, b, c = self._make_triplet(cfg)
+        # a<->b has good evidence; b<->c has bad evidence; a<->c unknown.
+        ema = {
+            _pair_key(a.id, b.id): -0.2,  # good
+            _pair_key(b.id, c.id): +0.3,  # bad
+        }
+        counts = {
+            _pair_key(a.id, b.id): 50,
+            _pair_key(b.id, c.id): 50,
+        }
+        acts = {a.id: torch.ones(8), b.id: torch.ones(8), c.id: torch.ones(8)}
+        rng = torch.Generator().manual_seed(0)
+        new = synaptogenesis(
+            graph, acts, step=100, config=cfg, rng=rng, pe_ema=ema, pe_counts=counts
+        )
+        # All admitted edges must involve a<->b only; b<->c and a<->c
+        # are filtered (one by positive EMA, one by cold start).
+        for edge in new:
+            assert {edge.source_id, edge.target_id} == {a.id, b.id}
+
+    def test_supervision_none_ignores_ema_kwargs(self) -> None:
+        """With supervision='none' the gate is disabled even when the
+        caller passes EMA kwargs (e.g., stale state after a config flip)."""
+        cfg = SOMAConfig(
+            synaptogenesis_rate=10.0,
+            activation_threshold=0.01,
+            synaptogenesis_supervision="none",
+        )
+        graph, a, b, _c = self._make_triplet(cfg)
+        # Supply "bad" evidence that WOULD be rejected under pe_conditional.
+        key = _pair_key(a.id, b.id)
+        ema = {key: 1.0}
+        counts = {key: 100}
+        acts = {a.id: torch.ones(8), b.id: torch.ones(8)}
+        rng = torch.Generator().manual_seed(0)
+        new = synaptogenesis(
+            graph, acts, step=100, config=cfg, rng=rng, pe_ema=ema, pe_counts=counts
+        )
+        # Without supervision, the high rate admits edges normally.
+        assert len(new) >= 1
+
+    def test_ema_kwargs_optional_when_supervision_on(self) -> None:
+        """If supervision is pe_conditional but no EMA dict is passed,
+        the gate must treat the absence as universal cold-start
+        (no admissions) rather than crashing."""
+        cfg = SOMAConfig(
+            synaptogenesis_rate=10.0,
+            activation_threshold=0.01,
+            synaptogenesis_supervision="pe_conditional",
+            synaptogenesis_pe_min_observations=5,
+        )
+        graph, a, b, _c = self._make_triplet(cfg)
+        acts = {a.id: torch.ones(8), b.id: torch.ones(8)}
+        rng = torch.Generator().manual_seed(0)
+        new = synaptogenesis(graph, acts, step=100, config=cfg, rng=rng)
+        assert new == []

@@ -227,6 +227,27 @@ def synaptogenesis(
             edge.last_active_step = step
             new_edges.append(edge)
 
+    # Per-call admission cap (sparsity control, 2026-04-19): if the
+    # scan produced more admissions than
+    # ``synaptogenesis_max_admissions_per_step``, keep a uniformly-
+    # random subset of that size and remove the rest from the graph.
+    # The subsampling happens AFTER the full scan so iteration order
+    # doesn't bias which edges survive — otherwise we'd systematically
+    # favor pairs involving earlier-inserted nodes.
+    cap = config.synaptogenesis_max_admissions_per_step
+    if cap > 0 and len(new_edges) > cap:
+        # torch.randperm with the local rng gives a reproducible
+        # permutation that isn't tied to graph iteration order.
+        order = torch.randperm(len(new_edges), generator=rng).tolist()
+        keep_indices = set(order[:cap])
+        surviving: list[Edge] = []
+        for idx, edge in enumerate(new_edges):
+            if idx in keep_indices:
+                surviving.append(edge)
+            else:
+                graph.remove_edge(edge.id)
+        new_edges = surviving
+
     return new_edges
 
 

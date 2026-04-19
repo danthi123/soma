@@ -216,6 +216,21 @@ class SOMAConfig:
     # research/developmental/results/why_neuro_only_works.md.
     synaptogenesis_max_distance: float = 0.0
 
+    # Per-call admission cap for synaptogenesis. After the normal
+    # coactivation + gating + rng scan has assembled the pool of newly
+    # admitted edges, if the pool exceeds this limit the synaptogenesis
+    # routine randomly subsamples the pool down to this many admissions
+    # and removes the overflow from the graph.
+    #
+    # Default 0 disables the cap (legacy behavior). Positive values test
+    # the sparsity-vs-locality confound for the synap_local positive:
+    # synap_only_local produces 2-3x fewer edges than synap_only, so the
+    # observed MSE benefit could be from locality (where edges form) or
+    # from sparsity (how many form). Random-K admission at matched
+    # event count distinguishes the two. See
+    # research/developmental/results/env_sequence_v05_synap_local_multiseed_findings.md.
+    synaptogenesis_max_admissions_per_step: int = 0
+
     # Pairs that include a NEUROGENESIS-created node (creation_step > 0)
     # whose age is less than this grace window bypass the cold-start
     # (min_observations) check, so fresh nodes can wire into the graph
@@ -357,6 +372,16 @@ class SOMAConfig:
             raise ValueError(
                 f"SOMAConfig.synaptogenesis_max_distance must be >= 0 "
                 f"(0 disables the filter), got {self.synaptogenesis_max_distance!r}"
+            )
+
+        if (
+            not isinstance(self.synaptogenesis_max_admissions_per_step, int)
+            or self.synaptogenesis_max_admissions_per_step < 0
+        ):
+            raise ValueError(
+                f"SOMAConfig.synaptogenesis_max_admissions_per_step must be a "
+                f"non-negative int (0 disables the cap), got "
+                f"{self.synaptogenesis_max_admissions_per_step!r}"
             )
 
         if self.synaptogenesis_supervision not in ("none", "pe_conditional"):

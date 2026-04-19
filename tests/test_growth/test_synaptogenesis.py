@@ -612,3 +612,128 @@ class TestNewNodeWaiver:
         )
         # No waiver for creation_step=0 => cold-start blocks.
         assert new == []
+
+
+class TestMaxAdmissionsPerStep:
+    """Sparsity control: cap the number of admissions per call.
+
+    Purpose: distinguishes the ``synap_local`` positive result from a
+    pure-sparsity confound. If random-K admission (no locality, just a
+    count cap) matches ``synap_only_local``'s MSE benefit, then the
+    effect observed on v0.5 is sparsity alone; if random-K underperforms,
+    then positional locality is the primary driver.
+
+    Implementation contract:
+    - Default ``synaptogenesis_max_admissions_per_step=0`` disables the
+      cap (legacy behavior). Positive values limit per-call returns.
+    - When the cap is tighter than the pool of candidates that pass the
+      rng draw, a random subset of size cap is kept and the rest are
+      removed from the graph so ``len(returned) == graph.num_edges``.
+    - The subsampling uses the provided ``rng``, so repeat calls with
+      the same rng seed are deterministic; different seeds can produce
+      different subsets (not biased by iteration order).
+    """
+
+    @staticmethod
+    def _make_dense_graph(cfg: SOMAConfig, *, n: int, dim: int = 8) -> tuple[Graph, list[Node]]:
+        """n colocated co-active nodes — every pair passes the gate."""
+        graph = Graph()
+        nodes = []
+        for _ in range(n):
+            node = Node(
+                NodeType.ASSOCIATOR, dim, dim * 2, dim, 0, cfg,
+                position=torch.zeros(cfg.position_dim),
+            )
+            graph.add_node(node)
+            nodes.append(node)
+        return graph, nodes
+
+    def test_default_zero_is_unlimited(self) -> None:
+        """Cap=0 must preserve legacy behavior: many pairs produce many
+        edges without any cap enforcement."""
+        cfg = SOMAConfig(synaptogenesis_rate=10.0, activation_threshold=0.01)
+        assert cfg.synaptogenesis_max_admissions_per_step == 0
+        graph, nodes = self._make_dense_graph(cfg, n=5)
+        acts = {n.id: torch.ones(8) for n in nodes}
+        rng = torch.Generator().manual_seed(0)
+        new = synaptogenesis(graph, acts, step=100, config=cfg, rng=rng)
+        # 5 nodes × 4 targets each = 20 directed pairs; with rate=10 and
+        # colocated positions, the vast majority should admit. The
+        # uncapped baseline must produce substantially more than any
+        # sensible cap setting.
+        assert len(new) > 5
+        assert graph.num_edges == len(new)
+
+    def test_cap_limits_admissions(self) -> None:
+        """With cap=K < available-candidates, exactly ``len(new) <= K``."""
+        cfg = SOMAConfig(
+            synaptogenesis_rate=10.0,
+            activation_threshold=0.01,
+            synaptogenesis_max_admissions_per_step=3,
+        )
+        graph, nodes = self._make_dense_graph(cfg, n=5)
+        acts = {n.id: torch.ones(8) for n in nodes}
+        rng = torch.Generator().manual_seed(0)
+        new = synaptogenesis(graph, acts, step=100, config=cfg, rng=rng)
+        assert len(new) <= 3, f"cap=3 violated, got {len(new)} admissions"
+        # Graph must match: any trimmed edges must be removed from graph,
+        # not leaked.
+        assert graph.num_edges == len(new)
+
+    def test_cap_does_not_invent_edges_when_few_pass(self) -> None:
+        """If fewer pairs pass the rng draw than the cap, all are kept
+        — the cap never creates extra admissions."""
+        cfg = SOMAConfig(
+            synaptogenesis_rate=10.0,
+            activation_threshold=0.01,
+            synaptogenesis_max_admissions_per_step=100,
+        )
+        # Only 2 nodes, so at most 2 directional candidates.
+        graph, a, b = _make_pair(cfg)
+        acts = {a.id: torch.ones(8), b.id: torch.ones(8)}
+        rng = torch.Generator().manual_seed(0)
+        new = synaptogenesis(graph, acts, step=100, config=cfg, rng=rng)
+        assert len(new) <= 2
+        assert graph.num_edges == len(new)
+
+    def test_cap_different_seeds_can_produce_different_subsets(self) -> None:
+        """Different rng seeds should be able to select different subsets.
+        Guards against an 'iteration-order-first-K' implementation which
+        would pick the same edges regardless of rng (iteration order is
+        fixed by graph insertion order).
+
+        We map each admitted edge to ``(source_index, target_index)``
+        where index is the position in the insertion-order node list,
+        so subsets are comparable across fresh graphs with different
+        random UUIDs.
+        """
+        def _run(seed: int) -> frozenset[tuple[int, int]]:
+            cfg = SOMAConfig(
+                synaptogenesis_rate=10.0,
+                activation_threshold=0.01,
+                synaptogenesis_max_admissions_per_step=3,
+            )
+            graph, nodes = self._make_dense_graph(cfg, n=5)
+            id_to_idx = {n.id: i for i, n in enumerate(nodes)}
+            acts = {n.id: torch.ones(8) for n in nodes}
+            rng = torch.Generator().manual_seed(seed)
+            new = synaptogenesis(graph, acts, step=100, config=cfg, rng=rng)
+            return frozenset(
+                (id_to_idx[e.source_id], id_to_idx[e.target_id]) for e in new
+            )
+
+        # Insertion order is fixed across runs because
+        # ``_make_dense_graph`` creates nodes in a fixed sequence. If all
+        # 10 seeds produced the same (src, tgt) index set, the cap would
+        # be iteration-order-first-K rather than rng-sampled.
+        baseline = _run(0)
+        differs = any(_run(s) != baseline for s in range(1, 10))
+        assert differs, (
+            "Different rng seeds all produced the same capped subset; "
+            "the cap is probably iterating-order-first-K rather than "
+            "randomly sampling from passing candidates."
+        )
+
+    def test_validation_rejects_negative(self) -> None:
+        with pytest.raises(ValueError, match="max_admissions_per_step"):
+            SOMAConfig(synaptogenesis_max_admissions_per_step=-1)

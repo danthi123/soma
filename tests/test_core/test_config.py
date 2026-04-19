@@ -277,3 +277,48 @@ class TestYamlConsistency:
         yaml_config = SOMAConfig.from_dict(raw)
         default_config = SOMAConfig()
         assert yaml_config.to_dict() == default_config.to_dict()
+
+
+class TestMemoryLayerPreset:
+    """SOMAConfig.memory_layer() — product-tuned preset for the
+    agent-memory use case. Derived from the v0.5 grounding-plasticity
+    research (commits 2ba566b, c2a456b): enables positional-locality
+    filter at the validated cutoff=0.5, uses moderate growth cadence
+    suitable for accumulating user memories over time, and keeps
+    activation_threshold tight so synap actually fires on small
+    graphs typical of agent-memory workloads.
+    """
+
+    def test_returns_soma_config(self) -> None:
+        cfg = SOMAConfig.memory_layer()
+        assert isinstance(cfg, SOMAConfig)
+
+    def test_enables_locality_filter_at_validated_cutoff(self) -> None:
+        """The whole point of this preset: locality is ON by default."""
+        cfg = SOMAConfig.memory_layer()
+        assert cfg.synaptogenesis_max_distance == pytest.approx(0.5)
+
+    def test_has_moderate_growth_cadence(self) -> None:
+        """synap_interval should be tighter than whitepaper default (100)
+        but not as aggressive as developmental (10). Memory workloads
+        accumulate memories over thousands of interactions and need
+        gradual structure formation, not burst growth."""
+        cfg = SOMAConfig.memory_layer()
+        assert 10 <= cfg.synaptogenesis_interval <= 50
+
+    def test_activation_threshold_is_tight(self) -> None:
+        """Tight threshold (not whitepaper's 0.1) so synap actually fires
+        on small-graph workloads where activations rarely clear 0.1."""
+        cfg = SOMAConfig.memory_layer()
+        assert cfg.activation_threshold < 0.05
+
+    def test_accepts_overrides(self) -> None:
+        """Callers can still override any field."""
+        cfg = SOMAConfig.memory_layer(synaptogenesis_max_distance=0.3, seed=7)
+        assert cfg.synaptogenesis_max_distance == pytest.approx(0.3)
+        assert cfg.seed == 7
+
+    def test_override_to_disable_locality(self) -> None:
+        """Callers who want vanilla behavior can turn locality off."""
+        cfg = SOMAConfig.memory_layer(synaptogenesis_max_distance=0.0)
+        assert cfg.synaptogenesis_max_distance == 0.0

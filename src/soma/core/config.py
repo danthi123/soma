@@ -562,6 +562,52 @@ class SOMAConfig:
         return cls(**defaults)
 
     @classmethod
+    def memory_layer(cls, **overrides: Any) -> SOMAConfig:
+        """Return a config tuned for the agent-memory layer product.
+
+        Enables positional-locality filter by default
+        (``synaptogenesis_max_distance=0.5``), the only multi-seed-
+        validated positive plasticity-adjustment mechanism on the v0.5
+        capacity schedule (commits ``2ba566b``, ``c2a456b``). Pairs
+        this with moderate growth cadence appropriate for agent-memory
+        workloads that accumulate entries over thousands of
+        interactions: faster than the whitepaper default
+        (``synap_interval=100``) but not as aggressive as
+        :meth:`developmental` (``synap_interval=10``).
+
+        Activation threshold is held tight (0.005, same as
+        developmental) so synap actually fires on the small graphs
+        typical of memory-layer use. Without the tight threshold,
+        activations on 32-dim sensor outputs rarely clear the
+        whitepaper default of 0.1 and synap stays silent.
+
+        Safe default: locality filter prevents graph re-rank from
+        catastrophically degrading retrieval at high alpha (verified
+        on synthetic retrieval ablation, commit ``916a0c7``) and
+        is roughly neutral at low alpha. Callers can disable it via
+        ``memory_layer(synaptogenesis_max_distance=0.0)``.
+        """
+        defaults: dict[str, Any] = {
+            # Growth cadence: moderate (between whitepaper and developmental).
+            "synaptogenesis_interval": 25,
+            "synaptogenesis_rate": 1.0,
+            "neurogenesis_interval": 50,
+            "pruning_interval": 200,
+            # The key product default: positional-locality filter at the
+            # validated cutoff value (sweet spot of the inverted-U on v0.5).
+            "synaptogenesis_max_distance": 0.5,
+            # Tight activation threshold so synap actually fires on small
+            # graphs (whitepaper's 0.1 is too high for 32-dim substrates).
+            "activation_threshold": 0.005,
+            # Room to grow as memories accumulate; not so large that OOM.
+            "max_nodes": 500,
+            "consolidation_interval": 50,
+            "consolidation_replay_steps": 20,
+        }
+        defaults.update(overrides)
+        return cls(**defaults)
+
+    @classmethod
     def developmental(cls, **overrides: Any) -> SOMAConfig:
         """Return a config tuned for developmental learning.
 

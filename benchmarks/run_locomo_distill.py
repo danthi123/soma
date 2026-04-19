@@ -399,17 +399,27 @@ def format_markdown(results: list[DistillResult]) -> str:
         lines.append("| " + " | ".join(row) + " |")
 
     sys_by_name = {r.system: r for r in results}
-    if "chroma-mxbai" in sys_by_name and "soma-distilled" in sys_by_name:
+    # Primary comparison finds any system starting with "soma-distilled"
+    # vs chroma-mxbai so suffixed variant sweeps still get a summary row
+    distilled_candidates = [
+        name for name in sys_by_name if name.startswith("soma-distilled")
+    ]
+    if "chroma-mxbai" in sys_by_name and distilled_candidates:
         baseline_r5 = sys_by_name["chroma-mxbai"].recall_at_k.get(5, 0)
-        distilled_r5 = sys_by_name["soma-distilled"].recall_at_k.get(5, 0)
-        delta = distilled_r5 - baseline_r5
-        status = "SHIP" if delta > 0.02 else ("WEAK" if delta > 0.005 else "NULL")
         lines += [
             "",
-            "## Primary comparison",
+            "## Primary comparison (soma-distilled variants vs chroma-mxbai on R@5)",
             "",
-            f"**Delta (soma-distilled - chroma-mxbai) on R@5: {delta:+.3f}** → {status}",
+            "| Variant | R@5 | Delta | Verdict |",
+            "| --- | :---: | :---: | :---: |",
         ]
+        for name in distilled_candidates:
+            r5 = sys_by_name[name].recall_at_k.get(5, 0)
+            delta = r5 - baseline_r5
+            status = "SHIP" if delta > 0.02 else ("WEAK" if delta > 0.005 else "NULL")
+            lines.append(
+                f"| {name} | {r5:.3f} | {delta:+.3f} | {status} |"
+            )
 
     return "\n".join(lines)
 
@@ -433,6 +443,28 @@ def main() -> None:
         "--skip-chroma",
         action="store_true",
         help="skip the chroma-mxbai baseline",
+    )
+    p.add_argument(
+        "--alpha",
+        type=float,
+        default=0.5,
+        help="distillation weight for soma-distilled variant",
+    )
+    p.add_argument(
+        "--locality",
+        type=float,
+        default=0.0,
+        help="synap max_distance for SOMA variants (0 = disabled)",
+    )
+    p.add_argument(
+        "--skip-random",
+        action="store_true",
+        help="skip the soma-random comparison",
+    )
+    p.add_argument(
+        "--variant-suffix",
+        default="",
+        help="append to soma variant names for distinguishing sweeps",
     )
     args = p.parse_args()
 
@@ -475,25 +507,31 @@ def main() -> None:
         except ImportError as e:
             print(f"  SKIP: {e}")
 
-    print("\n=== soma-random (frozen projections) ===")
-    r = run_soma_predictive(
-        "soma-random", samples, turns_by_sample, queries_by_sample, teacher, args.target_dim,
-        projection_mode="frozen_random",
-        distillation_target="none",
-        distillation_weight=0.0,
-        synap_locality=0.0,
-        device=device,
-    )
-    results.append(r)
-    print(f"  R@1={r.recall_at_k[1]:.3f} R@5={r.recall_at_k[5]:.3f} R@10={r.recall_at_k[10]:.3f} retrieve={r.retrieve_avg_ms:.1f}ms")
+    if not args.skip_random:
+        print("\n=== soma-random (frozen projections) ===")
+        r = run_soma_predictive(
+            f"soma-random{args.variant_suffix}",
+            samples, turns_by_sample, queries_by_sample, teacher, args.target_dim,
+            projection_mode="frozen_random",
+            distillation_target="none",
+            distillation_weight=0.0,
+            synap_locality=args.locality,
+            device=device,
+        )
+        results.append(r)
+        print(f"  R@1={r.recall_at_k[1]:.3f} R@5={r.recall_at_k[5]:.3f} R@10={r.recall_at_k[10]:.3f} retrieve={r.retrieve_avg_ms:.1f}ms")
 
-    print("\n=== soma-distilled (learnable + mxbai distill) ===")
+    print(
+        f"\n=== soma-distilled (learnable + mxbai distill, alpha={args.alpha}, "
+        f"locality={args.locality}, dim={args.target_dim}) ==="
+    )
     r = run_soma_predictive(
-        "soma-distilled", samples, turns_by_sample, queries_by_sample, teacher, args.target_dim,
+        f"soma-distilled{args.variant_suffix}",
+        samples, turns_by_sample, queries_by_sample, teacher, args.target_dim,
         projection_mode="learnable",
         distillation_target="llm_embedding",
-        distillation_weight=0.5,
-        synap_locality=0.0,
+        distillation_weight=args.alpha,
+        synap_locality=args.locality,
         device=device,
     )
     results.append(r)

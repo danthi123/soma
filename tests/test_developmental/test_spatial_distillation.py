@@ -112,11 +112,46 @@ class TestLearnablePositions:
 
 class TestEnsurePosition:
     def test_ensure_position_no_op_when_not_learnable(self) -> None:
-        """Frozen mode: _ensure_position is a no-op."""
+        """Frozen mode: _ensure_position is a no-op — adding a fresh node
+        and calling _ensure_position must NOT wrap its position as a
+        Parameter, must NOT record an initial norm, and must NOT touch
+        the optimizer. Also must not crash on unknown node ids."""
         cfg = SOMAConfig.developmental(initial_associator_count=4, max_nodes=16)
+        # Default developmental preset uses position_mode='frozen_random'
+        assert cfg.position_mode == "frozen_random"
         pred = PredictiveSOMA(config=cfg)
-        # Should not crash even if called
+
+        # Unknown node id -> silent no-op
         pred._ensure_position("nonexistent_node_id")
+
+        # Real fresh node -> still no-op in frozen mode
+        from soma.core.node import Node, NodeType
+
+        new_node = Node(
+            node_type=NodeType.ASSOCIATOR,
+            input_dim=cfg.associator_input_dim,
+            hidden_dim=cfg.associator_hidden_dim,
+            output_dim=cfg.associator_output_dim,
+            creation_step=0,
+            config=cfg,
+            position=torch.randn(cfg.position_dim) * 0.1,
+            device=pred.device,
+        )
+        pred.soma.graph.add_node(new_node)
+        opt_params_before = {
+            id(p) for g in pred._pred_optimizer.param_groups for p in g["params"]
+        }
+        norms_before = dict(pred._initial_position_norms)
+
+        pred._ensure_position(new_node.id)
+
+        assert not isinstance(new_node.position, torch.nn.Parameter)
+        assert new_node.id not in pred._initial_position_norms
+        assert pred._initial_position_norms == norms_before
+        opt_params_after = {
+            id(p) for g in pred._pred_optimizer.param_groups for p in g["params"]
+        }
+        assert opt_params_after == opt_params_before
 
     def test_ensure_position_creates_parameter_on_new_node(self) -> None:
         """When neurogenesis creates a new node mid-run, _ensure_position

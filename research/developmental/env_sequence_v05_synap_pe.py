@@ -273,7 +273,13 @@ def main() -> None:
         },
         "schedule_boundaries": schedule.boundaries,
     }
-    out_path = "research/developmental/results/env_sequence_v05_synap_pe.json"
+    import sys
+    # Allow overriding the output suffix so we can rerun under different
+    # config tweaks (e.g., waiver on/off) without clobbering prior data.
+    suffix = sys.argv[1] if len(sys.argv) > 1 else ""
+    out_path = (
+        f"research/developmental/results/env_sequence_v05_synap_pe{suffix}.json"
+    )
     with open(out_path, "w") as f:
         json.dump(out, f)
     print(f"\nSaved raw data to {out_path}")

@@ -142,12 +142,27 @@ def synaptogenesis(
                 # we have it. In practice fresh-node pairs will almost
                 # always be cold-start, so this branch does what you'd
                 # expect.
-                src_age = step - source_node.creation_step
-                tgt_age = step - target_node.creation_step
-                is_fresh = (
+                # Only treat nodes as "fresh" if they were created by
+                # neurogenesis (creation_step > 0). Initial seed nodes
+                # have creation_step=0 by convention; applying the
+                # waiver to them would disable supervision for every
+                # pair during the first ``new_node_grace`` steps — a
+                # critical warm-up window where the EMA is trying to
+                # accumulate its first observations. Empirically
+                # confirmed in the waiver rerun: applying the waiver
+                # to initial nodes regressed synap_only_pe on all 8
+                # v0.5 regimes.
+                src_fresh = (
                     new_node_grace > 0
-                    and min(src_age, tgt_age) < new_node_grace
+                    and source_node.creation_step > 0
+                    and (step - source_node.creation_step) < new_node_grace
                 )
+                tgt_fresh = (
+                    new_node_grace > 0
+                    and target_node.creation_step > 0
+                    and (step - target_node.creation_step) < new_node_grace
+                )
+                is_fresh = src_fresh or tgt_fresh
                 pair_count = int(count_map.get(pair_key, 0))
                 is_cold_start = pair_count < min_obs
                 if is_cold_start:

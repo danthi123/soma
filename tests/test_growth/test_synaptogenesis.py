@@ -504,3 +504,30 @@ class TestNewNodeWaiver:
         )
         # No waiver, so cold-start blocks.
         assert new == []
+
+    def test_initial_seed_nodes_not_treated_as_fresh(self) -> None:
+        """Initial seed nodes have creation_step=0 by convention; the
+        waiver must NOT treat them as fresh, even during the first
+        ``grace`` steps of the run. Otherwise the waiver disables
+        supervision during warm-up and synap_only_pe regresses (as
+        observed in the waiver rerun before this fix).
+        """
+        cfg = SOMAConfig(
+            synaptogenesis_rate=10.0,
+            activation_threshold=0.01,
+            synaptogenesis_supervision="pe_conditional",
+            synaptogenesis_pe_min_observations=5,
+            synaptogenesis_supervision_new_node_grace=200,
+        )
+        # Both nodes at creation_step=0 (initial seeds).
+        graph, a, b, _c = self._make_triplet(cfg, creation_steps=(0, 0, 0))
+        acts = {a.id: torch.ones(8), b.id: torch.ones(8)}
+        rng = torch.Generator().manual_seed(0)
+        # Probe at step=50, well inside the grace window for true
+        # fresh nodes, but these seed nodes shouldn't benefit.
+        new = synaptogenesis(
+            graph, acts, step=50, config=cfg, rng=rng,
+            pe_ema={}, pe_counts={},
+        )
+        # No waiver for creation_step=0 => cold-start blocks.
+        assert new == []

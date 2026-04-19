@@ -52,3 +52,59 @@ class TestPositionProjector:
         # Attribute may or may not exist but must be None / absent when inactive
         proj = getattr(pred, "_position_projector", None)
         assert proj is None
+
+
+class TestLearnablePositions:
+    def test_learnable_positions_are_parameters(self) -> None:
+        """When position_mode=learnable, node.position is nn.Parameter."""
+        cfg = _spatial_config()
+        pred = PredictiveSOMA(config=cfg)
+        from soma.core.node import NodeType
+
+        any_associator = False
+        for node in pred.soma.graph.all_nodes():
+            if node.node_type == NodeType.ASSOCIATOR:
+                any_associator = True
+                assert isinstance(node.position, torch.nn.Parameter), (
+                    f"Node {node.id} position is {type(node.position)}"
+                )
+        assert any_associator, "need at least one associator"
+
+    def test_frozen_positions_stay_tensors(self) -> None:
+        """Default mode — positions are plain Tensors."""
+        cfg = SOMAConfig.developmental(initial_associator_count=4, max_nodes=16)
+        pred = PredictiveSOMA(config=cfg)
+        from soma.core.node import NodeType
+
+        for node in pred.soma.graph.all_nodes():
+            if node.node_type == NodeType.ASSOCIATOR:
+                assert not isinstance(node.position, torch.nn.Parameter)
+
+    def test_initial_position_norms_recorded(self) -> None:
+        """For norm-preservation after optimizer step, we need to know
+        each position's initial L2 norm."""
+        cfg = _spatial_config()
+        pred = PredictiveSOMA(config=cfg)
+        from soma.core.node import NodeType
+
+        for node in pred.soma.graph.all_nodes():
+            if node.node_type == NodeType.ASSOCIATOR:
+                recorded = pred._initial_position_norms.get(node.id)
+                assert recorded is not None
+                actual = node.position.norm().item()
+                assert abs(recorded - actual) < 1e-6
+
+    def test_learnable_positions_in_optimizer(self) -> None:
+        """Positions must be included in the prediction optimizer when
+        learnable; otherwise backward() gradient isn't applied."""
+        cfg = _spatial_config()
+        pred = PredictiveSOMA(config=cfg)
+        opt_params = set()
+        for g in pred._pred_optimizer.param_groups:
+            for p in g["params"]:
+                opt_params.add(id(p))
+        from soma.core.node import NodeType
+
+        for node in pred.soma.graph.all_nodes():
+            if node.node_type == NodeType.ASSOCIATOR:
+                assert id(node.position) in opt_params

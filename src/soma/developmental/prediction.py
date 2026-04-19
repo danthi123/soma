@@ -86,31 +86,51 @@ class PredictiveSOMA(nn.Module):
             # non-persistent "buffer" of None would not work, so use
             # plain attribute assignment for the disabled path.
             self._position_projector = None  # type: ignore[assignment]
+        # Direction 4b: record initial L2 norms for post-step rescaling.
+        # Keeps the synaptogenesis_max_distance=0.5 cutoff calibrated
+        # even as positions train toward the P.T · W_i target.
+        self._initial_position_norms: dict[str, float] = {}
+        if config.position_mode == "learnable":
+            for node in self.soma.graph.all_nodes():
+                if node.node_type != NodeType.ASSOCIATOR:
+                    continue
+                original = node.position
+                if original is None:
+                    continue
+                param = torch.nn.Parameter(
+                    original.detach().clone().to(self.device)
+                )
+                node.position = param
+                self._initial_position_norms[node.id] = param.norm().item()
         self._last_prediction: torch.Tensor | None = None
         self._last_summary: torch.Tensor | None = None
         # When projections are learnable, include them in the prediction
         # optimizer so the prediction loss trains them jointly with
         # prediction_head. Otherwise only prediction_head is optimized.
-        opt_params: list[torch.nn.Parameter] = list(
-            self.prediction_head.parameters()
-        )
         if config.projection_mode == "learnable":
-            opt_params.extend(
-                p for p in self._input_projections.values()
-                if isinstance(p, torch.nn.Parameter)
-            )
-            self._pred_optimizer = torch.optim.Adam(
-                [
-                    {"params": list(self.prediction_head.parameters()), "lr": 0.0003},
-                    {
-                        "params": [
-                            p for p in self._input_projections.values()
-                            if isinstance(p, torch.nn.Parameter)
-                        ],
-                        "lr": config.projection_lr,
-                    },
-                ]
-            )
+            position_params = []
+            if config.position_mode == "learnable":
+                for node in self.soma.graph.all_nodes():
+                    if node.node_type == NodeType.ASSOCIATOR and isinstance(
+                        node.position, torch.nn.Parameter
+                    ):
+                        position_params.append(node.position)
+
+            param_groups = [
+                {"params": list(self.prediction_head.parameters()), "lr": 0.0003},
+                {
+                    "params": [
+                        p for p in self._input_projections.values()
+                        if isinstance(p, torch.nn.Parameter)
+                    ],
+                    "lr": config.projection_lr,
+                },
+            ]
+            if position_params:
+                param_groups.append(
+                    {"params": position_params, "lr": config.projection_lr}
+                )
+            self._pred_optimizer = torch.optim.Adam(param_groups)
         else:
             self._pred_optimizer = torch.optim.Adam(
                 self.prediction_head.parameters(), lr=0.0003,

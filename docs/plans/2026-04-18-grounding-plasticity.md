@@ -413,6 +413,34 @@ synap_local still wins, locality is the primary driver.
 Findings document:
 `research/developmental/results/env_sequence_v05_synap_local_multiseed_findings.md`
 
+### Sparsity control (cap-based) multi-seed — PARTIAL
+
+Per-call admission cap (``synaptogenesis_max_admissions_per_step``)
+did NOT reduce total admissions — it just redistributed them across
+more fires (removed edges stayed eligible, admitted later). cap=1
+produced 158 admissions across 158 fires (1 per fire) instead of 76
+fires of 2-6 each. Total edges at end: same 182 as uncapped.
+
+What the data still shows (matched total admissions, 158 edges):
+- cap1 vs synap_only:     5/8, 6/8, 0/8 — temporal spread ~no-op
+- cap2 vs synap_only:     7/8, 8/8, 1/8 — faster convergence helps some
+- local vs synap_only:    7/8, 8/8, 8/8 — locality dominant
+- local vs cap1:          7/8, 7/8, 8/8 — locality wins at matched total
+- local vs cap2:          5/8, 7/8, 8/8 — locality wins at matched total
+
+**At matched total admissions, synap_only_local still beats both
+cap variants on 7-8 of 8 regimes across all seeds.** Temporal
+redistribution alone cannot explain the locality benefit.
+
+Limitation: synap_only_local has FEWER total admissions (32-64)
+than the cap variants (158), so this comparison conflates "locality
+bias" with "fewer edges." The clean test is a rate-based sparsity
+control (lower ``synaptogenesis_rate`` to match admission counts
+via rate dilution instead of cap). Launched next.
+
+Findings document:
+`research/developmental/results/env_sequence_v05_synap_sparsity_control_multiseed_findings.md`
+
 ---
 
 ## Direction 2 — Task-supervised input projections (medium-lift)

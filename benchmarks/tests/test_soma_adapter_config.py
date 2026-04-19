@@ -122,3 +122,39 @@ class TestSeedReproducibility:
         a1 = attached_adapter(seed=999)
         assert a0._mem._soma.config.seed == 0
         assert a1._mem._soma.config.seed == 999
+
+
+class TestDistillationFlowThrough:
+    """Direction 4a: distillation params propagate to SOMAConfig."""
+
+    def test_default_distillation_target_is_none(self, attached_adapter) -> None:
+        a = attached_adapter()
+        soma = a._mem._soma
+        assert soma.config.projection_distillation_target == "none"
+
+    def test_distillation_target_propagates(self, attached_adapter) -> None:
+        a = attached_adapter(
+            projection_mode="learnable",
+            projection_distillation_target="llm_embedding",
+        )
+        soma = a._mem._soma
+        assert soma.config.projection_distillation_target == "llm_embedding"
+        assert soma.config.projection_mode == "learnable"
+
+    def test_distillation_model_propagates(self, attached_adapter) -> None:
+        a = attached_adapter(
+            projection_mode="learnable",
+            projection_distillation_target="llm_embedding",
+            projection_distillation_model="nomic-embed-text",
+        )
+        soma = a._mem._soma
+        assert soma.config.projection_distillation_model == "nomic-embed-text"
+
+    def test_distillation_weight_propagates(self, attached_adapter) -> None:
+        a = attached_adapter(
+            projection_mode="learnable",
+            projection_distillation_target="llm_embedding",
+            projection_distillation_weight=0.3,
+        )
+        soma = a._mem._soma
+        assert soma.config.projection_distillation_weight == pytest.approx(0.3)

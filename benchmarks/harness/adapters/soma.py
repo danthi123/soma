@@ -48,6 +48,11 @@ class SomaAdapter(BaseMemorySystem):
         synap_interval: int | None = None,
         synap_rate: float | None = None,
         seed: int | None = None,
+        projection_mode: str | None = None,
+        projection_distillation_target: str | None = None,
+        projection_distillation_model: str | None = None,
+        projection_distillation_weight: float | None = None,
+        teacher_cache_dir: str | None = None,
     ) -> None:
         self._use_sbert = use_sbert
         self._attach_soma = attach_soma
@@ -79,6 +84,16 @@ class SomaAdapter(BaseMemorySystem):
         # nondeterministic behavior; explicit seed is useful for paired
         # comparisons (e.g. locality on/off at matched rng init).
         self._seed = seed
+        # Direction 4a: LLM-distilled projections. None defaults preserve
+        # pre-Direction-4a behavior. When distillation is active, the
+        # adapter will attach a teacher (CachedEmbedder over OllamaEmbedder)
+        # to the PredictiveSOMA during prepare(). projection_mode must
+        # also be "learnable" for distillation to have any effect.
+        self._projection_mode = projection_mode
+        self._projection_distillation_target = projection_distillation_target
+        self._projection_distillation_model = projection_distillation_model
+        self._projection_distillation_weight = projection_distillation_weight
+        self._teacher_cache_dir = teacher_cache_dir
         self._mem: MemoryLayer | None = None
         self._bundle_path: Path | None = None
 
@@ -121,6 +136,20 @@ class SomaAdapter(BaseMemorySystem):
                 config_kwargs["synaptogenesis_interval"] = self._synap_interval
             if self._synap_rate is not None:
                 config_kwargs["synaptogenesis_rate"] = self._synap_rate
+            if self._projection_mode is not None:
+                config_kwargs["projection_mode"] = self._projection_mode
+            if self._projection_distillation_target is not None:
+                config_kwargs["projection_distillation_target"] = (
+                    self._projection_distillation_target
+                )
+            if self._projection_distillation_model is not None:
+                config_kwargs["projection_distillation_model"] = (
+                    self._projection_distillation_model
+                )
+            if self._projection_distillation_weight is not None:
+                config_kwargs["projection_distillation_weight"] = (
+                    self._projection_distillation_weight
+                )
             # Use developmental() as the base when active-growth overrides
             # are requested so tuned helpers like activation_threshold=0.005
             # (vs whitepaper default 0.1) kick in. Without this, a 32-dim

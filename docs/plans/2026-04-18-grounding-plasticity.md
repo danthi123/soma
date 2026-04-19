@@ -249,6 +249,45 @@ Further Phase-1 refinement (probes 1–3) is bounded-effort; commit
 to one more Phase 1 iteration (probe 1) before transitioning to
 Direction 3.
 
+### Phase 1 multi-seed validation (2026-04-19) — FAILED to reproduce
+
+Phase 1.1 (waiver v1): initial-seed bug, regressed all 8 regimes.
+Phase 1.2 (waiver v2): seed-exclusion fix; waiver turned out to be
+a no-op (fresh cold-start window only ~5 steps wide on this graph).
+Default reverted to grace=0.
+
+Phase 1.3 (multi-seed on Phase 1 config, seeds {0, 1, 42}):
+
+| Scorecard | seed=0 | seed=1 | seed=42 |
+|-----------|--------|--------|---------|
+| synap_only_pe wins | 1/8 | 1/8 | 8/8 |
+| full_pe wins | 4/8 | 2/8 | 3/8 |
+
+- Mean synap_only_pe − synap_only delta across all regimes and
+  seeds: **+0.0002 MSE** (supervision slightly HURTS on average).
+- Phase 1's 7/8 result was seed=42 specifically; seeds 0 and 1 show
+  the mechanism underperforms the unsupervised baseline on 7 of 8
+  regimes each.
+
+**Verdict: Direction 1 is a NEGATIVE result.** The single-seed
+finding was an outlier. The mechanism as designed does not provide
+reliable per-seed improvement across the v0.5 capacity schedule.
+
+Detailed analysis:
+`research/developmental/results/env_sequence_v05_synap_pe_multiseed_findings.md`.
+
+**Code disposition**: supervision stays in-tree as opt-in
+(`synaptogenesis_supervision="pe_conditional"`). Default is `"none"`.
+40-test suite continues to enforce correct semantics; the semantics
+just don't help in aggregate.
+
+**Implications for Direction 3**: the global-PE-gate intuition that
+partially worked on one seed may not generalize. Direction 3 has two
+genuinely different properties (proportional gating vs binary
+pause, AND extends to Hebbian learning) so it's still worth testing,
+but it MUST be multi-seeded from day 1 to avoid repeating the
+seed-42-outlier mistake.
+
 ---
 
 ## Direction 2 — Task-supervised input projections (medium-lift)

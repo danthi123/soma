@@ -151,6 +151,57 @@ supervision is actually filtering something.
 
 ~1 day of implementation, ~1 day of experiments.
 
+### Phase 1 progress log (2026-04-18)
+
+**Implemented** (commit 367051e):
+- `SOMAConfig.synaptogenesis_supervision` with options `"none"`
+  (default) and `"pe_conditional"`, plus `synaptogenesis_pe_ema_alpha`
+  (0.99), `synaptogenesis_pe_threshold` (0.0), and
+  `synaptogenesis_pe_min_observations` (5).
+- `SOMA._synap_pe_ema`, `_synap_pe_counts`, `_last_pe` per-step
+  bookkeeping. EMA keys are sorted `(a, b)` tuples so the evidence
+  slot is symmetric.
+- `synaptogenesis()` gains `pe_ema` / `pe_counts` kwargs; per-pair
+  admission gate in the ordered-pair loop skips candidates BEFORE the
+  rng draw (so `supervision="none"` stays bit-exact).
+- Serialization round-trip; legacy checkpoints load with empty dicts.
+- Tests: 23 new (16 in `test_pe_supervised_synaptogenesis.py`, 7 in
+  `TestPeConditionalGate`). Full suite 2378 pass, 0 fail.
+- Runner: `research/developmental/env_sequence_v05_synap_pe.py` with
+  5 variants (no_growth / synap_only / synap_only_pe / full / full_pe).
+
+**Implementation note — degeneracy finding**:
+Probe in isolation showed that on the 14-associator v0.5 graph, every
+pair is co-active every step (sensor projections wake all associators
+uniformly). Consequence: the per-pair EMA receives the same delta for
+every pair on every step, so all 91 EMAs become identical. The
+"per-pair" structure collapses to a single global PE-trend EMA, which
+serves as a GLOBAL pause/resume gate on synap rather than a per-pair
+discriminator.
+
+This is still potentially useful behavior ("don't wire during PE
+spikes") but is not the mechanism the plan doc originally envisioned.
+If the current experiment shows null:
+- Variant 1b: coactivation-weighted EMA (`weight = mag[a] * mag[b]
+  / sum(all_coacts)` so uniformly-active pairs get equal tiny weight;
+  still degenerate under uniform activation).
+- Variant 1c: per-pair regression slope tracking — maintain
+  `sum_x, sum_y, sum_xy, sum_x2, n` per pair, use the regression
+  slope of `pe_delta ~ coact_strength` rather than unconditional
+  EMA. Handles uniform case gracefully via `var(x) = 0` fallback.
+- Variant 1d: sparsify activation first — lateral inhibition
+  `k_winners=2` so different pairs co-activate on different steps.
+  Feeds per-pair variance into the EMA from the input side rather
+  than the accounting side.
+
+**Threshold note**: Plan doc specified `-0.001`. Phase 1 runner uses
+default `0.0` (admit if any PE drop). Smoke test showed typical EMAs
+near ±0.0005, so `-0.001` would filter most pairs. Phase 1 is the
+permissive run; if it shows signal, a threshold sweep follows.
+
+**Open**: full 4000-step experiment is running at time of this log
+entry. Outcomes update commits.
+
 ---
 
 ## Direction 2 — Task-supervised input projections (medium-lift)

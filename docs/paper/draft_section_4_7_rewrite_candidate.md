@@ -211,6 +211,35 @@ failure is about missing a SPATIAL admission prior, and that adding
 one recovers (and exceeds) the `no_growth` baseline on every hard
 regime.
 
+### Scope: the locality result is substrate-specific
+
+To preempt overclaim: we attempted to replicate the locality benefit
+on a semantic-retrieval workload (LoCoMo, 5882 turns / 1982 queries;
+also a synthetic 50-fact probe). Both tests showed neutral effect
+on retrieval Recall@k when the locality filter was toggled on/off.
+On LoCoMo specifically, all three tested SOMA variants (flat cosine,
+graph re-rank without locality, graph re-rank with locality) produced
+identical Recall@1/5/10 to three decimal places. Two plausible
+reasons:
+
+1. **Retrieval reads activations directly, not via edge-propagated
+   predictions.** The graph's structural signal is a secondary
+   re-rank blended at α into a cosine score that already captures
+   most of the retrievable information. Locality-filtered edges
+   produce a cleaner graph but not necessarily a cleaner re-rank
+   score.
+2. **LoCoMo's cosine baseline is weak** (R@5 = 0.238 on sbert
+   `all-MiniLM-L6-v2`). Many queries fail before the re-rank step
+   can affect them. The graph contribution is effectively noise
+   across all variants.
+
+So the locality finding is a positive design principle on SOMA's
+NATIVE prediction substrate (where edges carry the computation
+directly). It does not, on current evidence, transfer to retrieval
+workloads where SOMA is a secondary signal. We report this limit
+plainly rather than framing the v0.5 result as a retrieval
+improvement.
+
 ---
 
 ## Notes for the revision

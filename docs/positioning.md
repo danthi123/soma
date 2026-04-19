@@ -86,12 +86,31 @@ substrate for learning to come**. On the benchmarks committed under
   triples R@1 on LoCoMo (0.098 → 0.287) and lifts R@5 by 21.2 pp. Peers
   that only expose the embedder's cosine can't match this without
   bringing their own lexical stage.
+- **Graph rerank is safe + fast** — on full LoCoMo (5,882 turns, 1,982
+  queries) with mxbai-embed-large, SOMA's graph-rerank retrieval is
+  within 0.006 R@5 of pure Chroma (0.343 vs 0.349) at **~2× lower
+  retrieve latency** (16ms vs 34ms). Enabling the graph doesn't hurt
+  quality, and you pick up the latency win. Note: this is SOMA-on-CUDA
+  vs Chroma-on-CPU, which is how you'd deploy each.
 
 The graph is plastic-by-construction (synaptogenesis, pruning,
 myelination) but under the memory-only workload the growth knobs don't
 fire — the substrate ships, the activation is an **open research
 question** `benchmarks/reports/paper-draft.md` §5 scopes explicitly.
 Today's efficiency and ops wins don't depend on it.
+
+### What we've ruled out (honest)
+
+- **LLM-distilled projections on retrieval**: Direction 4a (commit
+  trail `e212798`..`767822b`) implemented teacher-distillation of
+  SOMA's input projections using `mxbai-embed-large` as the teacher.
+  On full LoCoMo, distilled variants underperformed both plain SOMA
+  and Chroma (−0.008 to −0.015 on R@5). Root cause: distillation
+  trained the input projections, but retrieval reads from the node
+  fingerprint (dominated by Hebbian-trained node weights) — the
+  signal dilutes across too many layers. Teacher infrastructure
+  (`soma.llm.embedders`) ships as a clean dependency for future work,
+  but the distillation-for-retrieval path is closed.
 
 ## Quick start
 

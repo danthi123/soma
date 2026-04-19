@@ -441,6 +441,71 @@ via rate dilution instead of cap). Launched next.
 Findings document:
 `research/developmental/results/env_sequence_v05_synap_sparsity_control_multiseed_findings.md`
 
+### Rate-based sparsity control multi-seed — LOCALITY CONFIRMED
+
+Reduced ``synaptogenesis_rate`` (2.0 → 0.63, 0.30) to test whether
+matched-total random admissions also improve MSE. Finding:
+
+- Probability clamps to 1.0 for high-coact pairs (coact ≈ 2-4 on
+  v0.5, bonus ≈ 0.85, so product > 1.0 down to rate ~0.3).
+- r063 and r030 admit the same 158 edges as rate=2.0 — rate
+  reduction shifts temporal order but not total count.
+- Scorecard at matched total: local wins vs r063 (7/8, 7/8, 8/8)
+  and vs r030 (8/8, 7/8, 8/8).
+
+Four sparsity-adjacent controls now all fail to close the gap to
+synap_only_local. Cumulative evidence is overwhelming: **locality
+is a real mechanism, not a sparsity artifact.**
+
+Findings document:
+`research/developmental/results/env_sequence_v05_synap_rate_control_multiseed_findings.md`
+
+### Locality-cutoff sweep — INVERTED-U confirmed
+
+Swept `synaptogenesis_max_distance` across {0.25, 0.50, 0.75, 1.00}
+and compared to `synap_only` (effectively cutoff=∞).
+
+| Cutoff | Edges admitted | seed 0/1/42 win rate | Interpretation |
+|--------|----------------|----------------------|----------------|
+| 0.25   | 0              | 7/7/8                | ≡ no_growth (all pairs rejected) |
+| **0.50** | 32-88        | **8/7/7**            | **Sweet spot** |
+| 0.75   | 150-158        | 1/1/0                | Too loose, ≈ synap_only |
+| 1.00   | 150-158        | 8/1/0                | Mixed, seed-selective |
+
+The inverted-U is dispositive. If sparsity alone drove the benefit,
+tighter cutoffs (fewer edges) would monotonically help. Instead
+cutoff=0.50 beats both tighter (0.25) and looser (0.75, 1.00)
+values. The filter's benefit is specifically spatial with a
+tunable aperture.
+
+On mlp_4x64, cutoff=0.50 hits 0.0002 MSE vs synap_only's 0.0052 —
+a 26× reduction and 5× below no_growth.
+
+Findings document:
+`research/developmental/results/env_sequence_v05_synap_cutoff_sweep_multiseed_findings.md`
+
+### Retrieval transfer (synthetic 50-fact) — WEAK POSITIVE
+
+First cross-substrate check: does the v0.5 finding help semantic
+retrieval? Paired-seed sweep across alpha ∈ {0.0, 0.1, 0.2, 0.3}
+with active-growth config (synap_interval=10, rate=2.0).
+
+- alpha ≤ 0.20: no effect (locality doesn't matter where graph
+  signal is small)
+- alpha=0.30: mean +0.013 R@3, but only 1/3 seeds show a real
+  effect (seed=1: 0.788 → 0.827)
+
+Interpretation: locality provides **downside protection** against
+rare alpha-amplified noise, not upside creation. Qualitatively
+weaker than the v0.5 finding (7-8/8 wins all seeds, 10× MSE
+reductions). Possibly dataset-size-limited (50 facts / 26 queries).
+
+LoCoMo (5000+ turns / 1986 queries) run launched as the
+scale-sensitive follow-up.
+
+Findings:
+`benchmarks/reports/locality_ablation_active_growth_findings.md`
+
 ---
 
 ## Direction 2 — Task-supervised input projections (medium-lift)

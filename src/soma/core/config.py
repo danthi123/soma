@@ -178,6 +178,20 @@ class SOMAConfig:
     # projections are per-node and many of them update simultaneously.
     projection_lr: float = 1e-4
 
+    # --- LLM-distilled projections (Direction 4a, 2026-04-19) ---------
+    # Train the learnable projections against a pretrained embedding
+    # model so they carry semantic structure rather than random noise.
+    # When "llm_embedding", the prediction-loss trainer adds a cosine-
+    # distance term against teacher.embed(source_text). "none" (default)
+    # preserves prior behavior.
+    projection_distillation_target: Literal["none", "llm_embedding"] = "none"
+    projection_distillation_model: str = "mxbai-embed-large"
+    projection_distillation_base_url: str = "http://localhost:11434"
+    # Weight on the cosine-distance distillation loss relative to the
+    # prediction loss (alpha). 0.0 disables the loss term without
+    # disabling the teacher plumbing. Must be >= 0.
+    projection_distillation_weight: float = 1.0
+
     # --- Plasticity broadcast (Direction 3, 2026-04-18) ----------------
     # Neuromodulator-style scalar that rises on PE spikes and falls
     # during stable phases. Multiplies synaptogenesis_rate and
@@ -420,6 +434,17 @@ class SOMAConfig:
             raise ValueError(
                 f"SOMAConfig.projection_lr must be > 0, "
                 f"got {self.projection_lr!r}"
+            )
+
+        if self.projection_distillation_target not in ("none", "llm_embedding"):
+            raise ValueError(
+                f"SOMAConfig.projection_distillation_target must be 'none' or "
+                f"'llm_embedding', got {self.projection_distillation_target!r}"
+            )
+        if self.projection_distillation_weight < 0.0:
+            raise ValueError(
+                f"SOMAConfig.projection_distillation_weight must be >= 0, "
+                f"got {self.projection_distillation_weight!r}"
             )
 
         if self.plasticity_broadcast_mode not in ("off", "pe_scaled"):

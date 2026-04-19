@@ -322,3 +322,41 @@ class TestMemoryLayerPreset:
         """Callers who want vanilla behavior can turn locality off."""
         cfg = SOMAConfig.memory_layer(synaptogenesis_max_distance=0.0)
         assert cfg.synaptogenesis_max_distance == 0.0
+
+
+class TestDistillationConfig:
+    """Direction 4a: LLM-distilled projections config fields."""
+
+    def test_default_distillation_target_is_none(self) -> None:
+        cfg = SOMAConfig()
+        assert cfg.projection_distillation_target == "none"
+
+    def test_accepts_llm_embedding_target(self) -> None:
+        cfg = SOMAConfig(projection_distillation_target="llm_embedding")
+        assert cfg.projection_distillation_target == "llm_embedding"
+
+    def test_rejects_invalid_distillation_target(self) -> None:
+        with pytest.raises(ValueError, match="projection_distillation_target"):
+            SOMAConfig(projection_distillation_target="bogus")  # type: ignore[arg-type]
+
+    def test_default_distillation_model_is_mxbai(self) -> None:
+        cfg = SOMAConfig()
+        assert cfg.projection_distillation_model == "mxbai-embed-large"
+
+    def test_default_distillation_base_url_is_local_ollama(self) -> None:
+        cfg = SOMAConfig()
+        assert cfg.projection_distillation_base_url == "http://localhost:11434"
+
+    def test_default_distillation_weight_is_one(self) -> None:
+        cfg = SOMAConfig()
+        assert cfg.projection_distillation_weight == 1.0
+
+    def test_rejects_negative_distillation_weight(self) -> None:
+        with pytest.raises(ValueError, match="projection_distillation_weight"):
+            SOMAConfig(projection_distillation_weight=-0.1)
+
+    def test_accepts_zero_distillation_weight(self) -> None:
+        # Zero weight is legal (disables the loss contribution without
+        # touching the target mode — useful for ablations).
+        cfg = SOMAConfig(projection_distillation_weight=0.0)
+        assert cfg.projection_distillation_weight == 0.0

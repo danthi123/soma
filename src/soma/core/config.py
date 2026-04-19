@@ -158,6 +158,31 @@ class SOMAConfig:
     # filtering. Below this count the pair is considered cold-start and
     # NOT admitted — the gate is conservative by design.
     synaptogenesis_pe_min_observations: int = 5
+
+    # --- Plasticity broadcast (Direction 3, 2026-04-18) ----------------
+    # Neuromodulator-style scalar that rises on PE spikes and falls
+    # during stable phases. Multiplies synaptogenesis_rate and
+    # hebbian_lr each step so all plasticity concentrates on moments
+    # of informative surprise. Independent of Direction 1
+    # (synaptogenesis_supervision): composes with both supervision
+    # modes and with any growth schedule.
+    #
+    # "off": gain is constant 1.0 (legacy behavior, zero overhead).
+    # "pe_scaled": gain tracks recent_pe_mean / baseline_pe_mean via
+    #   an EMA, bounded to [min_gain, max_gain]. baseline_pe_mean is
+    #   the mean of the same recent-errors ring buffer neurogenesis
+    #   uses for its ratio trigger.
+    plasticity_broadcast_mode: Literal["off", "pe_scaled"] = "off"
+    # EMA smoothing factor on the broadcast gain. High = slow updates
+    # (heavy history). 0.95 averages over ~20 samples at equilibrium.
+    plasticity_broadcast_alpha: float = 0.95
+    # Floor on the gain. Prevents plasticity from collapsing to zero
+    # during extended stable phases (otherwise nothing ever learns
+    # again once baseline stabilizes).
+    plasticity_broadcast_min_gain: float = 0.1
+    # Ceiling on the gain. Prevents runaway plasticity during
+    # transient extreme PE spikes.
+    plasticity_broadcast_max_gain: float = 3.0
     # Pairs that include a NEUROGENESIS-created node (creation_step > 0)
     # whose age is less than this grace window bypass the cold-start
     # (min_observations) check, so fresh nodes can wire into the graph
@@ -320,6 +345,33 @@ class SOMAConfig:
             raise ValueError(
                 f"SOMAConfig.synaptogenesis_supervision_new_node_grace must be a "
                 f"non-negative int, got {self.synaptogenesis_supervision_new_node_grace!r}"
+            )
+
+        if self.plasticity_broadcast_mode not in ("off", "pe_scaled"):
+            raise ValueError(
+                f"SOMAConfig.plasticity_broadcast_mode must be 'off' or "
+                f"'pe_scaled', got {self.plasticity_broadcast_mode!r}"
+            )
+        if not 0.0 <= self.plasticity_broadcast_alpha < 1.0:
+            raise ValueError(
+                f"SOMAConfig.plasticity_broadcast_alpha must be in [0, 1), "
+                f"got {self.plasticity_broadcast_alpha!r}"
+            )
+        if self.plasticity_broadcast_min_gain <= 0.0:
+            raise ValueError(
+                f"SOMAConfig.plasticity_broadcast_min_gain must be > 0, "
+                f"got {self.plasticity_broadcast_min_gain!r}"
+            )
+        if self.plasticity_broadcast_max_gain <= 0.0:
+            raise ValueError(
+                f"SOMAConfig.plasticity_broadcast_max_gain must be > 0, "
+                f"got {self.plasticity_broadcast_max_gain!r}"
+            )
+        if self.plasticity_broadcast_max_gain <= self.plasticity_broadcast_min_gain:
+            raise ValueError(
+                f"SOMAConfig.plasticity_broadcast_max_gain "
+                f"({self.plasticity_broadcast_max_gain}) must be > min_gain "
+                f"({self.plasticity_broadcast_min_gain})"
             )
 
         if not 0.0 < self.wm_decay_rate <= 1.0:

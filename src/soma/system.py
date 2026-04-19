@@ -150,6 +150,10 @@ class SOMA:
         self._synap_pe_ema: dict[tuple[str, str], float] = {}
         self._synap_pe_counts: dict[tuple[str, str], int] = {}
         self._last_pe: float | None = None
+        # Plasticity broadcast (Direction 3) scalar. Multiplied into
+        # synaptogenesis_rate and hebbian_lr each step. Default 1.0 is
+        # a no-op; updated each step when mode="pe_scaled".
+        self.plasticity_gain: float = 1.0
 
         self.graph = Graph()
         self._initialize_seed_graph(config)
@@ -407,6 +411,7 @@ class SOMA:
                     activations,
                     self.config,
                     lr_multiplier=lr_multiplier,
+                    plasticity_scale=self.plasticity_gain,
                 )
 
         # Successful learning step (or no-target inference): reset counter.
@@ -422,6 +427,13 @@ class SOMA:
             # (called from _maybe_grow) sees the freshest evidence for
             # this step's co-active pairs.
             self._maybe_update_synap_pe(activations, loss_value)
+            # Update global plasticity broadcast gain BEFORE growth so
+            # synaptogenesis_rate scaling reflects the current surprise
+            # level. The update reads _recent_errors which hasn't been
+            # appended-to yet this step — that's intentional: the gain
+            # reflects the state heading INTO this growth cycle, not the
+            # step's own PE contribution.
+            self._maybe_update_plasticity_gain()
             self._maybe_grow(activations, loss_value, rng=rng)
             self._maybe_consolidate(rng=rng)
 
@@ -637,6 +649,42 @@ class SOMA:
             self._update_synap_pe_ema(active, pe_delta)
         self._last_pe = loss_value
 
+    # ------------------------------------------------------------------
+    # Plasticity broadcast helpers (Direction 3)
+    # ------------------------------------------------------------------
+    def _update_plasticity_gain(self, pe_ratio: float) -> None:
+        """EMA-update the broadcast gain toward a target ratio.
+
+        The target is ``pe_ratio`` (recent_pe_mean / baseline_pe_mean,
+        neurogenesis's trigger signal). When PE is spiking, ratio > 1,
+        pulling the gain up. When PE has been stable for a while,
+        ratio approaches 1 and the gain returns to nominal.
+
+        Result is always clamped to
+        ``[min_gain, max_gain]`` so the gain can neither collapse
+        plasticity to zero nor run away.
+        """
+        alpha = self.config.plasticity_broadcast_alpha
+        lo = self.config.plasticity_broadcast_min_gain
+        hi = self.config.plasticity_broadcast_max_gain
+        updated = alpha * self.plasticity_gain + (1.0 - alpha) * pe_ratio
+        self.plasticity_gain = max(lo, min(hi, updated))
+
+    def _maybe_update_plasticity_gain(self) -> None:
+        """Step-level integration point for the plasticity broadcast.
+
+        Guard: mode off. Uses the neurogenesis ratio
+        (recent_pe_mean / baseline_pe_mean) as the broadcast target
+        — same signal neurogenesis already watches. Returns 0.0 when
+        there's no baseline yet, in which case we skip the update.
+        """
+        if self.config.plasticity_broadcast_mode != "pe_scaled":
+            return
+        ratio = _neurogenesis_trigger_ratio(self._recent_errors)
+        if ratio <= 0.0:
+            return  # no baseline yet; keep gain where it is
+        self._update_plasticity_gain(ratio)
+
     def _should_attempt_neurogenesis(self) -> bool:
         """Gate for the neurogenesis call in ``_maybe_grow``.
 
@@ -683,6 +731,7 @@ class SOMA:
                     rng=rng,
                     pe_ema=self._synap_pe_ema,
                     pe_counts=self._synap_pe_counts,
+                    rate_scale=self.plasticity_gain,
                 )
                 for edge in new_edges:
                     self.record_growth_event(
@@ -985,6 +1034,8 @@ class SOMA:
             "synap_pe_ema": dict(self._synap_pe_ema),
             "synap_pe_counts": dict(self._synap_pe_counts),
             "last_pe": self._last_pe,
+            # Direction 3 broadcast gain.
+            "plasticity_gain": self.plasticity_gain,
         }
         payload = to_cpu_state(payload)
         wrapped = wrap_payload(payload, soma_version=_current_soma_version())
@@ -1055,6 +1106,9 @@ class SOMA:
         }
         stored_last_pe = state.get("last_pe", None)
         self._last_pe = float(stored_last_pe) if stored_last_pe is not None else None
+        # Direction 3: plasticity broadcast gain. Legacy checkpoints get
+        # the nominal 1.0 (no-op).
+        self.plasticity_gain = float(state.get("plasticity_gain", 1.0))
 
     # ------------------------------------------------------------------
     # Directory-shaped brain bundle (brain.pt + tokenizer + encoder + manifest)

@@ -47,6 +47,7 @@ def update_step(
     *,
     lr_multiplier: float = 1.0,
     zero_grad: bool = True,
+    plasticity_scale: float = 1.0,
 ) -> None:
     """Apply one combined backprop + Hebbian + homeostatic update.
 
@@ -96,7 +97,11 @@ def update_step(
     )
 
     # 3. Hebbian edge update + clamp + strength EMA.
-    _apply_hebbian_edge_updates(graph, activations, config=config)
+    # ``plasticity_scale`` comes from Direction 3 neuromodulator broadcast
+    # (SOMA.plasticity_gain); default 1.0 preserves legacy behavior.
+    _apply_hebbian_edge_updates(
+        graph, activations, config=config, plasticity_scale=plasticity_scale,
+    )
 
     # 4. Advance maturity of active nodes.
     for nid in active_node_ids:
@@ -156,8 +161,13 @@ def _apply_hebbian_edge_updates(
     activations: Mapping[str, torch.Tensor],
     *,
     config: SOMAConfig,
+    plasticity_scale: float = 1.0,
 ) -> None:
     """Fire-together-wire-together edge reinforcement, clamp, and strength EMA.
+
+    ``plasticity_scale`` is Direction 3's broadcast gain — multiplies
+    the effective Hebbian LR so plasticity concentrates on surprising
+    moments. Default 1.0 preserves legacy behavior.
 
     Weight decay (``config.edge_weight_decay``) is applied only to edges
     that also receive a Hebbian bump this step — i.e., the same edges
@@ -171,7 +181,7 @@ def _apply_hebbian_edge_updates(
     """
     threshold = config.activation_threshold
     max_w = config.max_edge_weight
-    hebbian_lr = config.hebbian_lr
+    hebbian_lr = config.hebbian_lr * max(0.0, float(plasticity_scale))
     decay = config.edge_weight_decay
 
     with torch.no_grad():

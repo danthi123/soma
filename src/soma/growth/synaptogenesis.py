@@ -37,6 +37,7 @@ def synaptogenesis(
     rng: torch.Generator | None = None,
     pe_ema: Mapping[tuple[str, str], float] | None = None,
     pe_counts: Mapping[tuple[str, str], int] | None = None,
+    rate_scale: float = 1.0,
 ) -> list[Edge]:
     """Propose and add new edges between co-active nodes.
 
@@ -62,7 +63,7 @@ def synaptogenesis(
         raise ValueError(f"step must be non-negative, got {step}")
 
     threshold = config.activation_threshold
-    rate = config.synaptogenesis_rate
+    rate = config.synaptogenesis_rate * max(0.0, float(rate_scale))
     locality = config.locality_scale
     supervision_on = config.synaptogenesis_supervision == "pe_conditional"
     if supervision_on:

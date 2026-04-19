@@ -63,11 +63,11 @@ class PredictiveSOMA(nn.Module):
                 proj = self._build_projection(gen=gen)
                 self._input_projections[node.id] = proj
         # Direction 4b: position_projector maps flat W_i -> position_dim
-        # via a fixed random linear projection. Used only when position
-        # distillation is active (llm_spatial target + learnable positions).
-        # Registered as a non-Parameter tensor (frozen). Johnson-Lindenstrauss
+        # via a fixed random linear projection. Registered as an nn.Module
+        # buffer so it follows the module across .to(device) / state_dict()
+        # boundaries. Only allocated when position distillation is active
+        # (llm_spatial target + learnable positions). Johnson-Lindenstrauss
         # preserves pairwise distances, which is what the locality filter reads.
-        self._position_projector: torch.Tensor | None = None
         if (
             config.position_mode == "learnable"
             and config.projection_distillation_target == "llm_spatial"
@@ -75,11 +75,17 @@ class PredictiveSOMA(nn.Module):
             proj_gen = torch.Generator()
             if config.seed is not None:
                 proj_gen.manual_seed(config.seed + 31)
-            self._position_projector = torch.randn(
+            projector = torch.randn(
                 config.sensor_output_dim ** 2,
                 config.position_dim,
                 generator=proj_gen,
             ).to(self.device)
+            self.register_buffer("_position_projector", projector)
+        else:
+            # Explicit None so attribute always exists; register as a
+            # non-persistent "buffer" of None would not work, so use
+            # plain attribute assignment for the disabled path.
+            self._position_projector = None  # type: ignore[assignment]
         self._last_prediction: torch.Tensor | None = None
         self._last_summary: torch.Tensor | None = None
         # When projections are learnable, include them in the prediction

@@ -28,17 +28,20 @@ class TestPositionProjector:
     def test_position_projector_registered_as_buffer(self) -> None:
         """position_projector is a fixed random matrix used to map
         flat W_i to position_dim. Should be a buffer (not parameter),
-        shape (sensor_dim**2, position_dim)."""
+        shape (sensor_dim**2, position_dim), registered on the module
+        so it follows .to(device) and state_dict() boundaries."""
         cfg = _spatial_config()
         pred = PredictiveSOMA(config=cfg)
         assert hasattr(pred, "_position_projector")
         proj = pred._position_projector
         assert isinstance(proj, torch.Tensor)
-        # Not a Parameter — frozen
         assert not isinstance(proj, torch.nn.Parameter)
-        # Shape check
         expected_shape = (cfg.sensor_output_dim ** 2, cfg.position_dim)
         assert proj.shape == expected_shape
+        # Must be a registered buffer (follows the Module across
+        # .to(device) / state_dict() calls)
+        buffer_names = [name for name, _ in pred.named_buffers()]
+        assert "_position_projector" in buffer_names
 
     def test_position_projector_absent_when_not_spatial(self) -> None:
         """Frozen position_mode — no need for projector."""

@@ -197,7 +197,9 @@ class SOMAConfig:
     # per input receive distillation gradient. Breaks the per-node
     # degeneracy of Direction 4a (mean-target pulled all W_i in the
     # same direction, collapsing per-node specialization).
-    # 0 = no competition (Direction 4a behavior, all nodes get signal).
+    # Default 3 enables competitive top-3 selection. Set to 0 to
+    # disable competition — every node receives gradient (Direction 4a
+    # behavior), kept as an ablation hook.
     projection_distillation_winners: int = 3
     # Node positions become learnable parameters trained to track
     # (fixed random projection of) their input projection W_i. When
@@ -467,6 +469,15 @@ class SOMAConfig:
                 f"SOMAConfig.projection_distillation_weight must be >= 0, "
                 f"got {self.projection_distillation_weight!r}"
             )
+        if (
+            not isinstance(self.projection_distillation_winners, int)
+            or self.projection_distillation_winners < 0
+        ):
+            raise ValueError(
+                f"SOMAConfig.projection_distillation_winners must be "
+                f"non-negative int, got "
+                f"{self.projection_distillation_winners!r}"
+            )
 
         if self.position_mode not in ("frozen_random", "learnable"):
             raise ValueError(
@@ -477,15 +488,6 @@ class SOMAConfig:
             raise ValueError(
                 f"SOMAConfig.position_coupling_weight must be >= 0, "
                 f"got {self.position_coupling_weight!r}"
-            )
-        if (
-            not isinstance(self.projection_distillation_winners, int)
-            or self.projection_distillation_winners < 0
-        ):
-            raise ValueError(
-                f"SOMAConfig.projection_distillation_winners must be "
-                f"non-negative int, got "
-                f"{self.projection_distillation_winners!r}"
             )
 
         if self.plasticity_broadcast_mode not in ("off", "pe_scaled"):

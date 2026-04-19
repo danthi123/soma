@@ -404,3 +404,20 @@ class TestSpatialDistillationConfig:
     def test_rejects_negative_distillation_winners(self) -> None:
         with pytest.raises(ValueError, match="projection_distillation_winners"):
             SOMAConfig(projection_distillation_winners=-1)
+
+    def test_accepts_zero_distillation_winners(self) -> None:
+        # Zero disables competition — reverts to Direction 4a mean-target
+        # behavior, kept as an ablation hook. Must be explicitly legal.
+        cfg = SOMAConfig(projection_distillation_winners=0)
+        assert cfg.projection_distillation_winners == 0
+
+    def test_accepts_zero_position_coupling_weight(self) -> None:
+        # Zero weight disables the position loss without touching the
+        # target mode — useful for ablation.
+        cfg = SOMAConfig(
+            projection_mode="learnable",
+            position_mode="learnable",
+            projection_distillation_target="llm_spatial",
+            position_coupling_weight=0.0,
+        )
+        assert cfg.position_coupling_weight == 0.0

@@ -559,6 +559,30 @@ class SOMAConfig:
                 f"SOMAConfig.vram_safety_factor must be in (0, 1], got {self.vram_safety_factor!r}"
             )
 
+        # Direction 4b combo validation: reject configurations where
+        # the learnable-position machinery has no training signal.
+        legal_target_for_learnable_position = {"llm_spatial"}
+        if (
+            self.position_mode == "learnable"
+            and self.projection_distillation_target not in legal_target_for_learnable_position
+        ):
+            raise ValueError(
+                f"SOMAConfig.position_mode='learnable' requires "
+                f"projection_distillation_target='llm_spatial' (got "
+                f"{self.projection_distillation_target!r}). Otherwise "
+                f"positions have no loss to train them."
+            )
+        if (
+            self.projection_distillation_target == "llm_spatial"
+            and self.projection_mode != "learnable"
+        ):
+            raise ValueError(
+                f"SOMAConfig.projection_distillation_target='llm_spatial' "
+                f"requires projection_mode='learnable' (got "
+                f"{self.projection_mode!r}). Spatial distillation depends "
+                f"on the projection training loop."
+            )
+
     # ------------------------------------------------------------------
     # YAML (de)serialization
     # ------------------------------------------------------------------

@@ -421,3 +421,33 @@ class TestSpatialDistillationConfig:
             position_coupling_weight=0.0,
         )
         assert cfg.position_coupling_weight == 0.0
+
+    def test_rejects_learnable_position_with_none_target(self) -> None:
+        """Learnable positions with no distillation target → positions
+        have no loss to train them → pointless."""
+        with pytest.raises(ValueError, match="position_mode.*learnable.*requires"):
+            SOMAConfig(
+                projection_mode="learnable",
+                position_mode="learnable",
+                projection_distillation_target="none",
+            )
+
+    def test_rejects_learnable_position_with_llm_embedding_target(self) -> None:
+        """Learnable positions require llm_spatial target; llm_embedding
+        alone has no position loss."""
+        with pytest.raises(ValueError, match="position_mode.*learnable.*requires"):
+            SOMAConfig(
+                projection_mode="learnable",
+                position_mode="learnable",
+                projection_distillation_target="llm_embedding",
+            )
+
+    def test_rejects_llm_spatial_without_learnable_projection(self) -> None:
+        """llm_spatial requires learnable projections since spatial
+        distillation depends on the projection training loop."""
+        with pytest.raises(ValueError, match="llm_spatial.*requires.*learnable"):
+            SOMAConfig(
+                projection_mode="frozen_random",
+                position_mode="learnable",
+                projection_distillation_target="llm_spatial",
+            )

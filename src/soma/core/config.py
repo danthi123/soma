@@ -184,13 +184,29 @@ class SOMAConfig:
     # When "llm_embedding", the prediction-loss trainer adds a cosine-
     # distance term against teacher.embed(source_text). "none" (default)
     # preserves prior behavior.
-    projection_distillation_target: Literal["none", "llm_embedding"] = "none"
+    projection_distillation_target: Literal["none", "llm_embedding", "llm_spatial"] = "none"
     projection_distillation_model: str = "mxbai-embed-large"
     projection_distillation_base_url: str = "http://localhost:11434"
     # Weight on the cosine-distance distillation loss relative to the
     # prediction loss (alpha). 0.0 disables the loss term without
     # disabling the teacher plumbing. Must be >= 0.
     projection_distillation_weight: float = 1.0
+
+    # --- Direction 4b: spatial distillation (2026-04-19) ---------
+    # Top-K competitive distillation: only the K most-activated nodes
+    # per input receive distillation gradient. Breaks the per-node
+    # degeneracy of Direction 4a (mean-target pulled all W_i in the
+    # same direction, collapsing per-node specialization).
+    # 0 = no competition (Direction 4a behavior, all nodes get signal).
+    projection_distillation_winners: int = 3
+    # Node positions become learnable parameters trained to track
+    # (fixed random projection of) their input projection W_i. When
+    # projections get distilled toward teacher, positions follow.
+    # Locality filter then operates on semantic space.
+    position_mode: Literal["frozen_random", "learnable"] = "frozen_random"
+    # Weight (β) on position coupling loss:
+    #   β · Σ_i ||p_i − normalize(P · W_i.flatten())||²
+    position_coupling_weight: float = 1.0
 
     # --- Plasticity broadcast (Direction 3, 2026-04-18) ----------------
     # Neuromodulator-style scalar that rises on PE spikes and falls
@@ -436,15 +452,40 @@ class SOMAConfig:
                 f"got {self.projection_lr!r}"
             )
 
-        if self.projection_distillation_target not in ("none", "llm_embedding"):
+        if self.projection_distillation_target not in (
+            "none",
+            "llm_embedding",
+            "llm_spatial",
+        ):
             raise ValueError(
-                f"SOMAConfig.projection_distillation_target must be 'none' or "
-                f"'llm_embedding', got {self.projection_distillation_target!r}"
+                f"SOMAConfig.projection_distillation_target must be 'none', "
+                f"'llm_embedding', or 'llm_spatial', got "
+                f"{self.projection_distillation_target!r}"
             )
         if self.projection_distillation_weight < 0.0:
             raise ValueError(
                 f"SOMAConfig.projection_distillation_weight must be >= 0, "
                 f"got {self.projection_distillation_weight!r}"
+            )
+
+        if self.position_mode not in ("frozen_random", "learnable"):
+            raise ValueError(
+                f"SOMAConfig.position_mode must be 'frozen_random' or "
+                f"'learnable', got {self.position_mode!r}"
+            )
+        if self.position_coupling_weight < 0.0:
+            raise ValueError(
+                f"SOMAConfig.position_coupling_weight must be >= 0, "
+                f"got {self.position_coupling_weight!r}"
+            )
+        if (
+            not isinstance(self.projection_distillation_winners, int)
+            or self.projection_distillation_winners < 0
+        ):
+            raise ValueError(
+                f"SOMAConfig.projection_distillation_winners must be "
+                f"non-negative int, got "
+                f"{self.projection_distillation_winners!r}"
             )
 
         if self.plasticity_broadcast_mode not in ("off", "pe_scaled"):

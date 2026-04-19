@@ -360,3 +360,47 @@ class TestDistillationConfig:
         # touching the target mode — useful for ablations).
         cfg = SOMAConfig(projection_distillation_weight=0.0)
         assert cfg.projection_distillation_weight == 0.0
+
+
+class TestSpatialDistillationConfig:
+    """Direction 4b: spatial distillation config fields."""
+
+    def test_accepts_llm_spatial_target(self) -> None:
+        cfg = SOMAConfig(
+            projection_mode="learnable",
+            position_mode="learnable",
+            projection_distillation_target="llm_spatial",
+        )
+        assert cfg.projection_distillation_target == "llm_spatial"
+
+    def test_default_position_mode_is_frozen(self) -> None:
+        cfg = SOMAConfig()
+        assert cfg.position_mode == "frozen_random"
+
+    def test_accepts_learnable_position_mode(self) -> None:
+        cfg = SOMAConfig(
+            projection_mode="learnable",
+            position_mode="learnable",
+            projection_distillation_target="llm_spatial",
+        )
+        assert cfg.position_mode == "learnable"
+
+    def test_rejects_invalid_position_mode(self) -> None:
+        with pytest.raises(ValueError, match="position_mode"):
+            SOMAConfig(position_mode="foo")  # type: ignore[arg-type]
+
+    def test_default_position_coupling_weight_is_one(self) -> None:
+        cfg = SOMAConfig()
+        assert cfg.position_coupling_weight == 1.0
+
+    def test_rejects_negative_position_coupling_weight(self) -> None:
+        with pytest.raises(ValueError, match="position_coupling_weight"):
+            SOMAConfig(position_coupling_weight=-0.1)
+
+    def test_default_projection_distillation_winners_is_three(self) -> None:
+        cfg = SOMAConfig()
+        assert cfg.projection_distillation_winners == 3
+
+    def test_rejects_negative_distillation_winners(self) -> None:
+        with pytest.raises(ValueError, match="projection_distillation_winners"):
+            SOMAConfig(projection_distillation_winners=-1)

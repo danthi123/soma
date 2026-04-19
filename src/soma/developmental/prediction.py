@@ -115,6 +115,11 @@ class PredictiveSOMA(nn.Module):
         self._node_hash_cache: dict[str, bytes] = {}
         # Precomputed index arrays for fingerprint: node_id -> (src_indices, tgt_indices)
         self._fp_index_cache: dict[str, tuple[torch.Tensor, torch.Tensor]] = {}
+        # Direction 4a: optional LLM teacher for projection distillation.
+        # None means no distillation regardless of config. Attached via
+        # attach_teacher() after construction so swapping teachers is
+        # decoupled from SOMA construction.
+        self._teacher: Any = None
 
     def set_tokenizer(self, tokenize_fn: Callable[[str], list[int]]) -> None:
         """Register a tokenization function for token-overlap retrieval.
@@ -122,6 +127,17 @@ class PredictiveSOMA(nn.Module):
         ``tokenize_fn(text) -> list[int]`` should return BPE token IDs.
         """
         self._tokenizer_fn = tokenize_fn
+
+    def attach_teacher(self, teacher: Any) -> None:
+        """Attach an LLM teacher for Direction 4a projection distillation.
+
+        Expects an object with ``embed(text) -> torch.Tensor``. The
+        teacher is only consulted when
+        ``config.projection_distillation_target == "llm_embedding"``
+        and a ``source_text`` is passed to :meth:`process_input`.
+        No teacher attached means no distillation regardless of config.
+        """
+        self._teacher = teacher
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -1094,13 +1110,46 @@ class PredictiveSOMA(nn.Module):
             )
             self.prediction_error = pred_loss.item()
 
+            # Direction 4a: optional LLM-distillation loss. When enabled
+            # and a teacher + source_text are available, add an alpha-
+            # weighted cosine-distance term between the projection-
+            # averaged student view and the teacher embedding. Teacher
+            # dim may differ from student dim (teacher 1024 for mxbai,
+            # student sensor_output_dim); truncate/pad to align.
+            distill_loss: torch.Tensor | None = None
+            if (
+                self.config.projection_distillation_target == "llm_embedding"
+                and self._teacher is not None
+                and source_text is not None
+                and self.config.projection_mode == "learnable"
+                and self._input_projections
+            ):
+                teacher_emb = self._teacher.embed(source_text).to(self.device)
+                s_dim = pred_input.shape[0]
+                if teacher_emb.shape[0] >= s_dim:
+                    teacher_aligned = teacher_emb[:s_dim]
+                else:
+                    teacher_aligned = torch.zeros(s_dim, device=self.device)
+                    teacher_aligned[: teacher_emb.shape[0]] = teacher_emb
+                cos = torch.nn.functional.cosine_similarity(
+                    pred_input.unsqueeze(0),
+                    teacher_aligned.detach().unsqueeze(0),
+                    dim=1,
+                )
+                distill_loss = (
+                    1.0 - cos.squeeze()
+                ) * self.config.projection_distillation_weight
+
             # Only update if error is still meaningful — prevent
             # over-convergence that collapses all fingerprints.
             # Biological analogy: synaptic plasticity decreases
             # for well-learned patterns but never reaches zero.
-            if self.prediction_error > 1e-5:
+            if self.prediction_error > 1e-5 or distill_loss is not None:
                 self._pred_optimizer.zero_grad()
-                pred_loss.backward()
+                total_loss = pred_loss
+                if distill_loss is not None:
+                    total_loss = total_loss + distill_loss
+                total_loss.backward()
                 self._pred_optimizer.step()
         else:
             self.prediction_error = 0.0

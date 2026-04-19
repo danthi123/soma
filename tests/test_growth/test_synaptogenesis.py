@@ -225,7 +225,12 @@ class TestPeConditionalGate:
     preceded PE reduction. Gate is engaged by passing ``pe_ema`` and
     ``pe_counts`` kwargs when ``config.synaptogenesis_supervision`` is
     ``"pe_conditional"``. When supervision is off, the kwargs (if any)
-    must be ignored."""
+    must be ignored.
+
+    These tests isolate the gate behavior from the new-node waiver by
+    setting ``synaptogenesis_supervision_new_node_grace=0`` explicitly.
+    The waiver's own behavior is covered by ``TestNewNodeWaiver``.
+    """
 
     def _make_triplet(
         self, config: SOMAConfig, *, dim: int = 8
@@ -246,6 +251,7 @@ class TestPeConditionalGate:
             synaptogenesis_supervision="pe_conditional",
             synaptogenesis_pe_min_observations=5,
             synaptogenesis_pe_threshold=0.0,
+            synaptogenesis_supervision_new_node_grace=0,
         )
         graph, a, b, _c = self._make_triplet(cfg)
         acts = {a.id: torch.ones(8), b.id: torch.ones(8)}
@@ -264,6 +270,7 @@ class TestPeConditionalGate:
             synaptogenesis_supervision="pe_conditional",
             synaptogenesis_pe_min_observations=10,
             synaptogenesis_pe_threshold=0.0,
+            synaptogenesis_supervision_new_node_grace=0,
         )
         graph, a, b, _c = self._make_triplet(cfg)
         key = _pair_key(a.id, b.id)
@@ -332,6 +339,7 @@ class TestPeConditionalGate:
             synaptogenesis_supervision="pe_conditional",
             synaptogenesis_pe_min_observations=5,
             synaptogenesis_pe_threshold=0.0,
+            synaptogenesis_supervision_new_node_grace=0,
         )
         graph, a, b, c = self._make_triplet(cfg)
         # a<->b has good evidence; b<->c has bad evidence; a<->c unknown.
@@ -383,9 +391,116 @@ class TestPeConditionalGate:
             activation_threshold=0.01,
             synaptogenesis_supervision="pe_conditional",
             synaptogenesis_pe_min_observations=5,
+            synaptogenesis_supervision_new_node_grace=0,
         )
         graph, a, b, _c = self._make_triplet(cfg)
         acts = {a.id: torch.ones(8), b.id: torch.ones(8)}
         rng = torch.Generator().manual_seed(0)
         new = synaptogenesis(graph, acts, step=100, config=cfg, rng=rng)
+        assert new == []
+
+
+class TestNewNodeWaiver:
+    """When a candidate pair includes a node that was created within
+    the last ``synaptogenesis_supervision_new_node_grace`` steps, the
+    supervision gate is bypassed for that pair so fresh neurogenesis
+    nodes can wire into the graph without waiting for 5 observations
+    of EMA evidence. Fixes the full_pe regression from Phase 1."""
+
+    def _make_triplet(
+        self, config: SOMAConfig, *, dim: int = 8,
+        creation_steps: tuple[int, int, int] = (0, 0, 0),
+    ) -> tuple[Graph, Node, Node, Node]:
+        graph = Graph()
+        pos = torch.zeros(config.position_dim)
+        a = Node(NodeType.ASSOCIATOR, dim, dim * 2, dim, creation_steps[0], config, position=pos)
+        b = Node(NodeType.ASSOCIATOR, dim, dim * 2, dim, creation_steps[1], config, position=pos)
+        c = Node(NodeType.ASSOCIATOR, dim, dim * 2, dim, creation_steps[2], config, position=pos)
+        for n in (a, b, c):
+            graph.add_node(n)
+        return graph, a, b, c
+
+    def test_young_node_bypasses_cold_start(self) -> None:
+        """Pair (a, b) where b was just created must admit despite no
+        EMA observations."""
+        cfg = SOMAConfig(
+            synaptogenesis_rate=10.0,
+            activation_threshold=0.01,
+            synaptogenesis_supervision="pe_conditional",
+            synaptogenesis_pe_min_observations=5,
+            synaptogenesis_supervision_new_node_grace=100,
+        )
+        # a is old (creation_step=0), b was just created at step=95 => age=5 < grace=100.
+        graph, a, b, _c = self._make_triplet(cfg, creation_steps=(0, 95, 0))
+        acts = {a.id: torch.ones(8), b.id: torch.ones(8)}
+        rng = torch.Generator().manual_seed(0)
+        new = synaptogenesis(
+            graph, acts, step=100, config=cfg, rng=rng,
+            pe_ema={}, pe_counts={},
+        )
+        # Without waiver: cold-start would block. With waiver: admit.
+        assert len(new) >= 1
+
+    def test_old_nodes_still_blocked_by_cold_start(self) -> None:
+        """Pair of two old nodes must still be cold-start-blocked."""
+        cfg = SOMAConfig(
+            synaptogenesis_rate=10.0,
+            activation_threshold=0.01,
+            synaptogenesis_supervision="pe_conditional",
+            synaptogenesis_pe_min_observations=5,
+            synaptogenesis_supervision_new_node_grace=100,
+        )
+        # All three are old (step=0, probed at step=1000 => age=1000 > 100).
+        graph, a, b, _c = self._make_triplet(cfg, creation_steps=(0, 0, 0))
+        acts = {a.id: torch.ones(8), b.id: torch.ones(8)}
+        rng = torch.Generator().manual_seed(0)
+        new = synaptogenesis(
+            graph, acts, step=1000, config=cfg, rng=rng,
+            pe_ema={}, pe_counts={},
+        )
+        assert new == []
+
+    def test_young_node_does_not_bypass_positive_ema(self) -> None:
+        """The waiver skips the count check, NOT the threshold check.
+        A young-node pair with well-observed bad evidence should still
+        be rejected."""
+        cfg = SOMAConfig(
+            synaptogenesis_rate=10.0,
+            activation_threshold=0.01,
+            synaptogenesis_supervision="pe_conditional",
+            synaptogenesis_pe_min_observations=5,
+            synaptogenesis_supervision_new_node_grace=100,
+        )
+        graph, a, b, _c = self._make_triplet(cfg, creation_steps=(0, 95, 0))
+        key = _pair_key(a.id, b.id)
+        # Paradoxical: young node with plenty of observations and bad
+        # evidence. Shouldn't usually happen, but the gate must handle it.
+        ema = {key: 0.5}
+        counts = {key: 50}
+        acts = {a.id: torch.ones(8), b.id: torch.ones(8)}
+        rng = torch.Generator().manual_seed(0)
+        new = synaptogenesis(
+            graph, acts, step=100, config=cfg, rng=rng,
+            pe_ema=ema, pe_counts=counts,
+        )
+        assert new == []
+
+    def test_grace_zero_disables_waiver(self) -> None:
+        """Default behavior — when grace=0, no waiver applies and the
+        Phase 1 cold-start behavior is preserved."""
+        cfg = SOMAConfig(
+            synaptogenesis_rate=10.0,
+            activation_threshold=0.01,
+            synaptogenesis_supervision="pe_conditional",
+            synaptogenesis_pe_min_observations=5,
+            synaptogenesis_supervision_new_node_grace=0,
+        )
+        graph, a, b, _c = self._make_triplet(cfg, creation_steps=(0, 95, 0))
+        acts = {a.id: torch.ones(8), b.id: torch.ones(8)}
+        rng = torch.Generator().manual_seed(0)
+        new = synaptogenesis(
+            graph, acts, step=100, config=cfg, rng=rng,
+            pe_ema={}, pe_counts={},
+        )
+        # No waiver, so cold-start blocks.
         assert new == []

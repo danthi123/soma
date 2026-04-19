@@ -158,6 +158,16 @@ class SOMAConfig:
     # filtering. Below this count the pair is considered cold-start and
     # NOT admitted — the gate is conservative by design.
     synaptogenesis_pe_min_observations: int = 5
+    # Pairs that include a node created within the last
+    # ``synaptogenesis_supervision_new_node_grace`` steps bypass the
+    # cold-start (min_observations) check, so freshly-created
+    # neurogenesis nodes can wire into the graph without waiting for
+    # 5 EMA samples. The threshold check (reject if EMA >= threshold)
+    # still applies — we only waive the count requirement. Set to 0 to
+    # disable the waiver and revert to strict Phase 1 behavior. Default
+    # matches ``neurogenesis_cooldown`` so new nodes have the same
+    # grace window as neurogenesis itself observes between firings.
+    synaptogenesis_supervision_new_node_grace: int = 200
 
     # --- Curiosity --------------------------------------------------------
     num_curiosity_domains: int = 8
@@ -296,6 +306,14 @@ class SOMAConfig:
             raise ValueError(
                 f"SOMAConfig.synaptogenesis_pe_min_observations must be a "
                 f"non-negative int, got {self.synaptogenesis_pe_min_observations!r}"
+            )
+        if (
+            not isinstance(self.synaptogenesis_supervision_new_node_grace, int)
+            or self.synaptogenesis_supervision_new_node_grace < 0
+        ):
+            raise ValueError(
+                f"SOMAConfig.synaptogenesis_supervision_new_node_grace must be a "
+                f"non-negative int, got {self.synaptogenesis_supervision_new_node_grace!r}"
             )
 
         if not 0.0 < self.wm_decay_rate <= 1.0:

@@ -70,11 +70,13 @@ def synaptogenesis(
         count_map = pe_counts if pe_counts is not None else {}
         min_obs = config.synaptogenesis_pe_min_observations
         pe_threshold = config.synaptogenesis_pe_threshold
+        new_node_grace = config.synaptogenesis_supervision_new_node_grace
     else:
         ema_map = {}
         count_map = {}
         min_obs = 0
         pe_threshold = 0.0
+        new_node_grace = 0
 
     active_ids: list[str] = []
     magnitudes: dict[str, float] = {}
@@ -123,12 +125,43 @@ def synaptogenesis(
                     target_id,
                     source_id,
                 )
+                # New-node waiver: if either endpoint was created within
+                # the last ``new_node_grace`` steps, the pair is in its
+                # "honeymoon" window. We waive the cold-start
+                # (min_observations) check for such pairs so fresh
+                # neurogenesis nodes can wire into the graph without
+                # waiting to accumulate their own EMA evidence. Fixes
+                # the full_pe regression from Phase 1 where
+                # neurogenesis-added nodes couldn't wire via synap for
+                # 5 observations each.
+                #
+                # Important: if a fresh pair somehow HAS accumulated
+                # enough observations (count >= min_obs), the EMA check
+                # still applies — the waiver is specifically about the
+                # cold-start phase, not about overriding evidence once
+                # we have it. In practice fresh-node pairs will almost
+                # always be cold-start, so this branch does what you'd
+                # expect.
+                src_age = step - source_node.creation_step
+                tgt_age = step - target_node.creation_step
+                is_fresh = (
+                    new_node_grace > 0
+                    and min(src_age, tgt_age) < new_node_grace
+                )
                 pair_count = int(count_map.get(pair_key, 0))
-                if pair_count < min_obs:
-                    continue
-                pair_ema = float(ema_map.get(pair_key, 0.0))
-                if pair_ema >= pe_threshold:
-                    continue
+                is_cold_start = pair_count < min_obs
+                if is_cold_start:
+                    if not is_fresh:
+                        continue  # normal cold-start reject
+                    # Fresh cold-start pair: waive both checks, fall
+                    # through to the rng draw. EMA is zero by default
+                    # (unreliable anyway on 0 observations) so the
+                    # threshold check would wrongly reject on any
+                    # threshold >= 0.
+                else:
+                    pair_ema = float(ema_map.get(pair_key, 0.0))
+                    if pair_ema >= pe_threshold:
+                        continue
 
             source_mag = magnitudes[source_id]
             target_mag = magnitudes[target_id]

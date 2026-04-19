@@ -104,6 +104,22 @@ class TestConfigValidation:
         with pytest.raises(ValueError, match="synaptogenesis_pe_min_observations"):
             _tiny_config(synaptogenesis_pe_min_observations=-1)
 
+    def test_default_new_node_grace_is_nonzero(self) -> None:
+        """Default should provide some grace (matching neurogenesis
+        cooldown order) so full_pe doesn't regress out of the box."""
+        cfg = _tiny_config()
+        assert cfg.synaptogenesis_supervision_new_node_grace >= 0
+
+    def test_accepts_new_node_grace_override(self) -> None:
+        cfg = _tiny_config(synaptogenesis_supervision_new_node_grace=500)
+        assert cfg.synaptogenesis_supervision_new_node_grace == 500
+
+    def test_rejects_negative_new_node_grace(self) -> None:
+        with pytest.raises(
+            ValueError, match="synaptogenesis_supervision_new_node_grace"
+        ):
+            _tiny_config(synaptogenesis_supervision_new_node_grace=-1)
+
 
 class TestEmaBookkeeping:
     """SOMA maintains per-pair EMA of PE-delta across steps."""

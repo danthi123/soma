@@ -339,6 +339,35 @@ class PredictiveSOMA(nn.Module):
                 {"params": [proj], "lr": self.config.projection_lr}
             )
 
+    def _ensure_position(self, node_id: str) -> None:
+        """Ensure a node's position is a learnable parameter when
+        position_mode='learnable'. Called when neurogenesis adds a new
+        associator; the freshly-created node gets its plain-tensor
+        position wrapped as nn.Parameter, initial L2 norm recorded,
+        and registered with the prediction optimizer.
+
+        No-op when position_mode='frozen_random' or when the node is
+        unknown (e.g., neurogenesis hasn't finished wiring it up yet).
+        """
+        if self.config.position_mode != "learnable":
+            return
+        if node_id not in self.soma.graph.nodes:
+            return
+        node = self.soma.graph.nodes[node_id]
+        if isinstance(node.position, torch.nn.Parameter):
+            return  # already learnable
+        if node.position is None:
+            return
+
+        param = torch.nn.Parameter(
+            node.position.detach().clone().to(self.device)
+        )
+        node.position = param
+        self._initial_position_norms[node_id] = param.norm().item()
+        self._pred_optimizer.add_param_group(
+            {"params": [param], "lr": self.config.projection_lr}
+        )
+
     def _diversify_activations(
         self, input_tensor: torch.Tensor, temperature: float = 5.0,
     ) -> None:
@@ -367,6 +396,7 @@ class PredictiveSOMA(nn.Module):
                 continue
 
             self._ensure_projection(node.id)
+            self._ensure_position(node.id)  # Direction 4b
             proj = self._input_projections[node.id]
 
             alignment = torch.dot(torch.mv(proj, inp), inp)

@@ -108,3 +108,41 @@ class TestLearnablePositions:
         for node in pred.soma.graph.all_nodes():
             if node.node_type == NodeType.ASSOCIATOR:
                 assert id(node.position) in opt_params
+
+
+class TestEnsurePosition:
+    def test_ensure_position_no_op_when_not_learnable(self) -> None:
+        """Frozen mode: _ensure_position is a no-op."""
+        cfg = SOMAConfig.developmental(initial_associator_count=4, max_nodes=16)
+        pred = PredictiveSOMA(config=cfg)
+        # Should not crash even if called
+        pred._ensure_position("nonexistent_node_id")
+
+    def test_ensure_position_creates_parameter_on_new_node(self) -> None:
+        """When neurogenesis creates a new node mid-run, _ensure_position
+        wraps its position as nn.Parameter, records initial norm, adds
+        to optimizer."""
+        cfg = _spatial_config()
+        pred = PredictiveSOMA(config=cfg)
+        from soma.core.node import Node, NodeType
+
+        new_node = Node(
+            node_type=NodeType.ASSOCIATOR,
+            input_dim=cfg.associator_input_dim,
+            hidden_dim=cfg.associator_hidden_dim,
+            output_dim=cfg.associator_output_dim,
+            creation_step=0,
+            config=cfg,
+            position=torch.randn(cfg.position_dim) * 0.1,
+            device=pred.device,
+        )
+        pred.soma.graph.add_node(new_node)
+        pred._ensure_position(new_node.id)
+
+        assert isinstance(new_node.position, torch.nn.Parameter)
+        assert new_node.id in pred._initial_position_norms
+        opt_params = set()
+        for g in pred._pred_optimizer.param_groups:
+            for p in g["params"]:
+                opt_params.add(id(p))
+        assert id(new_node.position) in opt_params

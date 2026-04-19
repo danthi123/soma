@@ -158,16 +158,22 @@ class SOMAConfig:
     # filtering. Below this count the pair is considered cold-start and
     # NOT admitted — the gate is conservative by design.
     synaptogenesis_pe_min_observations: int = 5
-    # Pairs that include a node created within the last
-    # ``synaptogenesis_supervision_new_node_grace`` steps bypass the
-    # cold-start (min_observations) check, so freshly-created
-    # neurogenesis nodes can wire into the graph without waiting for
-    # 5 EMA samples. The threshold check (reject if EMA >= threshold)
-    # still applies — we only waive the count requirement. Set to 0 to
-    # disable the waiver and revert to strict Phase 1 behavior. Default
-    # matches ``neurogenesis_cooldown`` so new nodes have the same
-    # grace window as neurogenesis itself observes between firings.
-    synaptogenesis_supervision_new_node_grace: int = 200
+    # Pairs that include a NEUROGENESIS-created node (creation_step > 0)
+    # whose age is less than this grace window bypass the cold-start
+    # (min_observations) check, so fresh nodes can wire into the graph
+    # without waiting for 5 EMA samples. Initial seed nodes
+    # (creation_step = 0) never qualify as fresh — otherwise the waiver
+    # disables supervision across the entire warm-up window and synap
+    # admission floods in before the EMA has anything to filter.
+    #
+    # Default 0 (waiver disabled). Phase 1.2 experiments (commits
+    # 68a6f0c, b5fba49, and the synap_pe waiver_v2 rerun) showed that
+    # even with the seed-node fix, the waiver is effectively a no-op
+    # on the v0.5 capacity schedule: fresh cold-start windows are only
+    # ~5 steps wide (min_observations), so the added admissions don't
+    # meaningfully shift the synap_event count. Leaving the mechanism
+    # in place as an opt-in; default reverts to Phase 1 behavior.
+    synaptogenesis_supervision_new_node_grace: int = 0
 
     # --- Curiosity --------------------------------------------------------
     num_curiosity_domains: int = 8

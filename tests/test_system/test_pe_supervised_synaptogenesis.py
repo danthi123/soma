@@ -104,11 +104,12 @@ class TestConfigValidation:
         with pytest.raises(ValueError, match="synaptogenesis_pe_min_observations"):
             _tiny_config(synaptogenesis_pe_min_observations=-1)
 
-    def test_default_new_node_grace_is_nonzero(self) -> None:
-        """Default should provide some grace (matching neurogenesis
-        cooldown order) so full_pe doesn't regress out of the box."""
+    def test_default_new_node_grace_is_off(self) -> None:
+        """Default is 0 (waiver off). Phase 1.2 experiments showed the
+        waiver didn't materially affect outcomes; leaving it off so
+        Phase 1 is the out-of-box behavior."""
         cfg = _tiny_config()
-        assert cfg.synaptogenesis_supervision_new_node_grace >= 0
+        assert cfg.synaptogenesis_supervision_new_node_grace == 0
 
     def test_accepts_new_node_grace_override(self) -> None:
         cfg = _tiny_config(synaptogenesis_supervision_new_node_grace=500)

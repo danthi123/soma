@@ -157,9 +157,89 @@ d1665a1 Paper §4.7 rewrite candidate + adapter overrides
 [pending] LoCoMo locality results
 ```
 
-## Open background tasks
+## Open background tasks — ALL COMPLETE
 
-- `b6hr5vlv0` — Position-scramble v0.5 (GPU, 60-80 min)
-- `bhnyouw42` — LoCoMo locality (CPU+SBERT, 30-60 min)
+- `b6hr5vlv0` — Position-scramble v0.5 (commit b65035e)
+- `bhnyouw42` — LoCoMo locality (commit 9e8649c)
 
-Both will complete today. Analysis + final synthesis will follow.
+## Final findings summary
+
+### What landed (positive, multi-seed)
+
+1. **synap_local on v0.5**: 8/7/8 wins vs synap_only. First multi-
+   seed-validated positive plasticity-adjustment on v0.5. Large
+   effect (−0.003 to −0.006 MSE on hard regimes). Ties or beats
+   neuro_only.
+2. **Inverted-U cutoff curve**: cutoff=0.5 is peak. Too tight
+   (0.25, 0 admissions) = no_growth. Too loose (0.75/1.0, 150+
+   admissions) = synap_only. The filter's aperture is tunable and
+   has a specific optimum.
+3. **Four sparsity controls failed to close the gap**: cap1/cap2/
+   rate063/rate030 all preserve the locality advantage at matched
+   total admissions. Locality is not a sparsity artifact.
+4. **Position-scramble on v0.5**: specific positions matter on 2/3
+   seeds (scramble vs local wins 0/0/5). Likely mechanism:
+   position init shares rng state with projection init, so nearby
+   positions = similar projection responses = useful edges.
+
+### What landed (null / negative, multi-seed)
+
+5. **Directions 1, 2B, 3 on v0.5**: PE-supervised synap, learnable
+   projections, plasticity broadcast — all fail multi-seed. They
+   gated the wrong dimension (temporal); locality gates the right
+   one (spatial).
+6. **LoCoMo locality ablation**: null effect. All three SOMA
+   variants (flat / graph w/o locality / graph w locality) produce
+   identical R@1/5/10. Graph re-rank is effectively vacuous on
+   LoCoMo because (a) cosine baseline is weak (R@5=0.238) so most
+   queries fail before re-rank, (b) graph at α=0.3 doesn't shift
+   top-K. Locality on retrieval is not a product improvement.
+7. **Synthetic retrieval (50-fact)**: weak effect. 1/3 seeds show
+   alpha=0.30 benefit; others null.
+
+### Shipped code artifacts
+
+- `synaptogenesis_max_distance` config + hard-cutoff filter (14 tests)
+- `synaptogenesis_max_admissions_per_step` + rng-subsample cap (6 tests)
+- `SomaAdapter` synap_locality + synap_interval + synap_rate + seed (9 tests)
+- `SOMAConfig.memory_layer()` preset (6 tests)
+- All 411 pre-existing + new tests pass
+
+### Product recommendation (honest calibration)
+
+**SHIP**:
+- `SOMAConfig.memory_layer()` preset (locality ON by default)
+- Documented as safe-default, not as retrieval improvement
+- Claim: "cleaner graph, 2-3× fewer edges, neutral on benchmarks
+  tested, strong positive on native prediction tasks"
+
+**DON'T CLAIM**:
+- "Locality improves agent-memory retrieval" — LoCoMo says null
+- "Locality is the key to SOMA's retrieval ceiling" — different
+  problem (§5 ceiling is about projections, not plasticity)
+
+### Research paper (§4.7 rewrite) — ready to revise
+
+- Draft candidate at `docs/paper/draft_section_4_7_rewrite_candidate.md`
+- Scope limitation plainly stated (retrieval null)
+- Length estimate: +1000 words net
+- Figures needed: 3 (per-seed scorecard, inverted-U curve, edge-vs-MSE scatter)
+
+### Next research arc
+
+**Direction 4a: LLM-distilled projections.** This is the natural
+continuation. The v0.5 finding is about admission-time priors; §5's
+retrieval ceiling is about the UPSTREAM projections themselves
+being random. If projections become semantically grounded (LLM
+distillation), locality would mean "semantic neighborhood" and
+should transfer to retrieval.
+
+The user has ollama + nomic-embed-text already installed — the
+infrastructure is ready. Direction 4a is ~2-3 days of scoping per
+the plan doc.
+
+**Stretch**: position-scramble's seed-dependence suggests a mechanism
+test — explicitly correlate positions with projection weights via
+PCA-1 (or similar) to see if the effect strengthens. Small config
+change; worth running before publishing §4.7 to tighten the
+mechanism claim.

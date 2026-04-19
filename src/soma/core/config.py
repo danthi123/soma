@@ -159,6 +159,25 @@ class SOMAConfig:
     # NOT admitted — the gate is conservative by design.
     synaptogenesis_pe_min_observations: int = 5
 
+    # --- Learnable input projections (Direction 2, 2026-04-19) --------
+    # PredictiveSOMA's per-associator input projections (used by
+    # _diversify_activations) are traditionally frozen random matrices
+    # updated only via Hebbian outer-product rules. Direction 2 makes
+    # them learnable via gradient flow from the prediction loss.
+    #
+    # "frozen_random": plain torch.Tensor, static w.r.t. backprop.
+    #   Hebbian updates in _competitive_learning still apply. Default
+    #   matches pre-Direction-2 behavior.
+    # "learnable": nn.Parameter with requires_grad=True. Included in
+    #   the prediction-loss optimizer; gradient flows through
+    #   _diversify_activations so the projections move toward inputs
+    #   that actually help prediction.
+    projection_mode: Literal["frozen_random", "learnable"] = "frozen_random"
+    # LR for the projection parameters when mode="learnable". Kept
+    # smaller than prediction_head's LR (default 3e-4) because
+    # projections are per-node and many of them update simultaneously.
+    projection_lr: float = 1e-4
+
     # --- Plasticity broadcast (Direction 3, 2026-04-18) ----------------
     # Neuromodulator-style scalar that rises on PE spikes and falls
     # during stable phases. Multiplies synaptogenesis_rate and
@@ -345,6 +364,17 @@ class SOMAConfig:
             raise ValueError(
                 f"SOMAConfig.synaptogenesis_supervision_new_node_grace must be a "
                 f"non-negative int, got {self.synaptogenesis_supervision_new_node_grace!r}"
+            )
+
+        if self.projection_mode not in ("frozen_random", "learnable"):
+            raise ValueError(
+                f"SOMAConfig.projection_mode must be 'frozen_random' or "
+                f"'learnable', got {self.projection_mode!r}"
+            )
+        if self.projection_lr <= 0.0:
+            raise ValueError(
+                f"SOMAConfig.projection_lr must be > 0, "
+                f"got {self.projection_lr!r}"
             )
 
         if self.plasticity_broadcast_mode not in ("off", "pe_scaled"):

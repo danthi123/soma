@@ -50,6 +50,9 @@ class PredictiveSOMA(nn.Module):
         # software equivalent of different dendritic arbors in biology.
         from soma.core.node import NodeType
 
+        # Direction 2: projections can be either frozen Tensors or
+        # learnable nn.Parameters. Type is chosen once at init and
+        # preserved across neurogenesis-triggered _ensure_projection calls.
         self._input_projections: dict[str, torch.Tensor] = {}
         dim = config.sensor_output_dim
         gen = torch.Generator()
@@ -57,16 +60,37 @@ class PredictiveSOMA(nn.Module):
             gen.manual_seed(config.seed + 13)
         for node in self.soma.graph.all_nodes():
             if node.node_type == NodeType.ASSOCIATOR:
-                # Random orthogonal-ish projection matrix
-                proj = torch.randn(dim, dim, generator=gen).to(self.device)
-                # Normalize rows so projections preserve magnitude
-                proj = proj / (proj.norm(dim=1, keepdim=True) + 1e-8)
+                proj = self._build_projection(gen=gen)
                 self._input_projections[node.id] = proj
         self._last_prediction: torch.Tensor | None = None
         self._last_summary: torch.Tensor | None = None
-        self._pred_optimizer = torch.optim.Adam(
-            self.prediction_head.parameters(), lr=0.0003,
+        # When projections are learnable, include them in the prediction
+        # optimizer so the prediction loss trains them jointly with
+        # prediction_head. Otherwise only prediction_head is optimized.
+        opt_params: list[torch.nn.Parameter] = list(
+            self.prediction_head.parameters()
         )
+        if config.projection_mode == "learnable":
+            opt_params.extend(
+                p for p in self._input_projections.values()
+                if isinstance(p, torch.nn.Parameter)
+            )
+            self._pred_optimizer = torch.optim.Adam(
+                [
+                    {"params": list(self.prediction_head.parameters()), "lr": 0.0003},
+                    {
+                        "params": [
+                            p for p in self._input_projections.values()
+                            if isinstance(p, torch.nn.Parameter)
+                        ],
+                        "lr": config.projection_lr,
+                    },
+                ]
+            )
+        else:
+            self._pred_optimizer = torch.optim.Adam(
+                self.prediction_head.parameters(), lr=0.0003,
+            )
         self.prediction_error: float = 0.0
         self.error_history: deque[float] = deque(maxlen=error_history_size)
         # Win counts per node — used to penalize dominant nodes
@@ -208,18 +232,52 @@ class PredictiveSOMA(nn.Module):
         # diversification already prevents over-connection. Keep pruning
         # at the static default (200 steps).
 
+    def _build_projection(
+        self, gen: torch.Generator | None = None,
+    ) -> torch.Tensor:
+        """Build a new input projection respecting ``config.projection_mode``.
+
+        - ``frozen_random``: plain Tensor, normalized rows. Backward-compat
+          with pre-Direction-2 behavior.
+        - ``learnable``: nn.Parameter with same initial shape/distribution
+          so behavior at step 0 is identical to the frozen variant.
+
+        ``gen`` is an optional torch.Generator for deterministic init.
+        """
+        dim = self.config.sensor_output_dim
+        if gen is None:
+            raw = torch.randn(dim, dim).to(self.device)
+        else:
+            raw = torch.randn(dim, dim, generator=gen).to(self.device)
+        normalized = raw / (raw.norm(dim=1, keepdim=True) + 1e-8)
+        if self.config.projection_mode == "learnable":
+            return torch.nn.Parameter(normalized)
+        return normalized
+
     def _ensure_projection(self, node_id: str) -> None:
-        """Create a random input projection for a node if missing.
+        """Create an input projection for a node if missing.
 
         Called lazily when new nodes are born via neurogenesis, ensuring
         every associator has its own "receptive field" for diversification.
+        The type (plain Tensor vs nn.Parameter) follows
+        ``config.projection_mode`` — consistent with the projections
+        created at __init__. New learnable projections are ALSO added
+        to the prediction optimizer so they participate in backprop.
         """
         if node_id in self._input_projections:
             return
-        dim = self.config.sensor_output_dim
-        proj = torch.randn(dim, dim).to(self.device)
-        proj = proj / (proj.norm(dim=1, keepdim=True) + 1e-8)
+        proj = self._build_projection()
         self._input_projections[node_id] = proj
+        # Learnable projections need to be registered with the
+        # optimizer; new nodes born via neurogenesis would otherwise
+        # have parameters that torch.optim never sees.
+        if (
+            self.config.projection_mode == "learnable"
+            and isinstance(proj, torch.nn.Parameter)
+        ):
+            self._pred_optimizer.add_param_group(
+                {"params": [proj], "lr": self.config.projection_lr}
+            )
 
     def _diversify_activations(
         self, input_tensor: torch.Tensor, temperature: float = 5.0,
@@ -766,10 +824,31 @@ class PredictiveSOMA(nn.Module):
         self._node_memory_index = {
             k: set(v) for k, v in raw_index.items()
         }
-        self._input_projections = {
-            k: v.to(self.device)
-            for k, v in state["input_projections"].items()
-        }
+        # Preserve projection type across load: when config says
+        # learnable, reconstruct as nn.Parameter so gradients continue
+        # to flow. Otherwise stay as plain Tensor.
+        self._input_projections = {}
+        for k, v in state["input_projections"].items():
+            tensor = v.to(self.device)
+            if self.config.projection_mode == "learnable":
+                self._input_projections[k] = torch.nn.Parameter(tensor)
+            else:
+                self._input_projections[k] = tensor
+        # Rebuild the optimizer so reloaded Parameter instances are
+        # actually optimized (old optimizer references the old instances).
+        if self.config.projection_mode == "learnable":
+            self._pred_optimizer = torch.optim.Adam(
+                [
+                    {"params": list(self.prediction_head.parameters()), "lr": 0.0003},
+                    {
+                        "params": [
+                            p for p in self._input_projections.values()
+                            if isinstance(p, torch.nn.Parameter)
+                        ],
+                        "lr": self.config.projection_lr,
+                    },
+                ]
+            )
         self._win_counts = state.get("win_counts", {})
         self._last_summary = (
             state["last_summary"].to(self.device)
@@ -987,7 +1066,29 @@ class PredictiveSOMA(nn.Module):
         # Train prediction head: re-predict from last summary,
         # compare to current summary, backprop.
         if self._last_summary is not None:
-            predicted = self.prediction_head(self._last_summary)
+            # Direction 2: when projections are learnable, route the
+            # prediction through a projection-averaged view so the
+            # prediction loss trains BOTH the prediction head AND the
+            # learnable projections. Each associator's projection
+            # contributes a view of _last_summary; we mean them into
+            # the prediction head's input. Gradient pathway:
+            # pred_loss -> prediction_head -> projected_last
+            #    -> mean(proj @ _last_summary for each proj)
+            #    -> each projection's parameters.
+            if (
+                self.config.projection_mode == "learnable"
+                and self._input_projections
+            ):
+                projected_views = []
+                for proj in self._input_projections.values():
+                    # Treat _last_summary as detached input (it was
+                    # already detached on save) so gradient flows to
+                    # proj but not back into SOMA's graph.
+                    projected_views.append(proj @ self._last_summary)
+                pred_input = torch.stack(projected_views).mean(dim=0)
+            else:
+                pred_input = self._last_summary
+            predicted = self.prediction_head(pred_input)
             pred_loss = torch.nn.functional.mse_loss(
                 predicted, current_summary.detach(),
             )

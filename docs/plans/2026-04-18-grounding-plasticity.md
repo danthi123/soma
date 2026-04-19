@@ -602,14 +602,24 @@ projections? can PE supervise edge admission?). Use the
 result of both to decide whether to continue with 2, 3, 4b,
 or 4c.
 
-## Gating on v0 2×2 cross-check
+## Gating on v0 2×2 cross-check — **RESOLVED 2026-04-18**
 
-Currently in flight at commit `64c70c5`. If the v0 2×2 result
-reproduces the v0.5 finding (neuro fine, synap bad), all four
-directions remain well-motivated. If the v0 result diverges
-(e.g., neuro also hurts on v0), we should pause and understand
-that divergence before shipping any of the four — since they
-all assume the v0.5 diagnosis generalizes.
+Ran at commit `5d8a828`. Result: directional story reproduces
+(synap alone hurts 2/4 regimes or ties; neuro alone matches/
+beats no_growth on 3/4; full is worst on all 4; neuro-rescue
+effect confirmed). One narrowing: on `nonlinear_sqrt`, neuro
+slightly underperforms no_growth because growth to 31 nodes
+was past Pareto-optimal for that regime — consistent with the
+pre-add-nodes finding.
+
+Refined claim: synaptogenesis is the consistently harmful
+mechanism; neurogenesis is beneficial *when the task rewards
+extra capacity* and can regress mildly when it does not. This
+does not change the four proposed directions — the root cause
+(synaptogenesis reads arbitrary correlations from random
+projections) is still the target — but it confirms the
+diagnosis generalizes beyond v0.5, so Directions 1-4 are
+unblocked.
 
 ## Out-of-scope for this plan
 

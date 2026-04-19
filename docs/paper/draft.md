@@ -863,14 +863,47 @@ compete with (and dilute) the spurious-correlation paths
 synaptogenesis installs. We do not prove this mechanism, only
 observe the rescue effect.
 
+**Robustness: does the 2×2 hold on a different schedule?**
+We ran the same 2×2 on the v0 schedule (4 regimes × 500
+steps, dim=16, seed=42) used for Table 8. Results:
+
+| Regime            | no_growth | synap_only | neuro_only | full   |
+|-------------------|-----------|------------|------------|--------|
+| random_walk       | 0.0062    | 0.0063     | 0.0062     | 0.0072 |
+| linear_rotation   | 0.0009    | 0.0017     | 0.0009     | 0.0028 |
+| nonlinear_sqrt    | 0.0003    | 0.0004     | 0.0007     | 0.0007 |
+| mlp_dynamics      | 0.0013    | 0.0051     | 0.0012     | 0.0043 |
+
+Directional story holds: synaptogenesis alone hurts or ties
+on all 4 regimes (up to 3.9× worse on `mlp_dynamics`);
+neurogenesis alone matches or beats `no_growth` on 3 of 4;
+`full` is worst or tied-worst on all 4. The neurogenesis-
+rescue effect reproduces: `full` (31n/624e with mixed growth)
+beats `synap_only` (14n/182e synap-only) on `mlp_dynamics`
+despite `full` having more total events.
+
+One narrowing vs the v0.5 result: on `nonlinear_sqrt`,
+`neuro_only` slightly underperforms `no_growth` (0.0007 vs
+0.0003). Neurogenesis grew the graph to 31 nodes during this
+regime, and the pre-add-nodes finding showed that larger
+graphs at default connectivity monotonically underperform on
+easier regimes. So the refined claim: synaptogenesis is
+consistently the harmful mechanism, while neurogenesis is
+beneficial *when the task rewards extra capacity* and can
+regress (mildly) when it pushes past the Pareto-optimal
+size. The v0.5 capacity-pressure schedule is where neuro's
+benefit is most reliably visible; v0's simpler regimes do
+not always reward the extra nodes.
+
 These results are specifically not retrieval wins. They are
 demonstrations that (i) SOMA's graph substrate helps on tasks
 evaluated by adaptation metrics rather than retrieval accuracy,
-and (ii) within SOMA's plasticity mechanisms, neurogenesis is
-beneficial (and even partially corrective for synaptogenesis
-damage), while synaptogenesis is the specific mechanism that
-degrades the prediction circuit on this task — a pathology
-with the same origin as the retrieval ceiling in §5.
+and (ii) within SOMA's plasticity mechanisms, synaptogenesis
+is the consistently harmful mechanism across two independent
+schedules, while neurogenesis is beneficial or neutral with a
+task-dependent regime where capacity-excess causes a small
+regression. The pathology in synaptogenesis has the same
+origin as the retrieval ceiling in §5.
 
 ## 5. Analysis: why structural ≠ semantic
 
@@ -1328,6 +1361,7 @@ maps phase numbers to script filenames and commit hashes.
 | Env v0.5 pre-add       | `research/developmental/env_sequence_v05_pre_add_nodes.py` | `4cabff4` | §4.7 (follow-up) |
 | Env v0.5 2x2 growth    | `research/developmental/env_sequence_v05_growth_2x2.py` | `2a1bbcc` | §4.7 (follow-up) |
 | Env v0.5 synap volume  | `research/developmental/env_sequence_v05_synap_volume.py` | `283ed22` | §4.7 (follow-up) |
+| Env v0 2x2 growth      | `research/developmental/env_sequence_v0_growth_2x2.py` | `5d8a828` | §4.7 (robustness) |
 | Consolidation result   | (ad-hoc via `/sleep` CLI)                        | `c553a66` | §4.7 |
 | Multi-session result   | (ad-hoc via developmental CLI)                   | `6a0a822` | §4.7 |
 

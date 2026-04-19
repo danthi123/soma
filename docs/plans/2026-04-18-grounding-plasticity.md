@@ -377,6 +377,42 @@ launched 2026-04-19; if synap_local reliably beats synap_only, the
 prediction is validated and the plasticity-design principle becomes
 "locality + capacity pressure" rather than "PE-signal gating."
 
+### synap_local multi-seed (2026-04-19) — **POSITIVE (prediction validated)**
+
+Hard positional-locality filter (``synaptogenesis_max_distance=0.5``)
+applied to synaptogenesis. If a candidate pair's position-space
+distance exceeds the cutoff, the pair is rejected before coactivation
+or rng logic runs.
+
+Per-seed scorecard (noise floor 0.00005 MSE):
+- synap_only_local beats synap_only: **8/8, 7/8, 8/8** (seeds 0, 1, 42)
+- full_local beats full: **7/8, 7/8, 8/8**
+
+**First multi-seed-validated positive plasticity-adjustment in this
+research track.** Effect sizes are large (−0.003 to −0.006 MSE on
+hard regimes). Locality-filtered synap matches or beats neuro_only
+on most hard regimes — on mlp_2x64, synap_only_local (0.0007) beats
+neuro_only (0.0010) by 30%.
+
+Edge counts tell the story: synap_only_local produces 2-3× fewer
+edges than synap_only (56-88 vs 182) but those fewer edges are
+actually useful. The locality filter rejects random long-range
+spaghetti at admission.
+
+**Revised plasticity-design principle**: constrain edge admission
+by positional locality, not by temporal prediction-error signal.
+The correct filter is spatial, not temporal. Directions 1, 2B, 3
+all failed because they gated the wrong dimension.
+
+**Remaining question (confound)**: is the benefit from LOCALITY
+specifically or just from SPARSITY (fewer admissions overall)?
+Controlled test: random-K admission at matched event count. If
+random-K also beats synap_only, the effect is sparsity alone; if
+synap_local still wins, locality is the primary driver.
+
+Findings document:
+`research/developmental/results/env_sequence_v05_synap_local_multiseed_findings.md`
+
 ---
 
 ## Direction 2 — Task-supervised input projections (medium-lift)

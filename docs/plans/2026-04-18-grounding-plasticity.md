@@ -288,6 +288,56 @@ pause, AND extends to Hebbian learning) so it's still worth testing,
 but it MUST be multi-seeded from day 1 to avoid repeating the
 seed-42-outlier mistake.
 
+### Direction 3 multi-seed validation (2026-04-19) — ALSO NEGATIVE
+
+Ran {no_growth, synap_only, synap_only_bcast, neuro_only,
+neuro_only_bcast, full, full_bcast} on seeds {0, 1, 42}.
+
+Per-seed full_bcast vs full scorecard:
+- seed=0: 5/8
+- seed=1: 3/8
+- seed=42: 0/8
+
+Plan's 5+/8 criterion is met on only 1 of 3 seeds. The mechanism
+is seed-selective the same way Direction 1 was.
+
+Sub-treatments:
+- `synap_only_bcast` vs `synap_only`: 7/0/8 across seeds. Broadcast
+  helps synap_only on avg but seed=1 is strongly negative.
+- `neuro_only_bcast` vs `neuro_only`: 0/3/3. Near-zero effect;
+  gain swings (0.44, 1.57) but doesn't matter when there's no
+  synaptogenesis to gate and Hebbian barely moves neuro-wired edges
+  over 4000 steps.
+
+**Verdict: Direction 3 NEGATIVE on its primary claim.** Code stays
+in as opt-in (`plasticity_broadcast_mode="pe_scaled"`, default
+`"off"`).
+
+### Surprising positive: neuro_only is the best mechanism on v0.5
+
+The same multi-seed run confirmed something the earlier 2x2 hinted
+at but couldn't resolve: `neuro_only` (neurogenesis WITHOUT
+synaptogenesis) beats `no_growth` on the four highest-capacity
+regimes by 0.0005–0.0009 MSE across all 3 seeds:
+
+| Regime    | no_growth     | neuro_only    |
+|-----------|---------------|---------------|
+| mlp_2x64  | 0.0014±0.0002 | 0.0008±0.0004 |
+| mlp_3x64  | 0.0020±0.0005 | 0.0011±0.0005 |
+| mlp_4x32  | 0.0018±0.0002 | 0.0011±0.0001 |
+| mlp_4x64  | 0.0011±0.0002 | 0.0006±0.0004 |
+
+This is the one mechanism on v0.5 that multi-seed validation
+endorses. **Directional takeaway**: synaptogenesis on this substrate
+is the wrong primitive; neurogenesis with positional-neighbor wiring
+adds real structure. Plan doc gets reweighted: focus next direction
+on either understanding *why* neuro_only works or on replacing
+synaptogenesis's random-edge admission with something task-grounded
+(Direction 2: learnable input projections).
+
+Detailed analysis:
+`research/developmental/results/env_sequence_v05_broadcast_multiseed_findings.md`.
+
 ---
 
 ## Direction 2 — Task-supervised input projections (medium-lift)

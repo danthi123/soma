@@ -42,6 +42,13 @@ def _run(alpha: float, locality: float, seed: int, facts, queries, k):
         graph_rerank_alpha=alpha,
         graph_rerank_stable_capture=False,  # unstable wins on this dataset
         synap_locality=locality,
+        # Active-growth overrides: SOMAConfig whitepaper defaults have
+        # synap_interval=100, rate=0.01, which produces 0 admissions on
+        # a 50-fact benchmark flow (verified via instrumentation). Use
+        # developmental-style cadence so synap actually fires and the
+        # locality filter has something to filter.
+        synap_interval=10,
+        synap_rate=2.0,
         seed=seed,
     )
     adapter.name = f"soma-locality={locality:.2f}-alpha={alpha:.2f}-seed={seed}"

@@ -45,6 +45,8 @@ class SomaAdapter(BaseMemorySystem):
         faiss_threshold: int = 10_000,
         eager_stable_capture: bool = True,
         synap_locality: float = 0.0,
+        synap_interval: int | None = None,
+        synap_rate: float | None = None,
         seed: int | None = None,
     ) -> None:
         self._use_sbert = use_sbert
@@ -64,6 +66,15 @@ class SomaAdapter(BaseMemorySystem):
         # benchmarks reproduce exactly; retrieval/plasticity benchmarks
         # that want to compare locality on/off flip this flag.
         self._synap_locality = synap_locality
+        # Override synaptogenesis cadence / rate. None (default) preserves
+        # the whitepaper SOMAConfig defaults (interval=100, rate=0.01)
+        # which are tuned for 50K-node deployments and barely fire on a
+        # 50-fact benchmark workload — making locality-filter ablations
+        # vacuous. Plasticity benchmarks that want to exercise synap
+        # actively should set interval~=10 and rate~=2.0 (matches
+        # SOMAConfig.developmental() tuning).
+        self._synap_interval = synap_interval
+        self._synap_rate = synap_rate
         # SOMA config seed. None (default) preserves pre-existing
         # nondeterministic behavior; explicit seed is useful for paired
         # comparisons (e.g. locality on/off at matched rng init).
@@ -98,7 +109,7 @@ class SomaAdapter(BaseMemorySystem):
             from soma.io.text_encoder import TextEncoder, train_bpe_tokenizer
             from soma.system import SOMA
 
-            config = SOMAConfig(
+            config_kwargs: dict[str, object] = dict(
                 vocab_size=128,
                 text_embed_dim=32,
                 sensor_output_dim=32,
@@ -106,6 +117,19 @@ class SomaAdapter(BaseMemorySystem):
                 synaptogenesis_max_distance=self._synap_locality,
                 seed=self._seed,
             )
+            if self._synap_interval is not None:
+                config_kwargs["synaptogenesis_interval"] = self._synap_interval
+            if self._synap_rate is not None:
+                config_kwargs["synaptogenesis_rate"] = self._synap_rate
+            # Use developmental() as the base when active-growth overrides
+            # are requested so tuned helpers like activation_threshold=0.005
+            # (vs whitepaper default 0.1) kick in. Without this, a 32-dim
+            # substrate rarely clears the activation threshold and synap
+            # never fires even at interval=10, rate=2.0.
+            if self._synap_interval is not None or self._synap_rate is not None:
+                config = SOMAConfig.developmental(**config_kwargs)
+            else:
+                config = SOMAConfig(**config_kwargs)
             soma = SOMA(config)
             # SOMA's graph operates on its own small TextEncoder regardless
             # of what the MemoryLayer embeds with for cosine. Keeping them

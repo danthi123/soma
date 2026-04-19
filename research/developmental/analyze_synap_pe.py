@@ -168,7 +168,7 @@ def main() -> None:
     print()
     print("INTERPRETATION GUIDE:")
     print("  ema_neg% stays near 100 in _pe runs => global PE dropping each step,")
-    print("    filter almost never fires (supervision ≈ no supervision).")
+    print("    filter almost never fires (supervision ~= no supervision).")
     print("  ema_neg% below 50 => filter regularly suppresses admissions,")
     print("    likely during regime transitions where PE spikes.")
     print("  synap_only_pe between synap_only and no_growth => filter partial help.")

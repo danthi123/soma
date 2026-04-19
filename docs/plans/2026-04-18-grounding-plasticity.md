@@ -199,8 +199,55 @@ default `0.0` (admit if any PE drop). Smoke test showed typical EMAs
 near ±0.0005, so `-0.001` would filter most pairs. Phase 1 is the
 permissive run; if it shows signal, a threshold sweep follows.
 
-**Open**: full 4000-step experiment is running at time of this log
-entry. Outcomes update commits.
+**Phase 1 results (2026-04-18, seed=42, threshold=0.0)**:
+
+Plan-doc success criteria scorecard:
+
+- `synap_only_pe` beats `synap_only` on **7 of 8 regimes** (needed
+  6+): **PASS**. Mean improvement −0.0005 MSE.
+- `full_pe` beats `full` on **2 of 8 regimes** (needed 4+): **FAIL**.
+  Supervision actively regresses the neurogenesis-composed config,
+  some regimes by +0.0023 MSE (+47% relative on mlp_4x64).
+- Gap to `no_growth` narrowed on hard regimes for synap_only_pe
+  but not closed (mlp_4x64: 0.0065 → 0.0056 vs no_growth 0.0010).
+
+Detailed findings in
+`research/developmental/results/env_sequence_v05_synap_pe_findings.md`.
+
+Why the split? The `min_observations=5` cold-start gate blocks synap
+from wiring pairs that include recently-created neurogenesis nodes
+until they accumulate 5 observations. Under the full config,
+neurogenesis produced 31 new nodes and the rolling cold-start window
+suppressed a lot of useful early admissions. Under synap_only, 91
+pairs stabilize within regime 0 and the gate thereafter exercises
+its full behavior.
+
+**Degeneracy empirically confirmed**: `ema_pairs=91` at end of
+synap_only_pe — exactly 14 choose 2 — all moving together.
+`ema_pairs=990` at end of full_pe, reflecting neuro-added slots.
+ema_neg% fraction swings uniformly across pairs (100 / 0 / 100 / 0
+across regime boundaries), never partial — confirming all pairs
+share the same effective EMA.
+
+**Next probes in priority order**:
+1. Neurogenesis-interaction fix: waive cold-start for pairs whose
+   newest node is younger than `neurogenesis_cooldown` steps. Test:
+   rerun with the fix and see if `full_pe` recovers toward `full`.
+2. Threshold sweep: `synaptogenesis_pe_threshold=-0.001` (plan-doc
+   originally specified) vs current `0.0`. Stricter might close
+   more of the no_growth gap on hard regimes.
+3. Seed robustness: reproduce the 7-of-8 signal on seeds {0, 1, 2}
+   before investing in further mechanism design.
+4. Move to Direction 3: since Direction 1 already reduced to a
+   global PE-trend gate on synap, the principled generalization is
+   to broadcast that gate to Hebbian + neurogenesis too
+   (Direction 3's design). Most informative comparison: Direction 1
+   fixed-for-neuro vs Direction 3 applied to the same axes.
+
+**Decision**: Direction 1 Phase 1 succeeded on its primary claim.
+Further Phase-1 refinement (probes 1–3) is bounded-effort; commit
+to one more Phase 1 iteration (probe 1) before transitioning to
+Direction 3.
 
 ---
 

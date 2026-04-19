@@ -122,7 +122,7 @@ def _score_queries(
                 h[0] in evidence_steps for h in hits[:k]
             ):
                 recall_hits[k] += 1
-                if cat_name in by_cat[cat_name]:
+                if cat_name in by_cat:
                     by_cat[cat_name][k] += 1
 
     n = len(queries)

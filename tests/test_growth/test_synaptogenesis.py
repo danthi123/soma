@@ -505,6 +505,87 @@ class TestNewNodeWaiver:
         # No waiver, so cold-start blocks.
         assert new == []
 
+    def test_locality_filter_hard_rejects_distant_pairs(self) -> None:
+        """With synaptogenesis_max_distance set, pairs whose positions
+        are farther apart than the limit must not be admitted — even
+        when they're co-active and would pass the supervision/threshold.
+
+        This tests the Direction analysis prediction (2026-04-19) that
+        positional locality is what makes neurogenesis's wirings useful;
+        adding a hard cutoff to synap should reproduce the locality
+        contribution without the other neurogenesis factors.
+        """
+        dim = 8
+        cfg = SOMAConfig(
+            synaptogenesis_rate=10.0,
+            activation_threshold=0.01,
+            synaptogenesis_max_distance=0.5,  # tight cutoff
+            locality_scale=2.0,  # keep soft locality at default
+        )
+        # Position nodes FAR apart in position space (distance = 5.0).
+        graph = Graph()
+        pos_a = torch.zeros(cfg.position_dim)
+        pos_b = torch.zeros(cfg.position_dim)
+        pos_b[0] = 5.0
+        a = Node(NodeType.ASSOCIATOR, dim, dim * 2, dim, 0, cfg, position=pos_a)
+        b = Node(NodeType.ASSOCIATOR, dim, dim * 2, dim, 0, cfg, position=pos_b)
+        graph.add_node(a)
+        graph.add_node(b)
+        acts = {a.id: torch.ones(dim), b.id: torch.ones(dim)}
+        rng = torch.Generator().manual_seed(0)
+        new = synaptogenesis(graph, acts, step=100, config=cfg, rng=rng)
+        # dist=5 >> max_distance=0.5 => no admissions.
+        assert new == []
+
+    def test_locality_filter_admits_near_pairs(self) -> None:
+        """With the same max_distance, pairs within the limit are
+        admitted at the normal rate."""
+        dim = 8
+        cfg = SOMAConfig(
+            synaptogenesis_rate=10.0,
+            activation_threshold=0.01,
+            synaptogenesis_max_distance=1.0,
+            locality_scale=2.0,
+        )
+        graph = Graph()
+        pos_a = torch.zeros(cfg.position_dim)
+        pos_b = torch.zeros(cfg.position_dim)
+        pos_b[0] = 0.3  # distance = 0.3 < 1.0
+        a = Node(NodeType.ASSOCIATOR, dim, dim * 2, dim, 0, cfg, position=pos_a)
+        b = Node(NodeType.ASSOCIATOR, dim, dim * 2, dim, 0, cfg, position=pos_b)
+        graph.add_node(a)
+        graph.add_node(b)
+        acts = {a.id: torch.ones(dim), b.id: torch.ones(dim)}
+        rng = torch.Generator().manual_seed(0)
+        new = synaptogenesis(graph, acts, step=100, config=cfg, rng=rng)
+        assert len(new) >= 1
+
+    def test_locality_filter_zero_disables(self) -> None:
+        """max_distance=0 means 'no filter' — legacy behavior preserved."""
+        dim = 8
+        cfg = SOMAConfig(
+            synaptogenesis_rate=10.0,
+            activation_threshold=0.01,
+            synaptogenesis_max_distance=0.0,  # disabled
+            locality_scale=2.0,
+        )
+        graph = Graph()
+        pos_a = torch.zeros(cfg.position_dim)
+        pos_b = torch.zeros(cfg.position_dim)
+        pos_b[0] = 5.0  # very far
+        a = Node(NodeType.ASSOCIATOR, dim, dim * 2, dim, 0, cfg, position=pos_a)
+        b = Node(NodeType.ASSOCIATOR, dim, dim * 2, dim, 0, cfg, position=pos_b)
+        graph.add_node(a)
+        graph.add_node(b)
+        acts = {a.id: torch.ones(dim), b.id: torch.ones(dim)}
+        rng = torch.Generator().manual_seed(0)
+        new = synaptogenesis(graph, acts, step=100, config=cfg, rng=rng)
+        # No hard filter; with high rate, admissions happen despite
+        # the soft locality reducing probability.
+        # The soft-locality exp(-5/2) = 0.082, times rate 10 = 0.82 prob
+        # per direction, so likely at least one admission.
+        assert len(new) >= 1  # soft locality doesn't fully block
+
     def test_initial_seed_nodes_not_treated_as_fresh(self) -> None:
         """Initial seed nodes have creation_step=0 by convention; the
         waiver must NOT treat them as fresh, even during the first

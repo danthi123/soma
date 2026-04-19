@@ -184,6 +184,17 @@ def synaptogenesis(
             coact = source_mag * target_mag
 
             dist = float((positions[source_id] - positions[target_id]).norm().item())
+            # Hard positional-locality filter (2026-04-19): when enabled,
+            # reject pairs whose distance exceeds the cutoff. Tests the
+            # hypothesis (derived from why_neuro_only_works.md) that
+            # neurogenesis's positional-neighbor wiring is the key to
+            # its reliable multi-seed benefit on v0.5; applying the
+            # same discipline to synap should make synap's admissions
+            # useful instead of arbitrary.
+            if config.synaptogenesis_max_distance > 0.0 and (
+                dist > config.synaptogenesis_max_distance
+            ):
+                continue
             locality_bonus = float(torch.exp(torch.tensor(-dist / locality)).item())
 
             # Clamp probability to [0, 1]. Without this, when activations

@@ -202,6 +202,20 @@ class SOMAConfig:
     # Ceiling on the gain. Prevents runaway plasticity during
     # transient extreme PE spikes.
     plasticity_broadcast_max_gain: float = 3.0
+    # Hard positional-locality filter for synaptogenesis. Pairs whose
+    # Euclidean position distance exceeds this value are rejected
+    # outright before the rng draw.
+    #
+    # Default 0.0 disables the filter (soft locality via
+    # locality_scale still applies). Positive values mimic
+    # neurogenesis's nearest-neighbor wiring discipline: synap can
+    # only form edges within a spatial radius, matching the
+    # "positional neighbor" property that multi-seed validation
+    # (2026-04-19 analysis) identified as neurogenesis's key
+    # advantage. See
+    # research/developmental/results/why_neuro_only_works.md.
+    synaptogenesis_max_distance: float = 0.0
+
     # Pairs that include a NEUROGENESIS-created node (creation_step > 0)
     # whose age is less than this grace window bypass the cold-start
     # (min_observations) check, so fresh nodes can wire into the graph
@@ -337,6 +351,12 @@ class SOMAConfig:
             raise ValueError(
                 f"SOMAConfig.neurogenesis_init_weight_scale must be >= 0, "
                 f"got {self.neurogenesis_init_weight_scale!r}"
+            )
+
+        if self.synaptogenesis_max_distance < 0.0:
+            raise ValueError(
+                f"SOMAConfig.synaptogenesis_max_distance must be >= 0 "
+                f"(0 disables the filter), got {self.synaptogenesis_max_distance!r}"
             )
 
         if self.synaptogenesis_supervision not in ("none", "pe_conditional"):

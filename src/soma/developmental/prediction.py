@@ -62,6 +62,24 @@ class PredictiveSOMA(nn.Module):
             if node.node_type == NodeType.ASSOCIATOR:
                 proj = self._build_projection(gen=gen)
                 self._input_projections[node.id] = proj
+        # Direction 4b: position_projector maps flat W_i -> position_dim
+        # via a fixed random linear projection. Used only when position
+        # distillation is active (llm_spatial target + learnable positions).
+        # Registered as a non-Parameter tensor (frozen). Johnson-Lindenstrauss
+        # preserves pairwise distances, which is what the locality filter reads.
+        self._position_projector: torch.Tensor | None = None
+        if (
+            config.position_mode == "learnable"
+            and config.projection_distillation_target == "llm_spatial"
+        ):
+            proj_gen = torch.Generator()
+            if config.seed is not None:
+                proj_gen.manual_seed(config.seed + 31)
+            self._position_projector = torch.randn(
+                config.sensor_output_dim ** 2,
+                config.position_dim,
+                generator=proj_gen,
+            ).to(self.device)
         self._last_prediction: torch.Tensor | None = None
         self._last_summary: torch.Tensor | None = None
         # When projections are learnable, include them in the prediction

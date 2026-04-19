@@ -162,6 +162,45 @@ operating point matches the expected pair-distance distribution.
 The filter's benefit is specifically spatial; sparsity per se does
 not transfer.
 
+### Mechanism probe: specific positions vs coherent-metric-only
+
+A natural question about the locality filter: does the benefit come
+from the SPECIFIC initial positions carrying information, or from
+ANY coherent distance metric being applied at admission time? We
+tested by scrambling positions immediately after node construction,
+preserving the distance distribution (same ``randn * 0.1`` jitter)
+but breaking any correlation between position and other node
+attributes. Per-seed wins for `synap_only_local_scramble` vs
+`synap_only_local` (matched rng, only position mapping changed):
+
+| Contrast | seed=0 | seed=1 | seed=42 |
+|----------|--------|--------|---------|
+| scramble beats unfiltered synap_only | 0/8 | 7/8 | 8/8 |
+| scramble matches or beats local      | 0/8 | 0/8 | 5/8 |
+
+On two of three seeds, scramble destroys most of the locality
+benefit. The scrambled-position filter still reduces admissions
+(coherent-metric effect exists) but the SPECIFIC admitted pairs are
+no longer useful. On seed=42 alone, scramble approximately matches
+local — an anomaly we flag plainly; it may reflect either seed-
+specific position-projection correlation strength or a lucky
+scrambled-distance distribution. A larger seed sweep would clarify.
+
+Likely mechanism: at node construction, positions and projection
+weights are drawn from the same torch rng state in sequence. Nodes
+whose positions are close by Euclidean distance also tend to have
+correlated projection responses. The locality filter admits pairs
+of response-correlated units — edges between them carry genuine
+structure. Scrambling severs this correlation and the filter loses
+its signal even though its geometry is unchanged.
+
+This is a testable prediction: explicitly correlating position and
+projection init (e.g., deriving positions from PCA of projection
+weights) should strengthen the effect; fully decorrelating them
+should weaken it. We leave these as follow-ups but note that the
+scramble result already constrains the mechanism beyond "any
+spatial filter works."
+
 ### Interpretation
 
 The three failed directions (PE-gating, learnable projections,

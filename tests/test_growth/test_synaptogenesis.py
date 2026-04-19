@@ -737,3 +737,53 @@ class TestMaxAdmissionsPerStep:
     def test_validation_rejects_negative(self) -> None:
         with pytest.raises(ValueError, match="max_admissions_per_step"):
             SOMAConfig(synaptogenesis_max_admissions_per_step=-1)
+
+    def test_cap_composes_with_locality_filter(self) -> None:
+        """When both locality filter and cap are active, the locality
+        filter runs first (inside the main scan) and only its survivors
+        enter the post-scan cap pool. Cap must never resurrect edges
+        that were locality-rejected.
+
+        Setup: two disjoint clusters, one near origin and one far away.
+        Intra-cluster pairs pass the locality filter; cross-cluster
+        pairs are rejected. With a generous cap, all intra-cluster
+        pairs that pass coact+rng should survive, but NO cross-cluster
+        edge must appear.
+        """
+        dim = 8
+        cfg = SOMAConfig(
+            synaptogenesis_rate=10.0,
+            activation_threshold=0.01,
+            synaptogenesis_max_distance=0.5,      # tight locality filter
+            synaptogenesis_max_admissions_per_step=10,  # cap larger than expected pool
+            locality_scale=2.0,
+        )
+        graph = Graph()
+        # 4 nodes: 2 in a near cluster (intra-distance 0.1), 2 in a far
+        # cluster (intra-distance 0.1), inter-cluster distance ~5.0.
+        near_positions = [torch.zeros(cfg.position_dim) for _ in range(2)]
+        near_positions[1][0] = 0.1
+        far_positions = [torch.zeros(cfg.position_dim) for _ in range(2)]
+        far_positions[0][0] = 5.0
+        far_positions[1][0] = 5.1
+        nodes = []
+        for pos in near_positions + far_positions:
+            n = Node(NodeType.ASSOCIATOR, dim, dim * 2, dim, 0, cfg, position=pos)
+            graph.add_node(n)
+            nodes.append(n)
+        acts = {n.id: torch.ones(dim) for n in nodes}
+        rng = torch.Generator().manual_seed(0)
+        new = synaptogenesis(graph, acts, step=100, config=cfg, rng=rng)
+
+        near_ids = {nodes[0].id, nodes[1].id}
+        far_ids = {nodes[2].id, nodes[3].id}
+        for e in new:
+            # Each edge must be entirely within one cluster — no cross-
+            # cluster edges can survive the locality gate, regardless
+            # of the cap's permissiveness.
+            is_near_near = e.source_id in near_ids and e.target_id in near_ids
+            is_far_far = e.source_id in far_ids and e.target_id in far_ids
+            assert is_near_near or is_far_far, (
+                f"edge {e.source_id[:4]}->{e.target_id[:4]} passed the cap "
+                f"but should have been locality-rejected at cross-cluster distance ~5.0"
+            )

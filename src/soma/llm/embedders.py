@@ -12,10 +12,12 @@ keeps each file small and single-purpose.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Protocol, runtime_checkable
 
 import torch
@@ -81,4 +83,54 @@ class OllamaEmbedder:
         # optimization: newer /api/embed supports batch. For now the
         # caching layer (CachedEmbedder) amortizes the HTTP cost across
         # repeat runs.
+        return torch.stack([self.embed(t) for t in texts])
+
+
+@dataclass
+class CachedEmbedder:
+    """Wraps any ``LLMTeacher`` with an on-disk + memory cache.
+
+    Keys by ``sha256(text)``. Embeddings are stored as ``.pt`` files
+    under ``<cache_dir>/<teacher-name-slug>/<hash>.pt``. Safe to share
+    a cache dir across models — the name slug isolates them.
+
+    Memory cache is kept per-instance; disk cache persists across runs
+    so repeated benchmarks (e.g. LoCoMo's 5882 turns) don't re-hit
+    the embedding model.
+    """
+
+    teacher: LLMTeacher
+    cache_dir: str
+    _mem_cache: dict[str, torch.Tensor] = field(
+        default_factory=dict, init=False, repr=False,
+    )
+    name: str = field(init=False)
+
+    def __post_init__(self) -> None:
+        self.name = f"cached:{self.teacher.name}"
+        slug = self.teacher.name.replace(":", "_").replace("/", "_")
+        self._cache_path = Path(self.cache_dir) / slug
+        self._cache_path.mkdir(parents=True, exist_ok=True)
+
+    def _key(self, text: str) -> str:
+        return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+    def _cache_file(self, key: str) -> Path:
+        return self._cache_path / f"{key}.pt"
+
+    def embed(self, text: str) -> torch.Tensor:
+        key = self._key(text)
+        if key in self._mem_cache:
+            return self._mem_cache[key]
+        disk_file = self._cache_file(key)
+        if disk_file.exists():
+            tensor = torch.load(disk_file, map_location="cpu", weights_only=True)
+            self._mem_cache[key] = tensor
+            return tensor
+        tensor = self.teacher.embed(text)
+        self._mem_cache[key] = tensor
+        torch.save(tensor, disk_file)
+        return tensor
+
+    def embed_batch(self, texts: list[str]) -> torch.Tensor:
         return torch.stack([self.embed(t) for t in texts])

@@ -204,6 +204,41 @@ class TestSerialization:
         soma2.load_state(path)
         assert soma2.plasticity_gain == 1.0
 
+    def test_load_clamps_out_of_bounds_gain(self, tmp_path: Path) -> None:
+        """If a checkpoint holds a gain outside the loaded config's
+        bounds (tightened config, corrupted file, hand-edit, etc.),
+        load_state must clamp it. Without this, an eval-mode step
+        after load would apply the stale out-of-bounds gain directly
+        (step-level clamp is skipped in eval)."""
+        cfg = _tiny_config(
+            plasticity_broadcast_min_gain=0.5,
+            plasticity_broadcast_max_gain=1.5,
+        )
+        soma = SOMA(cfg)
+        path = tmp_path / "soma.pt"
+        soma.save_state(path)
+
+        # Surgically inject an out-of-bounds gain into the saved payload.
+        raw = torch.load(str(path), map_location="cpu", weights_only=False)
+        state = raw["payload"] if raw.get("format") == "soma-brain" else raw
+        state["plasticity_gain"] = 99.0  # well above max 1.5
+        torch.save(raw, str(path))
+
+        soma2 = SOMA(cfg)
+        soma2.load_state(path)
+        # Must be clamped to max_gain, not retained as 99.0.
+        assert soma2.plasticity_gain == 1.5
+
+        # Repeat with a too-low value.
+        raw = torch.load(str(path), map_location="cpu", weights_only=False)
+        state = raw["payload"] if raw.get("format") == "soma-brain" else raw
+        state["plasticity_gain"] = 0.001  # well below min 0.5
+        torch.save(raw, str(path))
+
+        soma3 = SOMA(cfg)
+        soma3.load_state(path)
+        assert soma3.plasticity_gain == 0.5
+
 
 class TestSynaptogenesisScaling:
     """Direction 3: plasticity_gain multiplies synaptogenesis_rate.

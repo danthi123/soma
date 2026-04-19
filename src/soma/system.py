@@ -1107,8 +1107,16 @@ class SOMA:
         stored_last_pe = state.get("last_pe", None)
         self._last_pe = float(stored_last_pe) if stored_last_pe is not None else None
         # Direction 3: plasticity broadcast gain. Legacy checkpoints get
-        # the nominal 1.0 (no-op).
-        self.plasticity_gain = float(state.get("plasticity_gain", 1.0))
+        # the nominal 1.0 (no-op). Clamp to the LOADED config's bounds
+        # so a checkpoint written with a looser bound (or a corrupted
+        # value) can't propagate out-of-range gain into eval steps
+        # (which skip the step-level re-clamp) or into the first
+        # training step.
+        raw_gain = float(state.get("plasticity_gain", 1.0))
+        self.plasticity_gain = max(
+            self.config.plasticity_broadcast_min_gain,
+            min(self.config.plasticity_broadcast_max_gain, raw_gain),
+        )
 
     # ------------------------------------------------------------------
     # Directory-shaped brain bundle (brain.pt + tokenizer + encoder + manifest)

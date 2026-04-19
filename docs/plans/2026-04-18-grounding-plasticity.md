@@ -338,6 +338,45 @@ synaptogenesis's random-edge admission with something task-grounded
 Detailed analysis:
 `research/developmental/results/env_sequence_v05_broadcast_multiseed_findings.md`.
 
+### Direction 2B (post-processing learnable projections) multi-seed — ALSO NEGATIVE
+
+Direction 2B implemented as: projections become nn.Parameter, fed
+through mean-over-views into the prediction head. Gradient flows
+to projections via prediction loss. Does NOT pass through SOMA's
+graph (that would be Direction 2C).
+
+Per-seed scorecard (noise floor 0.00005 MSE):
+- full_learnable beats full_frozen: 4/8, 4/8, 1/8 (seeds 0, 1, 42)
+- neuro_only_learnable beats neuro_only_frozen: 5/8, 3/8, 6/8
+
+Neither meets 5+/8 on ALL three seeds. Mean effect 0 to -0.0002 MSE
+(noise-level).
+
+Systematic negative: `full_learnable` REGRESSES on mlp_4x64 by
++0.0012 on all 3 seeds — consistent harm when combined with synap
+on the hardest regime.
+
+**Verdict: Direction 2B NEGATIVE.** Three of the four directions
+(1, 2B, 3) have now failed multi-seed validation on v0.5.
+
+### The only positive: neuro_only (reaffirmed by every ablation)
+
+Every experiment in this session — no_diversify, broadcast, learnable
+projections — has left neuro_only's advantage over no_growth
+intact (0.0005-0.0009 MSE on 4 hard regimes across all 3 seeds).
+None of the plasticity-adjustment mechanisms explain why it works;
+none of them compose with it to improve further.
+
+Code-reading analysis in
+`research/developmental/results/why_neuro_only_works.md` identifies
+four factors (need-based PE trigger, spatial-centroid positioning,
+bidirectional local wiring, low init weight) and predicts that
+positional locality specifically is the critical factor. Test:
+`synap_local` (hard positional distance cutoff on synap admissions)
+launched 2026-04-19; if synap_local reliably beats synap_only, the
+prediction is validated and the plasticity-design principle becomes
+"locality + capacity pressure" rather than "PE-signal gating."
+
 ---
 
 ## Direction 2 — Task-supervised input projections (medium-lift)

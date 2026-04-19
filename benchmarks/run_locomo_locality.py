@@ -164,12 +164,18 @@ def main() -> None:
         "",
         "## Recall@5 by question category",
         "",
-        "| System | " + " | ".join(f"{c} R@5" for c in CATEGORY_NAMES) + " |",
+        # Iterate CATEGORY_NAMES.values() to get "single-hop", "multi-hop", ...
+        # Plain `for c in CATEGORY_NAMES` yields integer keys, which don't
+        # match recall_by_category (keyed by string name) — that was the
+        # bug in the first LoCoMo locality run.
+        "| System | " + " | ".join(
+            f"{c} R@5" for c in CATEGORY_NAMES.values()
+        ) + " |",
         "| --- | " + " | ".join(":---:" for _ in CATEGORY_NAMES) + " |",
     ]
     for r in results:
         row = [r.system]
-        for cat in CATEGORY_NAMES:
+        for cat in CATEGORY_NAMES.values():
             val = r.recall_by_category.get(cat, {}).get(5, 0.0)
             row.append(f"{val:.3f}")
         lines.append("| " + " | ".join(row) + " |")

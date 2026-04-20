@@ -104,6 +104,26 @@ def _call_judge(
             logger.error("Anthropic judge call failed: %s", exc)
             return "error"
 
+    if provider == "claude_runner":
+        # Claude via Unraid OAuth — consumes Max subscription, no API charges.
+        from benchmarks.industry.llm_backends import (
+            ClaudeRunnerClient,
+            ClaudeRunnerError,
+        )
+        kwargs: dict[str, Any] = {"timeout": 60}
+        if api_base and "|" in api_base:
+            host, token = api_base.split("|", 1)
+            kwargs["ssh_host"] = host
+            kwargs["token_path"] = token
+        elif api_base and api_base.startswith("root@"):
+            kwargs["ssh_host"] = api_base
+        try:
+            client = ClaudeRunnerClient(**kwargs)
+            return client.complete(prompt, system_prompt=JUDGE_SYSTEM).lower()
+        except ClaudeRunnerError as exc:
+            logger.error("Claude runner judge call failed: %s", exc)
+            return "error"
+
     raise ValueError(f"unknown provider: {provider}")
 
 
@@ -197,7 +217,7 @@ def main() -> None:
     p.add_argument("--variant", default="small",
                    help="LongMemEval variant to load question text from")
     p.add_argument("--judge-provider", default="ollama",
-                   choices=["ollama", "anthropic"])
+                   choices=["ollama", "anthropic", "claude_runner"])
     p.add_argument("--judge-model", default="qwen3.5:4b-q8_0",
                    help="e.g. qwen3.5:4b-q8_0 (ollama) or "
                         "claude-haiku-4-5 (anthropic)")

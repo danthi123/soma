@@ -366,6 +366,33 @@ def _call_llm(
             logger.error("Anthropic call failed: %s", exc)
             return ""
 
+    if provider == "claude_runner":
+        # Uses the long-lived OAuth token on Unraid — no per-request API
+        # charges, just consumes the Claude Max subscription budget.
+        # ssh_host / token_path can be overridden via api_base, which is
+        # parsed as ``ssh_host|token_path``. If api_base is empty, the
+        # defaults in ClaudeRunnerClient apply.
+        from benchmarks.industry.llm_backends import (
+            ClaudeRunnerClient,
+            ClaudeRunnerError,
+        )
+
+        runner_kwargs: dict[str, Any] = {"timeout": 180}
+        if api_base and "|" in api_base:
+            host, token = api_base.split("|", 1)
+            runner_kwargs["ssh_host"] = host
+            runner_kwargs["token_path"] = token
+        elif api_base and api_base.startswith("root@"):
+            runner_kwargs["ssh_host"] = api_base
+        # ``model`` is reserved for a future --model override on the
+        # claude CLI (``--model sonnet-4.5`` etc.) — ignored for now.
+        client = ClaudeRunnerClient(**runner_kwargs)
+        try:
+            return client.complete(user_msg, system_prompt=system_prompt)
+        except ClaudeRunnerError as exc:
+            logger.error("Claude runner call failed: %s", exc)
+            return ""
+
     raise ValueError(f"unknown provider: {provider}")
 
 
@@ -527,8 +554,10 @@ def main() -> None:
                    help="Device for sbert embedder. CPU avoids VRAM "
                         "contention with ollama LLMs on a shared GPU.")
     p.add_argument("--provider", default="ollama",
-                   choices=["ollama", "anthropic"],
-                   help="LLM provider. Anthropic needs ANTHROPIC_API_KEY env var.")
+                   choices=["ollama", "anthropic", "claude_runner"],
+                   help="LLM provider. ollama (local), anthropic (API key, "
+                        "ANTHROPIC_API_KEY env), or claude_runner (Unraid "
+                        "docker image using Claude Max OAuth token).")
     p.add_argument("--strict-prompt", action="store_true",
                    help="Use strict 'answer in 1-5 words' system prompt. "
                         "Recommended for larger LLMs to avoid F1 verbosity penalty.")

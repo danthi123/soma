@@ -135,6 +135,19 @@ substrate for learning to come**. On the benchmarks committed under
   retrieval crushes "just stuff it in" when budget is constrained.
   See `research/developmental/results/longmemeval_qa_compare_findings.md`
   and `longmemeval_qa_compare_strict_findings.md`.
+
+  **What drives the +23% lift**: partition-based decomposition of the
+  paired N=500 strict run shows two independent mechanisms:
+  **34% from recall** (30 items where only SOMA retrieves gold —
+  BM25 catches keyword queries cosine misses) and **66% from ranking**
+  (460 items where BOTH retrieve gold in top-5, yet SOMA wins F1 on
+  54 to chroma's 24 — SOMA's hybrid scoring pushes the gold session to
+  rank 1-2 where the LLM can extract from it, while chroma leaves it
+  at rank 4-5 buried behind less-useful semantic matches and the LLM
+  says "I don't know"). The ranking mechanism is stable across verbose
+  and strict prompting. Single-session-user is a **clean sweep**:
+  SOMA wins 22 items, chroma wins 0, 48 tied on 70 items of that type.
+  See `research/developmental/results/longmemeval_causation_findings.md`.
 - **Matches Chroma on recall, ~2.4× faster on retrieve** — on full
   LoCoMo (5,882 turns, 1,982 queries) at target_dim=128 with
   mxbai-embed-large, pure-cosine SOMA ties Chroma on R@5 (0.350 vs

@@ -231,3 +231,78 @@ class TestSmokeEndToEnd:
         assert "question_id" in result
         assert "hypothesis" in result
         assert result["hypothesis"]  # non-empty
+
+
+class TestComputeGoldRank:
+    """Used by run_qa_compare to log where the LLM sees the gold session.
+
+    Rank-1 means the LLM reads the gold evidence at the top of the context
+    window; rank-k means it's buried behind (k-1) less-useful sessions.
+    The causation analysis in
+    research/developmental/results/longmemeval_causation_findings.md
+    depends on this rank signal.
+    """
+
+    def test_gold_at_rank_1(self) -> None:
+        from benchmarks.industry.longmemeval.run_qa_compare import (
+            _compute_gold_rank,
+        )
+
+        rank = _compute_gold_rank(["s0", "s1", "s2"], {"s0"}, top_k=3)
+        assert rank == 1
+
+    def test_gold_at_rank_3(self) -> None:
+        from benchmarks.industry.longmemeval.run_qa_compare import (
+            _compute_gold_rank,
+        )
+
+        rank = _compute_gold_rank(["s0", "s1", "s2"], {"s2"}, top_k=5)
+        assert rank == 3
+
+    def test_gold_not_in_top_k(self) -> None:
+        from benchmarks.industry.longmemeval.run_qa_compare import (
+            _compute_gold_rank,
+        )
+
+        rank = _compute_gold_rank(
+            ["s0", "s1", "s2", "s3", "s4"], {"s5"}, top_k=5,
+        )
+        assert rank == 0
+
+    def test_gold_outside_top_k_window_returns_zero(self) -> None:
+        """If gold is at position 6 but top_k=5, we report 0 (a miss)."""
+        from benchmarks.industry.longmemeval.run_qa_compare import (
+            _compute_gold_rank,
+        )
+
+        rank = _compute_gold_rank(
+            ["s0", "s1", "s2", "s3", "s4", "gold"], {"gold"}, top_k=5,
+        )
+        assert rank == 0
+
+    def test_first_of_multiple_golds_wins(self) -> None:
+        from benchmarks.industry.longmemeval.run_qa_compare import (
+            _compute_gold_rank,
+        )
+
+        rank = _compute_gold_rank(
+            ["s0", "g1", "s2", "g2"], {"g1", "g2"}, top_k=4,
+        )
+        assert rank == 2
+
+    def test_empty_retrieved(self) -> None:
+        from benchmarks.industry.longmemeval.run_qa_compare import (
+            _compute_gold_rank,
+        )
+
+        rank = _compute_gold_rank([], {"s0"}, top_k=5)
+        assert rank == 0
+
+    def test_empty_gold(self) -> None:
+        """If the item has no labeled gold session, rank is always 0."""
+        from benchmarks.industry.longmemeval.run_qa_compare import (
+            _compute_gold_rank,
+        )
+
+        rank = _compute_gold_rank(["s0", "s1"], set(), top_k=5)
+        assert rank == 0

@@ -84,6 +84,24 @@ def _session_text(session: list[Any], session_date: str) -> str:
     return header + body
 
 
+def _compute_gold_rank(
+    retrieved_ids: list[str],
+    gold_ids: set[str],
+    top_k: int,
+) -> int:
+    """Return the 1-indexed position of the first gold id in the top-k results.
+
+    Returns 0 if no gold id appears in the top-k. Enables "ranking vs
+    recall" analysis downstream — a rank-1 hit means the LLM sees the
+    evidence at the top of context, rank-5 means it's buried behind
+    less-useful candidates.
+    """
+    for pos, rid in enumerate(retrieved_ids[:top_k], start=1):
+        if rid in gold_ids:
+            return pos
+    return 0
+
+
 def _build_sbert(device: str = "cpu") -> tuple[Any, int]:
     """Build sbert. Defaults to CPU to avoid VRAM contention with ollama LLMs.
 
@@ -428,7 +446,8 @@ def _evaluate_mode(
         # Bookkeeping: did retrieval find the right evidence?
         gold = set(item.answer_session_ids or [])
         retrieved_origs = [uniq_to_orig.get(sid, sid) for sid, _ in retrieved]
-        hit = 1 if any(sid in gold for sid in retrieved_origs[:top_k]) else 0
+        gold_rank = _compute_gold_rank(retrieved_origs, gold, top_k)
+        hit = 1 if gold_rank > 0 else 0
         retrieved_hits_at_k.append(hit)
 
         # Pack context, call LLM
@@ -465,6 +484,7 @@ def _evaluate_mode(
                     "retrieval_ms": retrieval_latencies[-1],
                     "llm_ms": llm_latencies[-1],
                     "hit_at_k": hit,
+                    "gold_rank": gold_rank,
                     "input_tokens": input_token_estimates[-1],
                 }, ensure_ascii=False) + "\n")
         logger.info(

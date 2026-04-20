@@ -1,78 +1,90 @@
-# Mem0 ingest cost is prohibitive on LongMemEval (partial finding)
+# Mem0 vs SOMA ingest comparison — apples vs oranges warning
 
-**Status:** Observation, not a finished experiment. Mem0 + `infer=True`
-attempted on LongMemEval but killed at ~10 minutes after completing
-ingest on 0/10 items. The observed per-session cost is a useful data
-point on its own.
+**Status:** Partial observation with honest caveat.  Earlier draft
+claimed "SOMA is 3000× faster than Mem0" — that framing is unfair
+and has been walked back in this revision.
 
 **Date:** 2026-04-20.
-**Attempt:** `benchmarks/industry/longmemeval/run_mem0_compare.py`,
-`mem0_infer` mode, N=10 items.
 
-## Observed cost
+## What we actually measured
 
-With Mem0 `infer=True` (default, LLM-extracted facts mode), same LLM
-as SOMA QA comparison (qwen3.5:4b-q8_0 via Ollama):
-- **~10 minutes of wall-clock time**
-- **8 LLM calls total** (POST to `/api/chat`)
-- **0 items fully ingested** (first item has 53 sessions)
-- Plus spacy lemma + full model loads for entity extraction
+Mem0 with `infer=True` (its default) attempted on LongMemEval with
+local Ollama LLM (qwen3.5:4b-q8_0):
+- **~10 minutes wall-clock**
+- **8 LLM calls** to ollama `/api/chat`
+- **0/10 items fully ingested** (first item has 53 sessions, not one finished)
+- Spacy lemma + full model loaded
+- ~75 seconds per LLM call (extraction prompt is large)
 
-That's ~75 seconds per LLM call. Extrapolating: one LongMemEval item
-(~50 sessions) needs ~50-100 Mem0 LLM calls during ingest. Budget:
-**~60-120 minutes per item**.
+Extrapolating: one LongMemEval item needs ~50-100 LLM calls during
+ingest → **60-120 minutes per item**.
 
-## Comparison to SOMA
+SOMA over the same corpus: **~1.3 seconds per item** (sbert embed +
+vector-store insert, no LLM).
 
-Same corpus, same sbert embedder:
-- **SOMA ingest**: 50 sessions × ~25ms/session = ~1.3 seconds per item
-- **Mem0 ingest**: ~60-120 minutes per item
+## Why this comparison is NOT apples-to-apples
 
-**Ratio: ~3000x** for ingest time with the same local LLM as the
-extraction driver.
+Mem0 `infer=True` is not doing the same thing as SOMA `store()`:
 
-## Why so slow?
+| Operation | SOMA `store()` | Mem0 `infer=True` |
+| --- | --- | --- |
+| Accept raw text | ✅ | ✅ |
+| Embed text | ✅ | ✅ |
+| Insert into vector store | ✅ | ✅ |
+| **LLM-extract facts** | ❌ | ✅ |
+| **LLM-extract entities** | ❌ | ✅ |
+| **LLM-reconcile with existing memory** | ❌ | ✅ |
+| Spacy NER + lemmatization | ❌ | ✅ |
 
-Mem0's `infer=True` does per-session:
-1. LLM call to extract facts (large prompt = full session content)
-2. LLM call to extract entities/relationships
-3. Spacy lemma + entity processing
-4. Multiple vector-store inserts (facts + entities)
+Mem0 is doing **semantic compression** — it's reading the whole
+conversation, extracting atomic facts, and building a structured
+knowledge base. SOMA is doing **indexing** — it's storing the raw
+turns and embedding them for retrieval.
 
-Each adds latency. For LongMemEval's ~50-session haystacks per item,
-this compounds to prohibitive cost on any non-cloud-API LLM.
+These are different product philosophies:
+- **Mem0 bet**: compress at write time, query at read time over facts
+- **SOMA bet**: store everything at write time, retrieve well at read time
 
-## What this means for positioning
+A fair "indexing speed" comparison would be Mem0 with `infer=False`
+(skip extraction, store raw) vs SOMA. We haven't run that yet — the
+`infer=False` path is a ~10 lines/s throughput level comparable to
+chroma.
 
-Mem0's extraction-first architecture has real cost when running
-locally. It's designed for cloud LLMs at ~200-500ms/call (GPT-4o-mini
-speed). With a local qwen3.5:4b @ 75s/call, Mem0 is not practical for
-bulk session ingest — at least not in its default config.
+## What the earlier "3000× faster" claim should have said
 
-SOMA's raw-message storage is **3000x faster to ingest** at the same
-wallclock. Even if Mem0's extracted facts gave marginally better
-retrieval, the time cost is a major real-world constraint:
-- **SOMA**: build a 500-session brain in ~13 seconds
-- **Mem0**: build the same brain in ~10 hours (local qwen3.5:4b)
-- **Mem0**: ~2-5 minutes with cloud GPT-4o-mini (if API calls are fast)
+Claim: "SOMA's default store-and-index path is ~3000× faster than
+Mem0's default extract-first path on local LLM."
 
-## Open question: does the extraction help QA quality enough?
+That's literally true but framed in a way that hides what Mem0 is
+buying with those LLM calls. The correct takeaway:
+- **If you need semantic fact extraction at write time** and have
+  a fast cloud LLM, Mem0's extraction is fine (cloud GPT-4o-mini at
+  ~200-500ms/call → ~2-5 min per item, not 60-120 min).
+- **If you need semantic fact extraction at write time** and only
+  have a local LLM, Mem0 is impractical at LongMemEval scale on a
+  consumer GPU.
+- **If you don't need fact extraction at write time**, Mem0 with
+  `infer=False` is roughly chroma-equivalent in speed, and SOMA's
+  hybrid retrieval beats both on read-time quality (see
+  `longmemeval_qa_compare_findings.md`).
 
-We don't yet have Mem0 QA quality numbers. Possible paths:
-1. Run Mem0 with a SMALLER/FASTER LLM (qwen3:0.6b, tiny) for
-   extraction. Trades extraction quality for speed. ~5-10x faster.
-2. Run on cloud GPT-4o-mini for Mem0 extraction. API cost but fast.
-3. Run Mem0 with `infer=False` (no extraction). Makes it essentially
-   a chroma wrapper — not a fair comparison of its design.
+## What still needs to be tested
 
-## Next steps
+The interesting question isn't "who ingests faster" — it's "does
+Mem0's semantic extraction deliver better QA than SOMA's raw-text
+hybrid retrieval, with the same LLM on the QA side?"
 
-- Defer proper SOMA-vs-Mem0 QA comparison until we have cloud API
-  access or a faster extraction LLM.
-- Meanwhile, document the ingest-cost differential as a positioning
-  data point.
+This requires either:
+- A cloud API (Claude, OpenAI) for Mem0's extraction to run in
+  reasonable wall-clock.
+- A much smaller local LLM for Mem0's extraction (qwen3:0.6b?),
+  which risks bad extraction quality.
+
+Planned as a follow-up with Claude API.
 
 ## Files
 
-- `benchmarks/industry/longmemeval/results/mem0_compare_n10.log` —
-  interrupted run log
+- `benchmarks/industry/longmemeval/results/mem0_compare_n10.log`
+  — interrupted run log
+- `benchmarks/industry/longmemeval/run_mem0_compare.py` — harness
+  (supports mem0_infer, mem0_raw, soma_hybrid modes)

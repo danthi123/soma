@@ -82,10 +82,21 @@ substrate for learning to come**. On the benchmarks committed under
 - **Old memories don't rot** — a 30-day streaming-facts simulation
   holds old-fact Recall@3 at 0.883, essentially level with recent
   recall (0.938).
-- **Recall beyond the embedder ceiling** — hybrid BM25 + rerank
-  triples R@1 on LoCoMo (0.098 → 0.287) and lifts R@5 by 21.2 pp. Peers
-  that only expose the embedder's cosine can't match this without
-  bringing their own lexical stage.
+- **+13% R@5 over Chroma + same reranker** — on full LoCoMo (5,882
+  turns, 1,982 queries) with mxbai-embed-large and the same
+  `cross-encoder/ms-marco-MiniLM-L-6-v2` reranker attached to both
+  systems, SOMA's built-in hybrid (BM25 + cosine) + rerank reaches
+  **R@1 = 0.291, R@5 = 0.459, R@10 = 0.512**, vs Chroma's cosine +
+  the same reranker at R@1 = 0.259, R@5 = 0.405, R@10 = 0.471. That's
+  a **+12% / +13% / +9%** relative lift for **+0.054 R@5 absolute** at
+  **2.8× the retrieve latency** (24.6ms vs 8.8ms — still well under
+  interactive budgets). The win is structural: SOMA ships BM25
+  lexical + cosine semantic + cross-encoder rerank behind one API;
+  Chroma ships cosine alone. The BM25 leg widens the candidate pool
+  with exact-term matches (names, numbers, dates) that cosine
+  alone disperses.  Sbert (weak embedder) shows the same directional
+  win at +21.2 pp absolute R@5 — the lift is embedder-agnostic. See
+  `research/developmental/results/recall_boost_mxbai_findings.md`.
 - **Matches Chroma on recall, ~2.4× faster on retrieve** — on full
   LoCoMo (5,882 turns, 1,982 queries) at target_dim=128 with
   mxbai-embed-large, pure-cosine SOMA ties Chroma on R@5 (0.350 vs

@@ -100,6 +100,39 @@ with gold-evidence annotations):
 Same sbert embedder → quality parity by construction. SOMA wins on
 mechanics (store time, retrieve time, disk).
 
+### Quality with hybrid + rerank (structural SOMA win)
+
+With the BM25+cosine hybrid leg and an identical cross-encoder
+reranker attached to both systems, SOMA beats Chroma across
+LoCoMo and LongMemEval:
+
+| Benchmark | Embedder | SOMA config | SOMA | Chroma+same-rerank | Δ R@5 |
+| --- | --- | --- | :---: | :---: | :---: |
+| LoCoMo (5882 turns) | mxbai-L | hybrid+rerank | **0.459** | 0.405 | **+13%** |
+| LongMemEval (500 items) | sbert | hybrid alone | **0.980** | 0.936 | **+4.7%** |
+
+LongMemEval is notable: SOMA is **8.3× faster** than Chroma+rerank
+(34ms vs 287ms) while landing higher R@5. See
+`research/developmental/results/recall_boost_mxbai_findings.md`,
+`research/developmental/results/longmemeval_retrieval_findings.md`.
+
+### End-to-end QA (retrieval lift → answer lift)
+
+LongMemEval QA with the SAME LLM (qwen3.5:4b-q8_0), SAME 3.8K-token
+context budget, only retrieval strategy changes (N=100 items):
+
+| Mode | F1 | R@5 |
+| --- | :---: | :---: |
+| **soma_hybrid (α=0.3)** | **0.238** | **0.990** |
+| chroma + cross-enc rerank | 0.170 | 0.830 |
+| chroma cosine | 0.168 | 0.850 |
+| full_context (truncation) | 0.029 | 0.040 |
+
+**SOMA hybrid delivers +42% F1 end-to-end** — the better retrieval
+translates directly into more correct LLM answers. This is the
+"proof the retrieval win actually matters" data point. See
+`research/developmental/results/longmemeval_qa_compare_findings.md`.
+
 ## Honest comparison vs Mem0 / Letta / Zep
 
 We haven't yet run head-to-head benchmarks against Mem0 / Letta / Zep

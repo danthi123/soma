@@ -1,0 +1,9 @@
+{
+  "mode": "chroma_cosine",
+  "n_conv": 10,
+  "n_qa": 1986,
+  "hit_rate": 0.3902316213494461,
+  "rank1_frac": 0.17220543806646527,
+  "mean_rank_given_hit": 2.1406451612903226,
+  "total_s": 341.0457341000001
+}

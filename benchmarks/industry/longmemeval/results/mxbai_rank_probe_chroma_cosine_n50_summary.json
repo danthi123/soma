@@ -1,0 +1,9 @@
+{
+  "mode": "chroma_cosine",
+  "embedder": "mxbai-embed-large",
+  "n": 50,
+  "hit_rate": 0.84,
+  "mean_rank_given_hit": 1.4761904761904763,
+  "rank1_frac": 0.62,
+  "total_s": 242.13430640000115
+}

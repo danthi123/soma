@@ -120,8 +120,7 @@ class SparseAugmentedIndex:
         self._sparse = [self._encode_sparse(d) for d in denses]
 
         self._bm25 = BM25Index()
-        for sid, text in zip(ids, texts, strict=True):
-            self._bm25.add(sid, text)
+        self._bm25.build(texts)
 
     def retrieve(self, query: str, k: int, variant: str) -> list[tuple[str, str, float]]:
         assert self._bm25 is not None and self._dense is not None
@@ -135,12 +134,12 @@ class SparseAugmentedIndex:
         cos_scores = doc_norms @ q_norm  # shape (n,)
 
         # --- BM25 ---
-        bm25_hits = self._bm25.search(query, top_k=n)
+        # BM25Index.search returns (doc_index, score); doc_index indexes
+        # into the list passed to .build(). Same order as self._ids.
+        bm25_hits = self._bm25.search(query, k=n)
         bm_scores = np.zeros(n, dtype=np.float32)
-        id_to_idx = {sid: i for i, sid in enumerate(self._ids)}
-        for sid, score in bm25_hits:
-            if sid in id_to_idx:
-                bm_scores[id_to_idx[sid]] = score
+        for doc_idx, score in bm25_hits:
+            bm_scores[doc_idx] = score
 
         # --- Sparse overlap ---
         sparse_scores = np.zeros(n, dtype=np.float32)
@@ -167,28 +166,33 @@ class SparseAugmentedIndex:
         return [(self._ids[i], self._texts[i], float(combined[i])) for i in order]
 
 
-def probe_variant(
-    variant: str,
+def probe_all_variants(
+    variants: list[str],
     items: list[Any],
     index_factory,
     top_k: int,
-    out_path: Path,
-) -> dict[str, Any]:
-    rows: list[dict[str, Any]] = []
+    out_paths: dict[str, Path],
+) -> dict[str, dict[str, Any]]:
+    """Share the index across variants — ingest is expensive, scoring is cheap."""
+    per_variant_rows: dict[str, list[dict[str, Any]]] = {v: [] for v in variants}
+    done_qids_by_variant: dict[str, set[str]] = {}
+    for v, p in out_paths.items():
+        done: set[str] = set()
+        if p.exists():
+            with open(p, encoding="utf-8") as f:
+                for line in f:
+                    row = json.loads(line)
+                    done.add(row["question_id"])
+                    per_variant_rows[v].append(row)
+        done_qids_by_variant[v] = done
+        if done:
+            logger.info("Resuming %s: %d items already done", v, len(done))
+
     t_total = time.perf_counter()
 
-    # Resume support
-    done_qids: set[str] = set()
-    if out_path.exists():
-        with open(out_path, encoding="utf-8") as f:
-            for line in f:
-                row = json.loads(line)
-                done_qids.add(row["question_id"])
-                rows.append(row)
-        logger.info("Resuming %s: %d items already done", variant, len(done_qids))
-
     for i, item in enumerate(items):
-        if item.question_id in done_qids:
+        # Skip this item only if ALL variants already have it.
+        if all(item.question_id in done_qids_by_variant[v] for v in variants):
             continue
         raw_ids = item.haystack_session_ids
         uniq_ids = [f"{sid}__{j}" for j, sid in enumerate(raw_ids)]
@@ -202,45 +206,60 @@ def probe_variant(
         ]
         idx = index_factory()
         idx.ingest(texts, uniq_ids)
-        t0 = time.perf_counter()
-        retrieved = idx.retrieve(item.question, top_k, variant=variant)
-        retr_ms = (time.perf_counter() - t0) * 1000
-        retrieved_origs = [uniq_to_orig.get(sid, sid) for sid, _, _ in retrieved]
-        gold = set(item.answer_session_ids or [])
-        gold_rank = _compute_gold_rank(retrieved_origs, gold, top_k)
-        hit = 1 if gold_rank > 0 else 0
 
-        row = {
-            "question_id": item.question_id,
-            "question_type": item.question_type,
-            "variant": variant,
-            "hit_at_k": hit,
-            "gold_rank": gold_rank,
-            "retrieval_ms": retr_ms,
-        }
-        rows.append(row)
-        with open(out_path, "a", encoding="utf-8") as f:
-            f.write(json.dumps(row, ensure_ascii=False) + "\n")
+        for variant in variants:
+            if item.question_id in done_qids_by_variant[variant]:
+                continue
+            t0 = time.perf_counter()
+            retrieved = idx.retrieve(item.question, top_k, variant=variant)
+            retr_ms = (time.perf_counter() - t0) * 1000
+            retrieved_origs = [uniq_to_orig.get(sid, sid) for sid, _, _ in retrieved]
+            gold = set(item.answer_session_ids or [])
+            gold_rank = _compute_gold_rank(retrieved_origs, gold, top_k)
+            hit = 1 if gold_rank > 0 else 0
+
+            row = {
+                "question_id": item.question_id,
+                "question_type": item.question_type,
+                "variant": variant,
+                "hit_at_k": hit,
+                "gold_rank": gold_rank,
+                "retrieval_ms": retr_ms,
+            }
+            per_variant_rows[variant].append(row)
+            with open(out_paths[variant], "a", encoding="utf-8") as f:
+                f.write(json.dumps(row, ensure_ascii=False) + "\n")
+
         if (i + 1) % 10 == 0:
-            hits = sum(r["hit_at_k"] for r in rows)
-            logger.info(
-                "[%s] %d/%d  hit_rate=%.3f  last_rank=%d  retr=%.1fms",
-                variant, i + 1, len(items), hits / len(rows), gold_rank, retr_ms,
-            )
+            msg_parts = []
+            for v in variants:
+                rows = per_variant_rows[v]
+                if rows:
+                    hits = sum(r["hit_at_k"] for r in rows)
+                    r1 = sum(1 for r in rows if r["gold_rank"] == 1)
+                    msg_parts.append(
+                        f"{v}: hit={hits/len(rows):.2f} r1={r1/len(rows):.2f}"
+                    )
+            logger.info("[%d/%d] %s", i + 1, len(items), " | ".join(msg_parts))
 
     total_ms = (time.perf_counter() - t_total) * 1000
-    hits_rows = [r for r in rows if r["hit_at_k"] == 1]
-    ranks = [r["gold_rank"] for r in hits_rows]
-    return {
-        "variant": variant,
-        "n": len(rows),
-        "hit_rate": len(hits_rows) / max(1, len(rows)),
-        "rank1_frac": sum(1 for r in ranks if r == 1) / max(1, len(rows)),
-        "mean_rank_given_hit": mean(ranks) if ranks else 0.0,
-        "median_rank_given_hit": median(ranks) if ranks else 0.0,
-        "rank_hist": {str(k): sum(1 for r in ranks if r == k) for k in range(1, 6)},
-        "total_ms": total_ms,
-    }
+
+    summaries: dict[str, dict[str, Any]] = {}
+    for variant in variants:
+        rows = per_variant_rows[variant]
+        hits_rows = [r for r in rows if r["hit_at_k"] == 1]
+        ranks = [r["gold_rank"] for r in hits_rows]
+        summaries[variant] = {
+            "variant": variant,
+            "n": len(rows),
+            "hit_rate": len(hits_rows) / max(1, len(rows)),
+            "rank1_frac": sum(1 for r in ranks if r == 1) / max(1, len(rows)),
+            "mean_rank_given_hit": mean(ranks) if ranks else 0.0,
+            "median_rank_given_hit": median(ranks) if ranks else 0.0,
+            "rank_hist": {str(k): sum(1 for r in ranks if r == k) for k in range(1, 6)},
+            "total_ms": total_ms,
+        }
+    return summaries
 
 
 def main() -> None:
@@ -275,15 +294,16 @@ def main() -> None:
             sparse_seed=args.sparse_seed,
         )
 
-    summaries: dict[str, Any] = {}
-    for variant in args.variants:
-        out_path = RESULTS_DIR / f"sparse_retrieval_{variant}{args.out_suffix}.jsonl"
-        summary = probe_variant(
-            variant, items, make_index,
-            top_k=args.top_k, out_path=out_path,
-        )
-        summaries[variant] = summary
-        logger.info("%s summary: %s", variant, json.dumps(summary, indent=2))
+    out_paths = {
+        v: RESULTS_DIR / f"sparse_retrieval_{v}{args.out_suffix}.jsonl"
+        for v in args.variants
+    }
+    summaries = probe_all_variants(
+        args.variants, items, make_index,
+        top_k=args.top_k, out_paths=out_paths,
+    )
+    for v, s in summaries.items():
+        logger.info("%s summary: %s", v, json.dumps(s, indent=2))
 
     summary_path = RESULTS_DIR / f"sparse_retrieval_summary{args.out_suffix}.json"
     with open(summary_path, "w", encoding="utf-8") as f:

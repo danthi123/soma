@@ -345,13 +345,29 @@ class PredictiveSOMA(nn.Module):
 
     def _ensure_position(self, node_id: str) -> None:
         """Ensure a node's position is a learnable parameter when
-        position_mode='learnable'. Called when neurogenesis adds a new
-        associator; the freshly-created node gets its plain-tensor
-        position wrapped as nn.Parameter, initial L2 norm recorded,
-        and registered with the prediction optimizer.
+        position_mode='learnable'. The freshly-created node gets its
+        plain-tensor position wrapped as nn.Parameter, initial L2 norm
+        recorded, and registered with the prediction optimizer.
 
         No-op when position_mode='frozen_random' or when the node is
         unknown (e.g., neurogenesis hasn't finished wiring it up yet).
+
+        Contract — LAZY UPGRADE:
+        This is called from `_diversify_activations`, which runs once
+        per `process_input`. Neurogenesis-born nodes therefore have
+        plain-tensor positions for a short window — from node creation
+        until the NEXT `process_input` call. During that window:
+
+          * the locality filter reads `node.position` as an ordinary
+            tensor (distance math works either way — OK);
+          * save/load treats both forms uniformly (OK);
+          * any code introspecting `isinstance(position, nn.Parameter)`
+            will see the pre-upgrade state (NOT OK — avoid that idiom).
+
+        Initial L2 norm is recorded at the MOMENT of upgrade, not at
+        node creation. In the current code path no gradient can touch
+        the position before it's a Parameter, so creation-norm equals
+        upgrade-norm and norm-preservation stays correct.
         """
         if self.config.position_mode != "learnable":
             return
@@ -1277,6 +1293,11 @@ class PredictiveSOMA(nn.Module):
                         )
 
             # Direction 4b: position coupling loss
+            # TODO(phase3-perf): this loop runs one
+            # (position_dim × sensor_output_dim²) matmul per associator
+            # per step. At memory_layer() scale (max_nodes=500) that's
+            # ~500 per step. Profile before LoCoMo — if it's >5% of
+            # step time, batch via torch.stack([W_i.flatten()]) @ P.
             position_loss: torch.Tensor | None = None
             if (
                 self.config.projection_distillation_target == "llm_spatial"

@@ -112,6 +112,25 @@ Today's efficiency and ops wins don't depend on it.
   (`soma.llm.embedders`) ships as a clean dependency for future work,
   but the distillation-for-retrieval path is closed.
 
+- **Spatial distillation on retrieval**: Direction 4b (commit trail
+  `5be666a`..`1b8bf33`) extended Direction 4a with learnable node
+  positions coupled to projection weights via a fixed random map, plus
+  competitive top-K distillation. The stack is clean (Phase 1: 12 TDD
+  tasks, 2551 tests green; Phase 2 multi-seed sanity PASSES stability
+  and confirms positions reshape meaningfully, KS ≈ 0.20). On full
+  LoCoMo it performs WORSE than both Direction 4a and plain SOMA
+  (soma-spatial R@5 = 0.335 vs soma-distilled 0.344 vs soma-random
+  0.337, chroma 0.349), and turning locality ON makes it worse still
+  (−0.007). Root cause: coupling `p_i = normalize(P.T · W_i.flatten())`
+  ties positions to projection weight matrices through a random
+  compressor — positions end up encoding a rotation of existing
+  projection information with no new semantic content. The teacher
+  signal never reaches them through that channel. Infrastructure
+  survives (position machinery, config flow-through, competitive top-K
+  distill) for Option C (pairwise-distance distill) or Option D
+  (spatial rerank) follow-ups, but this coupling formulation is
+  closed. See `research/developmental/results/locomo_direction4b_findings.md`.
+
 ## Quick start
 
 ```python

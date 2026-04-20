@@ -67,6 +67,50 @@ sbert embedder and the same LoCoMo corpus (5,882 turns, 1,986
 questions with gold evidence). The baseline row is exactly what
 any vector DB with the same embedder achieves on the same corpus.
 
+### Measured lift — LongMemEval (end-to-end QA, 2026-04-20)
+
+Most retrieval papers stop at R@k. We also ran the full pipeline:
+retrieval → 3.8K-token context → qwen3.5:4b-q8_0 answer → token-F1
+against gold, on the full LongMemEval small (N=500). Same LLM, same
+budget, strict-answer prompt on both sides — only retrieval strategy
+varies.
+
+| Retrieval | R@5 | F1 | EM |
+| --- | ---: | ---: | ---: |
+| chroma cosine | 0.932 | 0.299 | 0.196 |
+| **SOMA hybrid (α=0.3)** | **0.980** | **0.368** | **0.242** |
+
+**+5pp R@5 translates into +23% F1 and +24% EM.** The amplification
+comes from two independent mechanisms, which we decomposed by
+partitioning items into (chroma_hit, soma_hit) cells:
+
+- **34% of the F1 lift = recall wins.** 30 items where only SOMA's
+  BM25 leg catches the gold session (keyword queries like "how many
+  Mbps?", "what brand?", "how many minutes?" where cosine misses the
+  specific term in a ~50-turn session).
+- **66% of the F1 lift = ranking wins.** 460 items where BOTH systems
+  retrieve the gold session in top-5, yet SOMA still wins F1 on 54
+  items vs chroma's 24. Same top-5, different ordering: SOMA's hybrid
+  scoring places gold at rank 1-2 where the LLM extracts from it,
+  while chroma's pure cosine leaves it at rank 4-5 buried behind
+  semantic-but-less-useful sessions, and the LLM says "I don't know".
+
+The ranking mechanism is stable across verbose and strict prompting
+(checked on three paired runs). Single-session-user is a **clean
+sweep** on 70 items: SOMA wins F1 on 22 items, chroma wins on 0.
+
+What users would have to build themselves on chroma to match SOMA:
+1. Maintain a BM25 index alongside the vector store
+2. Implement pool-merge + rank-normalisation across both
+3. Tune `alpha` (we default 0.3 based on ablation)
+
+`mem.retrieve("...", k=5, hybrid_alpha=0.3)` does all three.
+
+Reproduce: `benchmarks/industry/longmemeval/run_qa_compare.py
+--variant small --modes chroma_cosine soma_hybrid --strict-prompt`.
+Full decomposition in
+`research/developmental/results/longmemeval_causation_findings.md`.
+
 ## Not-yet-shipped — ranked by expected impact
 
 ### 4. In-index metadata filtering at retrieve time — SHIPPED (2026-04-16)

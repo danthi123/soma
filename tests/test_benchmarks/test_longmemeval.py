@@ -233,6 +233,63 @@ class TestSmokeEndToEnd:
         assert result["hypothesis"]  # non-empty
 
 
+class TestJudgeVerdictParse:
+    """_parse_verdict maps LLM judge responses to 0/1 for accuracy metric."""
+
+    def test_yes_lowercase(self) -> None:
+        from benchmarks.industry.longmemeval.judge_predictions import (
+            _parse_verdict,
+        )
+
+        assert _parse_verdict("yes") == 1
+
+    def test_yes_with_trailing_punctuation(self) -> None:
+        from benchmarks.industry.longmemeval.judge_predictions import (
+            _parse_verdict,
+        )
+
+        assert _parse_verdict("yes.") == 1
+        assert _parse_verdict("Yes,") == 1
+
+    def test_yes_mixed_case(self) -> None:
+        from benchmarks.industry.longmemeval.judge_predictions import (
+            _parse_verdict,
+        )
+
+        assert _parse_verdict("YES") == 1
+
+    def test_no(self) -> None:
+        from benchmarks.industry.longmemeval.judge_predictions import (
+            _parse_verdict,
+        )
+
+        assert _parse_verdict("no") == 0
+        assert _parse_verdict("No.") == 0
+
+    def test_empty(self) -> None:
+        from benchmarks.industry.longmemeval.judge_predictions import (
+            _parse_verdict,
+        )
+
+        assert _parse_verdict("") == 0
+
+    def test_error(self) -> None:
+        from benchmarks.industry.longmemeval.judge_predictions import (
+            _parse_verdict,
+        )
+
+        assert _parse_verdict("error") == 0
+
+    def test_uninformative_response(self) -> None:
+        """Non-yes/no responses default to incorrect."""
+        from benchmarks.industry.longmemeval.judge_predictions import (
+            _parse_verdict,
+        )
+
+        assert _parse_verdict("maybe") == 0
+        assert _parse_verdict("the candidate is correct") == 0
+
+
 class TestComputeGoldRank:
     """Used by run_qa_compare to log where the LLM sees the gold session.
 

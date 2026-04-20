@@ -158,3 +158,42 @@ class TestDistillationFlowThrough:
         )
         soma = a._mem._soma
         assert soma.config.projection_distillation_weight == pytest.approx(0.3)
+
+
+class TestSpatialDistillationFlowThrough:
+    """Direction 4b: spatial distillation params propagate to SOMAConfig."""
+
+    def test_default_position_mode_is_frozen(self, attached_adapter) -> None:
+        a = attached_adapter()
+        soma = a._mem._soma
+        assert soma.config.position_mode == "frozen_random"
+
+    def test_position_mode_propagates(self, attached_adapter) -> None:
+        a = attached_adapter(
+            projection_mode="learnable",
+            projection_distillation_target="llm_spatial",
+            position_mode="learnable",
+        )
+        soma = a._mem._soma
+        assert soma.config.position_mode == "learnable"
+        assert soma.config.projection_distillation_target == "llm_spatial"
+
+    def test_position_coupling_weight_propagates(self, attached_adapter) -> None:
+        a = attached_adapter(
+            projection_mode="learnable",
+            projection_distillation_target="llm_spatial",
+            position_mode="learnable",
+            position_coupling_weight=0.3,
+        )
+        soma = a._mem._soma
+        assert soma.config.position_coupling_weight == pytest.approx(0.3)
+
+    def test_distillation_winners_propagates(self, attached_adapter) -> None:
+        a = attached_adapter(
+            projection_mode="learnable",
+            projection_distillation_target="llm_spatial",
+            position_mode="learnable",
+            projection_distillation_winners=5,
+        )
+        soma = a._mem._soma
+        assert soma.config.projection_distillation_winners == 5

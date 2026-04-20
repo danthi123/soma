@@ -53,6 +53,9 @@ class SomaAdapter(BaseMemorySystem):
         projection_distillation_model: str | None = None,
         projection_distillation_weight: float | None = None,
         teacher_cache_dir: str | None = None,
+        position_mode: str | None = None,
+        position_coupling_weight: float | None = None,
+        projection_distillation_winners: int | None = None,
     ) -> None:
         self._use_sbert = use_sbert
         self._attach_soma = attach_soma
@@ -94,6 +97,17 @@ class SomaAdapter(BaseMemorySystem):
         self._projection_distillation_model = projection_distillation_model
         self._projection_distillation_weight = projection_distillation_weight
         self._teacher_cache_dir = teacher_cache_dir
+        # Direction 4b: spatial distillation. None defaults preserve
+        # pre-Direction-4b behavior (frozen random positions). When
+        # position_mode="learnable" + projection_distillation_target=
+        # "llm_spatial", positions are trained from LLM spatial targets;
+        # position_coupling_weight scales how strongly the winning node's
+        # position is pulled toward the teacher, and
+        # projection_distillation_winners is the top-K count used during
+        # spatial distillation.
+        self._position_mode = position_mode
+        self._position_coupling_weight = position_coupling_weight
+        self._projection_distillation_winners = projection_distillation_winners
         self._mem: MemoryLayer | None = None
         self._bundle_path: Path | None = None
 
@@ -149,6 +163,16 @@ class SomaAdapter(BaseMemorySystem):
             if self._projection_distillation_weight is not None:
                 config_kwargs["projection_distillation_weight"] = (
                     self._projection_distillation_weight
+                )
+            if self._position_mode is not None:
+                config_kwargs["position_mode"] = self._position_mode
+            if self._position_coupling_weight is not None:
+                config_kwargs["position_coupling_weight"] = (
+                    self._position_coupling_weight
+                )
+            if self._projection_distillation_winners is not None:
+                config_kwargs["projection_distillation_winners"] = (
+                    self._projection_distillation_winners
                 )
             # Use developmental() as the base when active-growth overrides
             # are requested so tuned helpers like activation_threshold=0.005

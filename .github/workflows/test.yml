@@ -1,0 +1,55 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pytest:
+    name: pytest (py${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install package + test extras
+        run: |
+          python -m pip install --upgrade pip
+          # Core + sbert (retrieval) + serve (REST API) + metrics + ann + dev
+          # Deliberately omit: cuda-only, chroma, qdrant, lancedb, pgvector, s3, gcs
+          # These are covered by their own gated integration tests.
+          pip install -e ".[dev,sbert,serve,metrics,ann]"
+
+      - name: Show dependency versions (for debugging CI failures)
+        run: |
+          python -V
+          pip list --format=freeze | grep -E "^(soma|torch|sentence-transformers|fastapi|pytest|numpy)==" || true
+
+      - name: Run pytest
+        env:
+          # Make CI deterministic: no GPU, no network-bound integration
+          # gates enabled. These match the markers in pyproject.toml.
+          PYTEST_ADDOPTS: >-
+            --tb=short
+            --durations=20
+            --strict-markers
+            -m "not slow and not cuda and not quant and not slow_qdrant and not slow_pgvector and not slow_s3 and not slow_gcs"
+        run: python -m pytest tests/

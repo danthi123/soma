@@ -1,0 +1,42 @@
+name: lint
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: lint-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ruff:
+    name: ruff (check + format)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install ruff
+        run: |
+          python -m pip install --upgrade pip
+          # Pin ruff to a known version so lint results don't drift with
+          # upstream releases. Bump deliberately via a dedicated PR.
+          pip install "ruff==0.15.10"
+
+      - name: ruff check
+        run: ruff check src/ tests/
+
+      # NOTE: ruff format --check is intentionally not in CI yet. 107
+      # pre-existing source files don't match ruff's style. Plan: one
+      # dedicated "repo-wide format" PR after this CI stabilises, then
+      # re-add this step. Tracking: see docs/plans/ for the eventual
+      # formatter-adoption plan (TBD).

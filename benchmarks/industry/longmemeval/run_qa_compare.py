@@ -84,10 +84,17 @@ def _session_text(session: list[Any], session_date: str) -> str:
     return header + body
 
 
-def _build_sbert() -> tuple[Any, int]:
+def _build_sbert(device: str = "cpu") -> tuple[Any, int]:
+    """Build sbert. Defaults to CPU to avoid VRAM contention with ollama LLMs.
+
+    sbert inference on CPU is ~50ms for a session-sized text, which is fine
+    for LongMemEval ingest speed (dominated by LLM latency anyway).
+    Using GPU sbert alongside a 10+GB LLM in ollama caused CUDA errors
+    on a 24GB card.
+    """
     from sentence_transformers import SentenceTransformer
 
-    model = SentenceTransformer("all-MiniLM-L6-v2")
+    model = SentenceTransformer("all-MiniLM-L6-v2", device=device)
     dim = model.get_sentence_embedding_dimension()
     return model, dim
 
@@ -449,6 +456,10 @@ def main() -> None:
     p.add_argument("--top-k", type=int, default=RETRIEVE_TOP_K)
     p.add_argument("--out-suffix", default="",
                    help="appended to output filenames, e.g. '_smoke50'")
+    p.add_argument("--sbert-device", default="cpu",
+                   choices=["cpu", "cuda"],
+                   help="Device for sbert embedder. CPU avoids VRAM "
+                        "contention with ollama LLMs on a shared GPU.")
     args = p.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
@@ -459,12 +470,12 @@ def main() -> None:
         items = items[: args.limit]
     print(f"  {len(items)} items")
 
-    print("Loading sbert all-MiniLM-L6-v2 ...")
-    sbert_model, dim = _build_sbert()
+    print(f"Loading sbert all-MiniLM-L6-v2 on device={args.sbert_device} ...")
+    sbert_model, dim = _build_sbert(device=args.sbert_device)
     embed_fn = lambda t: torch.tensor(sbert_model.encode(t, convert_to_numpy=True))
 
-    print("Loading cross-encoder ms-marco-MiniLM-L-6-v2 ...")
-    reranker = CrossEncoderReranker()
+    print(f"Loading cross-encoder ms-marco-MiniLM-L-6-v2 on device={args.sbert_device} ...")
+    reranker = CrossEncoderReranker(device=args.sbert_device)
     _ = reranker.score("warmup", ["test"])
 
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)

@@ -1236,15 +1236,52 @@ class PredictiveSOMA(nn.Module):
                             * self.config.projection_distillation_weight
                         )
 
+            # Direction 4b: position coupling loss
+            position_loss: torch.Tensor | None = None
+            if (
+                self.config.projection_distillation_target == "llm_spatial"
+                and self.config.position_mode == "learnable"
+                and self._position_projector is not None
+                and self._input_projections
+            ):
+                per_node_losses = []
+                from soma.core.node import NodeType
+                for node in self.soma.graph.all_nodes():
+                    if node.node_type != NodeType.ASSOCIATOR:
+                        continue
+                    if node.id not in self._input_projections:
+                        continue
+                    if not isinstance(node.position, torch.nn.Parameter):
+                        continue
+                    proj = self._input_projections[node.id]
+                    # Detach W_i — gradient flows only into p_i
+                    flat_w = proj.detach().reshape(-1)
+                    target = self._position_projector.t() @ flat_w
+                    # Normalize target to unit norm for scale stability
+                    target = target / (target.norm() + 1e-8)
+                    diff = node.position - target
+                    per_node_losses.append((diff ** 2).sum())
+                if per_node_losses:
+                    position_loss = (
+                        torch.stack(per_node_losses).mean()
+                        * self.config.position_coupling_weight
+                    )
+
             # Only update if error is still meaningful — prevent
             # over-convergence that collapses all fingerprints.
             # Biological analogy: synaptic plasticity decreases
             # for well-learned patterns but never reaches zero.
-            if self.prediction_error > 1e-5 or distill_loss is not None:
+            if (
+                self.prediction_error > 1e-5
+                or distill_loss is not None
+                or position_loss is not None
+            ):
                 self._pred_optimizer.zero_grad()
                 total_loss = pred_loss
                 if distill_loss is not None:
                     total_loss = total_loss + distill_loss
+                if position_loss is not None:
+                    total_loss = total_loss + position_loss
                 total_loss.backward()
                 self._pred_optimizer.step()
         else:

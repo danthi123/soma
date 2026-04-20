@@ -255,3 +255,55 @@ class TestCompetitiveDistillation:
         )
         for proj in pred._input_projections.values():
             assert torch.isfinite(proj).all()
+
+
+class TestPositionCouplingLoss:
+    def test_position_loss_fires_when_spatial_active(self) -> None:
+        """After a step, positions should have moved toward PCA(W_i)."""
+        cfg = _spatial_config(position_coupling_weight=10.0)  # strong coupling
+        pred = PredictiveSOMA(config=cfg)
+
+        teacher = MagicMock()
+        teacher.name = "fake"
+        teacher.embed.return_value = torch.randn(1024)
+        pred.attach_teacher(teacher)
+
+        from soma.core.node import NodeType
+        initial_positions = {
+            n.id: n.position.detach().clone()
+            for n in pred.soma.graph.all_nodes()
+            if n.node_type == NodeType.ASSOCIATOR
+        }
+
+        x = torch.randn(cfg.sensor_output_dim)
+        pred.process_input(x, source_text="t1")
+        pred.process_input(x, source_text="t2")  # triggers backward
+
+        # At least one position should have moved
+        moved_any = False
+        for nid, p0 in initial_positions.items():
+            if nid not in pred.soma.graph.nodes:
+                continue
+            p1 = pred.soma.graph.nodes[nid].position
+            if (p1 - p0).abs().max().item() > 1e-6:
+                moved_any = True
+                break
+        assert moved_any, "positions should have moved under spatial distill"
+
+    def test_position_loss_zero_when_weight_zero(self) -> None:
+        """beta=0 disables position loss contribution."""
+        cfg = _spatial_config(position_coupling_weight=0.0)
+        pred = PredictiveSOMA(config=cfg)
+
+        teacher = MagicMock()
+        teacher.name = "fake"
+        teacher.embed.return_value = torch.randn(1024)
+        pred.attach_teacher(teacher)
+
+        x = torch.randn(cfg.sensor_output_dim)
+        pred.process_input(x, source_text="t1")
+        # Should not crash; positions finite
+        pred.process_input(x, source_text="t2")
+        for node in pred.soma.graph.all_nodes():
+            if hasattr(node, "position") and node.position is not None:
+                assert torch.isfinite(node.position).all()

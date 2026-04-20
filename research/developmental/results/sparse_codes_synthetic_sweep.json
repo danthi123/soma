@@ -1,0 +1,135 @@
+{
+  "config": {
+    "n_concepts": 50,
+    "n_trials": 10,
+    "embed_dim": 1024,
+    "noise_std": 0.1,
+    "overlap": 0.1,
+    "seed": 42,
+    "k_values": [
+      32,
+      64
+    ],
+    "dim_values": [
+      1024,
+      4096
+    ],
+    "sep_values": [
+      0.0,
+      0.3,
+      0.7
+    ]
+  },
+  "wall_time_s": 2.114217519760132,
+  "results": [
+    {
+      "k": 32,
+      "dim": 1024,
+      "sep_strength": 0.0,
+      "within_jaccard": 0.03947064016729477,
+      "between_jaccard": 0.016144711602869528,
+      "separation_ratio": 2.4448030499522417,
+      "sparsity": 0.03125
+    },
+    {
+      "k": 32,
+      "dim": 1024,
+      "sep_strength": 0.3,
+      "within_jaccard": 0.03820031405767752,
+      "between_jaccard": 0.015806289549781218,
+      "separation_ratio": 2.4167793420060604,
+      "sparsity": 0.03125
+    },
+    {
+      "k": 32,
+      "dim": 1024,
+      "sep_strength": 0.7,
+      "within_jaccard": 0.03249547259280812,
+      "between_jaccard": 0.013853766801369112,
+      "separation_ratio": 2.3456055713018586,
+      "sparsity": 0.03125
+    },
+    {
+      "k": 32,
+      "dim": 4096,
+      "sep_strength": 0.0,
+      "within_jaccard": 0.0231013591718686,
+      "between_jaccard": 0.004140839332887589,
+      "separation_ratio": 5.578907394061823,
+      "sparsity": 0.0078125
+    },
+    {
+      "k": 32,
+      "dim": 4096,
+      "sep_strength": 0.3,
+      "within_jaccard": 0.0231013591718686,
+      "between_jaccard": 0.004140839332887589,
+      "separation_ratio": 5.578907394061823,
+      "sparsity": 0.0078125
+    },
+    {
+      "k": 32,
+      "dim": 4096,
+      "sep_strength": 0.7,
+      "within_jaccard": 0.022935580789573827,
+      "between_jaccard": 0.00405528134882679,
+      "separation_ratio": 5.6557310866258845,
+      "sparsity": 0.0078125
+    },
+    {
+      "k": 64,
+      "dim": 1024,
+      "sep_strength": 0.0,
+      "within_jaccard": 0.04937958150670351,
+      "between_jaccard": 0.03239654307719646,
+      "separation_ratio": 1.524223784897013,
+      "sparsity": 0.0625
+    },
+    {
+      "k": 64,
+      "dim": 1024,
+      "sep_strength": 0.3,
+      "within_jaccard": 0.04107071598193106,
+      "between_jaccard": 0.02815667472287407,
+      "separation_ratio": 1.458649374834231,
+      "sparsity": 0.0625
+    },
+    {
+      "k": 64,
+      "dim": 1024,
+      "sep_strength": 0.7,
+      "within_jaccard": 0.030214471286002836,
+      "between_jaccard": 0.01997716857384344,
+      "separation_ratio": 1.512450133977611,
+      "sparsity": 0.0625
+    },
+    {
+      "k": 64,
+      "dim": 4096,
+      "sep_strength": 0.0,
+      "within_jaccard": 0.02059582754218942,
+      "between_jaccard": 0.008289762737088839,
+      "separation_ratio": 2.484489387138017,
+      "sparsity": 0.015625
+    },
+    {
+      "k": 64,
+      "dim": 4096,
+      "sep_strength": 0.3,
+      "within_jaccard": 0.020288472968156425,
+      "between_jaccard": 0.00824704217001226,
+      "separation_ratio": 2.460090848320018,
+      "sparsity": 0.015625
+    },
+    {
+      "k": 64,
+      "dim": 4096,
+      "sep_strength": 0.7,
+      "within_jaccard": 0.01873137401701409,
+      "between_jaccard": 0.007649080948192838,
+      "separation_ratio": 2.4488398206113295,
+      "sparsity": 0.015625
+    }
+  ],
+  "sim_baseline": null
+}

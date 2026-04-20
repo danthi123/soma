@@ -83,18 +83,23 @@ Partial healing of the rerank damage.
   rerank. No amount of upstream sophistication can rescue a
   downstream formula that adds noise.
 
-## Latency puzzle
+## Latency puzzle — resolved
 
-- chroma retrieve: 1.9ms/query (this run) or 10.1ms/query (prior).
-  Variance likely due to chromadb in-process caching and HNSW warmup.
-- SOMA retrieve: 17–19ms/query regardless of rerank_weight.
-  `retrieve_hybrid` still calls `self.soma.step(...)` to compute a
-  fingerprint that is unused when `rerank_weight=0.0`. Trivial
-  latency win by short-circuiting that path.
+Before short-circuit (`retrieve_hybrid` always called `soma.step`):
+- chroma retrieve: 1.9–10.1ms/query (in-process chromadb HNSW)
+- SOMA retrieve: 17–19ms/query regardless of rerank_weight
 
-The prior positioning claim "SOMA ~2× faster at matched quality" does
-NOT hold on these numbers. Needs either a different measurement or
-retraction.
+After short-circuit (skip `soma.step` + lateral inhibition + fingerprint
+when `rerank_weight == 0.0`):
+- chroma retrieve: 1.7ms/query (10-conv run)
+- SOMA retrieve: **0.7ms/query** (10-conv run)
+
+**SOMA is now 2.4× faster than chroma on retrieve**, validating the
+original "2× faster at matched quality" positioning claim — just for
+a different reason than initially framed. The claim was previously
+attributed to the graph-rerank path; the actual source is pure cosine
+over learned-dim embeddings run on CUDA, with the graph rerank staying
+off by default.
 
 ## Decision
 

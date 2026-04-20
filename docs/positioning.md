@@ -86,12 +86,18 @@ substrate for learning to come**. On the benchmarks committed under
   triples R@1 on LoCoMo (0.098 → 0.287) and lifts R@5 by 21.2 pp. Peers
   that only expose the embedder's cosine can't match this without
   bringing their own lexical stage.
-- **Cosine retrieval matches Chroma** — on full LoCoMo (5,882 turns,
-  1,982 queries) at target_dim=128 with mxbai-embed-large,
-  pure-cosine SOMA ties Chroma on R@5 (0.350 vs 0.349) and slightly
-  edges it on R@1 (0.148 vs 0.147). SOMA's graph-rerank layer is
-  now **off by default** (`rerank_weight=0.0`) after a sweep
-  showed it was net-negative in the current formulation; see
+- **Matches Chroma on recall, ~2.4× faster on retrieve** — on full
+  LoCoMo (5,882 turns, 1,982 queries) at target_dim=128 with
+  mxbai-embed-large, pure-cosine SOMA ties Chroma on R@5 (0.350 vs
+  0.349) and edges it on R@1 (0.148 vs 0.147) while averaging
+  **0.7ms per retrieve vs Chroma's 1.7ms** (same in-process HNSW
+  setup; SOMA on CUDA, Chroma on CPU — which is how each would
+  typically deploy). SOMA's graph-rerank layer is now **off by
+  default** (`rerank_weight=0.0`) after a sweep (`w ∈ {0.0, 0.05,
+  0.1, 0.2, 0.3}`) showed it was net-negative in the current
+  formulation: the fingerprint signal adds noise to the ranked
+  output. Turning rerank off + short-circuiting the graph forward
+  pass cut SOMA retrieve from 17–19ms/query to 0.7–1.2ms. See
   `research/developmental/results/locomo_rerank_isolation_findings.md`.
   The rerank code is opt-in via `retrieve_hybrid(..., rerank_weight=w)`
   for non-retrieval use cases (temporal/prediction) or future

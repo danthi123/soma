@@ -1,0 +1,178 @@
+{
+  "topic_a": "Python coding preferences",
+  "n_facts": 1000,
+  "session_queries": 50,
+  "consolidate_every": 10,
+  "initial": {
+    "soma_plastic": {
+      "topic_a": {
+        "n": 10,
+        "r_at_k": 1.0,
+        "per_topic_r_at_k": {
+          "Python coding preferences": 1.0
+        },
+        "elapsed_ms": 152.26800000164076
+      },
+      "other": {
+        "n": 27,
+        "r_at_k": 1.0,
+        "per_topic_r_at_k": {
+          "Workout preferences": 1.0,
+          "Cooking preferences": 1.0,
+          "Restaurant preferences": 1.0,
+          "Home decor preferences": 1.0,
+          "Book reading preferences": 1.0,
+          "Travel preferences": 1.0,
+          "Running shoe preferences": 1.0,
+          "Music preferences": 1.0,
+          "Coffee preferences": 1.0
+        },
+        "elapsed_ms": 332.70139999876847
+      },
+      "graph": {
+        "n_nodes": 42,
+        "n_edges": 80
+      }
+    },
+    "soma_frozen": {
+      "topic_a": {
+        "n": 10,
+        "r_at_k": 1.0,
+        "per_topic_r_at_k": {
+          "Python coding preferences": 1.0
+        },
+        "elapsed_ms": 126.97579999985464
+      },
+      "other": {
+        "n": 27,
+        "r_at_k": 1.0,
+        "per_topic_r_at_k": {
+          "Workout preferences": 1.0,
+          "Cooking preferences": 1.0,
+          "Restaurant preferences": 1.0,
+          "Home decor preferences": 1.0,
+          "Book reading preferences": 1.0,
+          "Travel preferences": 1.0,
+          "Running shoe preferences": 1.0,
+          "Music preferences": 1.0,
+          "Coffee preferences": 1.0
+        },
+        "elapsed_ms": 334.59250000123575
+      },
+      "graph": {}
+    },
+    "chroma": {
+      "topic_a": {
+        "n": 10,
+        "r_at_k": 1.0,
+        "per_topic_r_at_k": {
+          "Python coding preferences": 1.0
+        },
+        "elapsed_ms": 101.31749999891326
+      },
+      "other": {
+        "n": 27,
+        "r_at_k": 1.0,
+        "per_topic_r_at_k": {
+          "Workout preferences": 1.0,
+          "Cooking preferences": 1.0,
+          "Restaurant preferences": 1.0,
+          "Home decor preferences": 1.0,
+          "Book reading preferences": 1.0,
+          "Travel preferences": 1.0,
+          "Running shoe preferences": 1.0,
+          "Music preferences": 1.0,
+          "Coffee preferences": 1.0
+        },
+        "elapsed_ms": 272.03670000017155
+      },
+      "graph": {}
+    }
+  },
+  "final": {
+    "soma_plastic": {
+      "topic_a": {
+        "n": 10,
+        "r_at_k": 1.0,
+        "per_topic_r_at_k": {
+          "Python coding preferences": 1.0
+        },
+        "elapsed_ms": 166.45429999880434
+      },
+      "other": {
+        "n": 27,
+        "r_at_k": 1.0,
+        "per_topic_r_at_k": {
+          "Workout preferences": 1.0,
+          "Cooking preferences": 1.0,
+          "Restaurant preferences": 1.0,
+          "Home decor preferences": 1.0,
+          "Book reading preferences": 1.0,
+          "Travel preferences": 1.0,
+          "Running shoe preferences": 1.0,
+          "Music preferences": 1.0,
+          "Coffee preferences": 1.0
+        },
+        "elapsed_ms": 417.4272000000201
+      },
+      "graph": {
+        "n_nodes": 42,
+        "n_edges": 365
+      }
+    },
+    "soma_frozen": {
+      "topic_a": {
+        "n": 10,
+        "r_at_k": 1.0,
+        "per_topic_r_at_k": {
+          "Python coding preferences": 1.0
+        },
+        "elapsed_ms": 150.66269999988435
+      },
+      "other": {
+        "n": 27,
+        "r_at_k": 1.0,
+        "per_topic_r_at_k": {
+          "Workout preferences": 1.0,
+          "Cooking preferences": 1.0,
+          "Restaurant preferences": 1.0,
+          "Home decor preferences": 1.0,
+          "Book reading preferences": 1.0,
+          "Travel preferences": 1.0,
+          "Running shoe preferences": 1.0,
+          "Music preferences": 1.0,
+          "Coffee preferences": 1.0
+        },
+        "elapsed_ms": 378.8622000010946
+      },
+      "graph": {}
+    },
+    "chroma": {
+      "topic_a": {
+        "n": 10,
+        "r_at_k": 1.0,
+        "per_topic_r_at_k": {
+          "Python coding preferences": 1.0
+        },
+        "elapsed_ms": 111.47070000151871
+      },
+      "other": {
+        "n": 27,
+        "r_at_k": 1.0,
+        "per_topic_r_at_k": {
+          "Workout preferences": 1.0,
+          "Cooking preferences": 1.0,
+          "Restaurant preferences": 1.0,
+          "Home decor preferences": 1.0,
+          "Book reading preferences": 1.0,
+          "Travel preferences": 1.0,
+          "Running shoe preferences": 1.0,
+          "Music preferences": 1.0,
+          "Coffee preferences": 1.0
+        },
+        "elapsed_ms": 302.9733000003034
+      },
+      "graph": {}
+    }
+  }
+}

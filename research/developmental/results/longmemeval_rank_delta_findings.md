@@ -57,6 +57,29 @@ Symmetric reads:
 - When chroma **missed** (34 items): SOMA has gold somewhere in
   top-5 on 30 items, missed on 4.
 
+## Per-question-type rank-1 frac
+
+Per-type rank-1 fraction (fraction of items where gold is at rank 1
+on the 500-item paired probe). SOMA's hybrid (α=0.3) lifts rank-1
+hit rate substantially on retrieval-bound types:
+
+| Type | N | chroma rank1 | SOMA rank1 | lift |
+| --- | ---: | ---: | ---: | ---: |
+| single-session-user | 70 | 0.543 | 0.871 | **+0.329** |
+| knowledge-update | 78 | 0.808 | 0.962 | +0.154 |
+| temporal-reasoning | 133 | 0.752 | 0.850 | +0.098 |
+| multi-session | 133 | 0.865 | 0.910 | +0.045 |
+| single-session-assistant | 56 | 0.982 | 1.000 | +0.018 |
+| single-session-preference | 30 | 0.567 | 0.567 | +0.000 |
+
+Key observation: **single-session-user** — where 54% of chroma's
+items have gold at rank 2+ (truncation zone) — gets **+33 pp** at
+rank 1 with hybrid retrieval. This is the retrieval mechanism driving
+that type's +59% F1 lift. single-session-preference is untouched
+(cosine ≈ BM25 on paraphrased-preference queries — benchmark-mismatch
+confirmed). single-session-assistant is already near-saturated on
+chroma cosine (98% rank 1).
+
 ## Mean rank comparison
 
 Given both systems retrieved the gold:

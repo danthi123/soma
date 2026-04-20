@@ -460,7 +460,27 @@ rank 1 → 19.4% IDK, rank 3 → 100% IDK. Globally, chroma says IDK on
 In the (1,1) cell where both systems have gold in top-5, chroma
 IDKs 62% more often.
 
-Per question type (strict prompt):
+**Direct rank measurement** (paired N=500 rank probe, both systems
+on identical items): SOMA places gold at rank 1 on **96.3% of hits**
+vs chroma's **83.3%**. Mean gold rank drops from 1.32 → 1.16.
+Pair-level pattern:
+
+| Outcome | N | % |
+| --- | ---: | ---: |
+| both retrieve, same rank | 385 | 77.0% |
+| **SOMA places gold at better rank** | **61** | **12.2%** |
+| SOMA places gold at worse rank | 14 | 2.8% |
+| **SOMA rescues (chroma missed)** | **30** | **6.0%** |
+| SOMA loses (chroma hit, SOMA missed) | 6 | 1.2% |
+| both miss | 4 | 0.8% |
+
+Net items with gold strictly earlier in SOMA's context: **+71**
+(14.2% of corpus). Of chroma's 78 rank-2-5 items, SOMA promotes **58
+to rank 1-2** (74% rescue rate), exactly the truncation-danger zone.
+Full analysis in
+`research/developmental/results/longmemeval_rank_delta_findings.md`.
+
+Per question type (strict prompt, qwen4b):
 
 | Type | N | chroma F1 | SOMA F1 | relative lift |
 | --- | ---: | ---: | ---: | ---: |
@@ -480,6 +500,25 @@ quality.
 
 Full decomposition + rank evidence in
 `research/developmental/results/longmemeval_causation_findings.md`.
+
+#### Cross-LLM validation: Claude Sonnet as answerer
+
+Same 500 items, same strict prompt, `soma_hybrid` retrieval fixed —
+swap qwen3.5:4b for Claude (run via the operator's Unraid
+`claude-code-runner` Docker container on Claude Max, so no
+per-request API cost):
+
+| Answerer | baseline | SOMA hybrid F1 | SOMA-lift |
+| --- | --- | ---: | ---: |
+| qwen3.5:4b strict | chroma_cosine | 0.368 | +22.8% |
+| Claude strict | chroma_rerank | 0.416 | +14.7% |
+
+Claude+SOMA still wins, with the same directional mechanism. The
+smaller absolute lift comes from Claude running against the harder
+`chroma_rerank` baseline (which already closes much of the ranking
+gap SOMA exploits). On `single-session-user`, where rank-1 matters
+most, the lift survives at **+54%** (0.503 → 0.775 F1). See
+`research/developmental/results/longmemeval_claude_runner_findings.md`.
 
 ### 4.5 ConversationalMemory threshold calibration
 

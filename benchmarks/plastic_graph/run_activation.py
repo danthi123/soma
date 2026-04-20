@@ -85,37 +85,81 @@ def _partition_questions(
 
 class _SomaAdapter:
     """Wraps MemoryLayer for the protocol. plastic=True attaches a
-    SOMA graph and calls consolidate() periodically."""
+    SOMA graph and calls consolidate() periodically.
+
+    When plastic=True we build a small BPE tokenizer + TextEncoder on
+    the corpus so SOMA has its own latent space. Retrieval still uses
+    the outer sbert embed_fn (384-d) — SOMA's 32-d graph is for
+    plasticity only.
+    """
 
     def __init__(
         self,
         embed_fn,
         dim: int,
         plastic: bool,
-        hybrid_alpha: float = 0.3,
+        hybrid_alpha: float | None = 0.3,
+        graph_rerank_alpha: float = 0.0,
+        corpus: list[str] | None = None,
+        attach_soma_even_when_frozen: bool = False,
     ) -> None:
+        """
+        plastic=True  -> attach SOMA AND call consolidate() each call.
+        plastic=False + attach_soma_even_when_frozen=True -> attach SOMA but
+            never consolidate during session (frozen plastic graph baseline;
+            needed for the graph-rerank path to have any signal at all).
+        plastic=False + attach_soma_even_when_frozen=False -> no SOMA (pure
+            vector baseline, identical effective behaviour to chroma).
+        """
         from soma.core.config import SOMAConfig
-        from soma.core.soma import SOMA
+        from soma.system import SOMA
         from soma.memory import MemoryLayer
+        from soma.io.text_encoder import TextEncoder, train_bpe_tokenizer
 
         self.plastic = plastic
+        # hybrid_alpha=None + graph_rerank_alpha>0 = use graph re-rank.
+        # hybrid_alpha set = pure hybrid (graph ignored by retrieve()).
         self.hybrid_alpha = hybrid_alpha
-        self.mem = MemoryLayer.ephemeral(embed_fn=embed_fn, embed_dim=dim)
-        if plastic:
-            config = SOMAConfig.memory_layer(max_nodes=1500)
-            soma = SOMA(config=config, device=torch.device("cpu"))
-            self.mem.attach_soma(soma)
+        self.mem = MemoryLayer.ephemeral(
+            embed_fn=embed_fn,
+            embed_dim=dim,
+            graph_rerank_alpha=graph_rerank_alpha,
+        )
+        should_attach = plastic or attach_soma_even_when_frozen
+        if should_attach:
+            assert corpus is not None, "SOMA attach needs corpus for BPE training"
+            tokenizer = train_bpe_tokenizer(corpus, vocab_size=512)
+            encoder = TextEncoder(tokenizer, embed_dim=32, max_seq_len=64)
+            config = SOMAConfig.memory_layer(
+                vocab_size=512, text_embed_dim=32, sensor_output_dim=32,
+                max_input_tokens=64, max_nodes=1500,
+            )
+            # Pin SOMA to CUDA when available — pre-consolidate runs
+            # 20x+ faster there. Falls back to CPU automatically.
+            import torch as _torch
+            _device = _torch.device("cuda") if _torch.cuda.is_available() else _torch.device("cpu")
+            soma = SOMA(config=config, device=_device)
+            # TextEncoder must be on the same device as SOMA so its
+            # output embeddings feed SOMA.step without a host<->device
+            # copy. Otherwise consolidate() crashes on the matmul.
+            encoder = encoder.to(_device)
+            self.mem.attach_soma(soma, tokenizer, encoder)
 
     def store(self, text: str, meta: dict) -> None:
         self.mem.store(text, metadata=meta)
 
     def consolidate(self) -> int:
+        # Only plastic calls consolidate; frozen stays static even if SOMA
+        # is attached (for graph-rerank baseline).
         if not self.plastic:
             return 0
         return self.mem.consolidate()
 
     def retrieve(self, query: str, k: int = 5) -> list[tuple[str, dict]]:
-        hits = self.mem.retrieve(query, k=k, hybrid_alpha=self.hybrid_alpha)
+        if self.hybrid_alpha is None:
+            hits = self.mem.retrieve(query, k=k)
+        else:
+            hits = self.mem.retrieve(query, k=k, hybrid_alpha=self.hybrid_alpha)
         return [(h.text, h.metadata) for h in hits]
 
     def graph_stats(self) -> dict[str, Any]:
@@ -218,6 +262,13 @@ def main() -> None:
     p.add_argument("--out-suffix", default="")
     p.add_argument("--consolidate-every", type=int, default=10,
                    help="Consolidate SOMA-plastic every N queries in phase 2")
+    p.add_argument("--graph-rerank-alpha", type=float, default=0.0,
+                   help="If >0, use graph re-rank instead of hybrid at retrieve time.")
+    p.add_argument("--k", type=int, default=5,
+                   help="Top-k evaluation (R@k). Lower k = stricter precision test.")
+    p.add_argument("--phase1-frac", type=float, default=0.5,
+                   help="Fraction of facts to store in Phase 1 (rest streamed "
+                        "into Phase 2 as 'new' entries).")
     args = p.parse_args()
 
     topic_a = TOPICS[args.topic_a_index][0]
@@ -244,17 +295,68 @@ def main() -> None:
     def embed_fn(text: str) -> torch.Tensor:
         return torch.tensor(sbert.encode(text, convert_to_numpy=True))
 
+    # Build corpus strings upfront so plastic SOMA can train its BPE
+    corpus_texts = [get_fact_text(f) for f in facts]
+
+    # If graph_rerank_alpha > 0, use graph-rerank path (hybrid_alpha=None).
+    # If 0, fall back to hybrid retrieve (original behaviour).
+    use_graph_rerank = args.graph_rerank_alpha > 0.0
+    hybrid_alpha_val: float | None = None if use_graph_rerank else 0.3
+    logger.info(
+        "retrieve mode: %s (graph_rerank_alpha=%.2f, hybrid_alpha=%s, k=%d)",
+        "graph-rerank" if use_graph_rerank else "hybrid",
+        args.graph_rerank_alpha,
+        "None" if hybrid_alpha_val is None else f"{hybrid_alpha_val:.2f}",
+        args.k,
+    )
+
     systems: dict[str, Any] = {
-        "soma_plastic": _SomaAdapter(embed_fn, dim, plastic=True),
-        "soma_frozen": _SomaAdapter(embed_fn, dim, plastic=False),
+        "soma_plastic": _SomaAdapter(
+            embed_fn, dim, plastic=True,
+            hybrid_alpha=hybrid_alpha_val,
+            graph_rerank_alpha=args.graph_rerank_alpha,
+            corpus=corpus_texts,
+        ),
+        # Frozen: attach SOMA so graph-rerank path has a graph to read, but
+        # never consolidate. Plastic vs frozen differ only in whether the
+        # graph grows during Phase 2.
+        "soma_frozen": _SomaAdapter(
+            embed_fn, dim, plastic=False,
+            hybrid_alpha=hybrid_alpha_val,
+            graph_rerank_alpha=args.graph_rerank_alpha,
+            corpus=corpus_texts,
+            attach_soma_even_when_frozen=use_graph_rerank,
+        ),
         "chroma": _ChromaAdapter(sbert, dim),
     }
 
-    # === Phase 1: ingest ===
-    logger.info("Phase 1: ingesting %d facts into 3 systems...", len(facts))
+    # === Partition facts: Phase 1 ingest vs Phase 2 trickle ===
+    # Bias Phase 2 trickle toward Topic A so plastic's consolidate()
+    # during Phase 2 sees Topic-A-heavy new content.
+    phase1_facts: list[Fact] = []
+    phase2_trickle: list[Fact] = []
+    for f in facts:
+        # Within topic A, reserve the last 20% of paraphrase-instances
+        # for Phase 2 trickle. Outside topic A, keep Phase 1 proportion.
+        frac = args.phase1_frac if f.topic == topic_a else max(0.75, args.phase1_frac)
+        # Deterministic split by hash of text so re-runs are stable.
+        h = hash(get_fact_text(f)) % 1000
+        if h / 1000.0 < frac:
+            phase1_facts.append(f)
+        else:
+            phase2_trickle.append(f)
+    logger.info("  phase1_facts=%d, phase2_trickle=%d (Topic A share of "
+                "trickle: %.2f)",
+                len(phase1_facts), len(phase2_trickle),
+                sum(1 for f in phase2_trickle if f.topic == topic_a)
+                / max(1, len(phase2_trickle)))
+
+    # === Phase 1: ingest (subset only) ===
+    logger.info("Phase 1: ingesting %d facts into 3 systems...",
+                len(phase1_facts))
     for name, adapter in systems.items():
         t0 = time.perf_counter()
-        for f in facts:
+        for f in phase1_facts:
             adapter.store(
                 get_fact_text(f),
                 meta={"topic": f.topic, "attribute": f.attribute},
@@ -262,17 +364,26 @@ def main() -> None:
         logger.info("  %s ingest: %.1fs", name, time.perf_counter() - t0)
 
     # === Phase 1 baseline eval ===
-    logger.info("Phase 1 baseline: evaluating initial R@5...")
+    # For graph-rerank mode, pre-consolidate once so frozen's graph has stable
+    # capture too (otherwise initial R@k is pure cosine for both).
+    if use_graph_rerank:
+        logger.info("Pre-consolidating for graph-rerank (both plastic and frozen)...")
+        n_plastic = systems["soma_plastic"].mem.consolidate()
+        n_frozen = systems["soma_frozen"].mem.consolidate()
+        logger.info("  plastic: %d, frozen: %d entries consolidated", n_plastic, n_frozen)
+
+    logger.info("Phase 1 baseline: evaluating initial R@%d...", args.k)
     initial: dict[str, dict] = {}
     for name, adapter in systems.items():
         initial[name] = {
-            "topic_a": evaluate(adapter, phase3_a),
-            "other": evaluate(adapter, phase3_other),
+            "topic_a": evaluate(adapter, phase3_a, k=args.k),
+            "other": evaluate(adapter, phase3_other, k=args.k),
             "graph": adapter.graph_stats(),
         }
-        logger.info("  %s initial Topic A R@5=%.3f, other R@5=%.3f",
-                    name,
+        logger.info("  %s initial Topic A R@%d=%.3f, other R@%d=%.3f",
+                    name, args.k,
                     initial[name]["topic_a"]["r_at_k"],
+                    args.k,
                     initial[name]["other"]["r_at_k"])
 
     # === Phase 2: focused session on Topic A ===
@@ -292,33 +403,85 @@ def main() -> None:
     logger.info("  total session queries: %d (ratio 2:1 topic-A:other)",
                 len(session_queries))
 
+    # Interleave trickle stores with retrieves: every other step is a
+    # store (Topic-A-biased). Plastic consolidates periodically and
+    # graphifies the new entries; frozen never consolidates.
+    trickle_idx = 0
     for step, q in enumerate(session_queries):
+        # Retrieve step
         for name, adapter in systems.items():
-            adapter.retrieve(q.question, k=5)
-        # Consolidate plastic SOMA periodically
+            adapter.retrieve(q.question, k=args.k)
+        # Trickle store — store one new fact per retrieve into all systems
+        if trickle_idx < len(phase2_trickle):
+            tf = phase2_trickle[trickle_idx]
+            for name, adapter in systems.items():
+                adapter.store(
+                    get_fact_text(tf),
+                    meta={"topic": tf.topic, "attribute": tf.attribute},
+                )
+            trickle_idx += 1
+        # Consolidate plastic SOMA periodically (incremental — only new
+        # entries since the last pass get graphified).
         if (step + 1) % args.consolidate_every == 0:
             n = systems["soma_plastic"].consolidate()
             logger.info("  step %d/%d: consolidated %d entries",
                         step + 1, len(session_queries), n)
+    logger.info("  Phase 2 stored %d new trickle facts", trickle_idx)
+
+    # Drain any remaining trickle facts into all systems so Phase 3 eval
+    # sees the same total corpus on all systems. Only plastic will
+    # consolidate them.
+    remaining = len(phase2_trickle) - trickle_idx
+    if remaining > 0:
+        logger.info("  Draining %d remaining trickle facts into all "
+                    "systems", remaining)
+        for tf in phase2_trickle[trickle_idx:]:
+            for name, adapter in systems.items():
+                adapter.store(
+                    get_fact_text(tf),
+                    meta={"topic": tf.topic, "attribute": tf.attribute},
+                )
 
     # Final consolidation
     n_final = systems["soma_plastic"].consolidate()
     logger.info("  final consolidation: %d entries", n_final)
 
     # === Phase 3: held-out eval ===
-    logger.info("Phase 3: held-out evaluation...")
+    logger.info("Phase 3: held-out evaluation at R@%d...", args.k)
+    # Per-item retrieval capture so we can measure plastic-vs-frozen
+    # disagreement after the run.
+    per_item_phase3: dict[str, list[dict[str, Any]]] = {}
+    for name, adapter in systems.items():
+        rows = []
+        for q in phase3_a + phase3_other:
+            hits = adapter.retrieve(q.question, k=args.k)
+            top1_text = hits[0][0] if hits else ""
+            hit = 1 if any(q.answer.lower() in t.lower() for t, _ in hits) else 0
+            rows.append({
+                "topic": q.topic,
+                "attribute": q.attribute,
+                "question": q.question,
+                "answer": q.answer,
+                "top1_text": top1_text,
+                "top1_contains_answer": (1 if q.answer.lower()
+                                         in top1_text.lower() else 0),
+                "hit_at_k": hit,
+            })
+        per_item_phase3[name] = rows
+
     final: dict[str, dict] = {}
     for name, adapter in systems.items():
         final[name] = {
-            "topic_a": evaluate(adapter, phase3_a),
-            "other": evaluate(adapter, phase3_other),
+            "topic_a": evaluate(adapter, phase3_a, k=args.k),
+            "other": evaluate(adapter, phase3_other, k=args.k),
             "graph": adapter.graph_stats(),
         }
         logger.info(
-            "  %s final Topic A R@5=%.3f (delta=%+.3f), other R@5=%.3f (delta=%+.3f)",
-            name,
+            "  %s final Topic A R@%d=%.3f (delta=%+.3f), other R@%d=%.3f (delta=%+.3f)",
+            name, args.k,
             final[name]["topic_a"]["r_at_k"],
             final[name]["topic_a"]["r_at_k"] - initial[name]["topic_a"]["r_at_k"],
+            args.k,
             final[name]["other"]["r_at_k"],
             final[name]["other"]["r_at_k"] - initial[name]["other"]["r_at_k"],
         )
@@ -327,10 +490,16 @@ def main() -> None:
     report = {
         "topic_a": topic_a,
         "n_facts": len(facts),
+        "phase1_facts": len(phase1_facts),
+        "phase2_trickle": len(phase2_trickle),
         "session_queries": len(session_queries),
         "consolidate_every": args.consolidate_every,
+        "graph_rerank_alpha": args.graph_rerank_alpha,
+        "k": args.k,
+        "retrieve_mode": "graph-rerank" if use_graph_rerank else "hybrid",
         "initial": initial,
         "final": final,
+        "per_item_phase3": per_item_phase3,
     }
     out_path = RESULTS_DIR / f"activation_test{args.out_suffix}.json"
     with open(out_path, "w", encoding="utf-8") as f:

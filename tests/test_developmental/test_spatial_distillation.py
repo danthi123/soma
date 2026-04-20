@@ -349,7 +349,10 @@ class TestNormPreservation:
                 continue
             expected = pred._initial_position_norms[node.id]
             actual = node.position.norm().item()
-            assert abs(actual - expected) < 1e-4, (
+            # Ratio-rescale residual should be near float32 round-off
+            # (<<1e-5). Loose tolerance would hide a silent no-op
+            # (e.g. rescale branch guarded wrong and never firing).
+            assert abs(actual - expected) < 1e-5, (
                 f"Node {node.id} position norm drifted: "
                 f"init={expected}, now={actual}"
             )

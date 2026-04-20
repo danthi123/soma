@@ -291,7 +291,10 @@ class TestPositionCouplingLoss:
         assert moved_any, "positions should have moved under spatial distill"
 
     def test_position_loss_zero_when_weight_zero(self) -> None:
-        """beta=0 disables position loss contribution."""
+        """β=0 disables the position loss contribution entirely. No
+        other loss touches node.position, so positions must not move
+        across steps (beyond machine epsilon) — proves the position
+        path is actually gated by β, not always firing."""
         cfg = _spatial_config(position_coupling_weight=0.0)
         pred = PredictiveSOMA(config=cfg)
 
@@ -300,10 +303,25 @@ class TestPositionCouplingLoss:
         teacher.embed.return_value = torch.randn(1024)
         pred.attach_teacher(teacher)
 
+        from soma.core.node import NodeType
+
+        initial_positions = {
+            n.id: n.position.detach().clone()
+            for n in pred.soma.graph.all_nodes()
+            if n.node_type == NodeType.ASSOCIATOR
+        }
+
         x = torch.randn(cfg.sensor_output_dim)
         pred.process_input(x, source_text="t1")
-        # Should not crash; positions finite
         pred.process_input(x, source_text="t2")
-        for node in pred.soma.graph.all_nodes():
-            if hasattr(node, "position") and node.position is not None:
-                assert torch.isfinite(node.position).all()
+
+        # Every initial associator must still be at its starting position.
+        for nid, p0 in initial_positions.items():
+            if nid not in pred.soma.graph.nodes:
+                continue
+            p1 = pred.soma.graph.nodes[nid].position
+            assert torch.isfinite(p1).all()
+            assert torch.allclose(p1, p0, atol=1e-6), (
+                f"position for {nid} moved with β=0: "
+                f"max delta {(p1 - p0).abs().max().item()}"
+            )

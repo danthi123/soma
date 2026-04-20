@@ -317,6 +317,12 @@ class MemoryLayer:
         self._tokenizer = tokenizer
         self._encoder = encoder
         self._custom_embed_fn = embed_fn
+        # Set by :meth:`with_sbert` / :meth:`load_with_sbert` so
+        # :meth:`save` can persist the sbert model name into
+        # ``memory_index.json`` and the matching load helper can
+        # auto-detect it on the next open. ``None`` for every other
+        # construction path (TextEncoder bundles, custom embed_fn).
+        self._sbert_model_name: str | None = None
         if device is not None:
             self._device = torch.device(device)
         elif encoder is not None:
@@ -467,13 +473,29 @@ class MemoryLayer:
         """Create a MemoryLayer backed by a sentence-transformers model.
 
         Requires ``sentence-transformers`` to be installed (optional dep).
+
+        The model name is recorded on the instance so :meth:`save`
+        can persist it and :meth:`load_with_sbert` can rebuild the
+        same embedder at load time without the caller having to
+        track the model name by hand.
+        """
+        _embed, dim = cls._build_sbert_embed_fn(model_name)
+        inst = cls(embed_fn=_embed, embed_dim=dim, device=device)
+        inst._sbert_model_name = model_name
+        return inst
+
+    @staticmethod
+    def _build_sbert_embed_fn(model_name: str) -> tuple[EmbedFn, int]:
+        """Shared sbert-closure builder used by ``with_sbert`` +
+        ``load_with_sbert``. Raises ``ImportError`` when
+        sentence-transformers is missing.
         """
         try:
             from sentence_transformers import SentenceTransformer
         except ImportError as exc:
             raise ImportError(
-                "MemoryLayer.with_sbert() requires sentence-transformers. "
-                "Install with: pip install sentence-transformers"
+                "MemoryLayer sbert helpers require sentence-transformers. "
+                "Install with: pip install 'soma-memory[sbert]'"
             ) from exc
 
         model = SentenceTransformer(model_name)
@@ -488,7 +510,58 @@ class MemoryLayer:
         def _embed(text: str) -> torch.Tensor:
             return torch.tensor(model.encode(text, convert_to_numpy=True))
 
-        return cls(embed_fn=_embed, embed_dim=dim, device=device)
+        return _embed, dim
+
+    @classmethod
+    def load_with_sbert(
+        cls,
+        src: str | Path | ObjectStore,
+        *,
+        model_name: str | None = None,
+        device: torch.device | str | None = None,
+        durability: Literal["sync", "batch", "async"] = "sync",
+    ) -> MemoryLayer:
+        """Rehydrate a bundle that was saved from :meth:`with_sbert`.
+
+        Symmetric partner to :meth:`with_sbert` — the plain
+        :meth:`load` requires you to hand back the exact same
+        ``embed_fn`` closure you used at save time, which is awkward
+        when that closure came from an sbert helper. This variant
+        rebuilds the sbert embedder for you.
+
+        Resolution order for ``model_name``:
+
+        1. If ``model_name`` is passed explicitly, use it verbatim.
+        2. Else, read ``sbert_model_name`` from the bundle's
+           ``memory_index.json`` (written by :meth:`save` when the
+           instance was built via :meth:`with_sbert`).
+        3. Else, fall back to the :meth:`with_sbert` default
+           (``"all-MiniLM-L6-v2"``) — the right guess for bundles
+           produced before this field was persisted.
+
+        Requires ``sentence-transformers``. If the bundle was saved
+        from the TextEncoder path (``soma chat`` / ``soma index``
+        defaults) :meth:`load` handles that — this helper is only
+        needed when you specifically saved with an sbert embed_fn.
+        """
+        resolved_name = model_name
+        if resolved_name is None:
+            store = _coerce_store(src)
+            if store.exists("memory_index.json"):
+                with contextlib.suppress(Exception):
+                    idx = json.loads(
+                        store.get_bytes("memory_index.json").decode("utf-8")
+                    )
+                    persisted = idx.get("sbert_model_name")
+                    if isinstance(persisted, str) and persisted:
+                        resolved_name = persisted
+        if resolved_name is None:
+            resolved_name = "all-MiniLM-L6-v2"
+
+        embed_fn, _ = cls._build_sbert_embed_fn(resolved_name)
+        inst = cls.load(src, embed_fn=embed_fn, device=device, durability=durability)
+        inst._sbert_model_name = resolved_name
+        return inst
 
     @classmethod
     def ephemeral(
@@ -1732,6 +1805,14 @@ class MemoryLayer:
         }
         if encoder is not None:
             index["max_seq_len"] = int(encoder.max_seq_len)
+        # Persist the sbert model name so ``load_with_sbert`` can
+        # rebuild the same embedder without the caller having to
+        # track it by hand. Only written when the instance was
+        # built via ``with_sbert`` / ``load_with_sbert``; bundles
+        # that used TextEncoder or a custom embed_fn omit this
+        # field (and ``load`` paths ignore it).
+        if self._sbert_model_name is not None:
+            index["sbert_model_name"] = self._sbert_model_name
         store.put_bytes(
             "memory_index.json",
             json.dumps(index, indent=2).encode("utf-8"),

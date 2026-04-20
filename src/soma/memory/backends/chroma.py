@@ -77,12 +77,14 @@ class ChromaBackend:
         ``"soma"``; MemoryLayer passes the bundle name for multi-
         tenant layouts. Chroma enforces 3-63 chars, alphanumeric
         plus ``_`` and ``-``.
-    dim:
+    embed_dim:
         Embedding dimension. Optional — Chroma doesn't enforce a
         schema-level dim, it just stores whatever you add. Supplied
         here so :attr:`dim` can answer without probing the
         collection. When omitted, we fall back to introspecting the
-        first stored row.
+        first stored row. The legacy keyword ``dim=`` is accepted as
+        an alias for callers predating 0.2 (the rest of SOMA uses
+        ``embed_dim`` everywhere, so this was a naming inconsistency).
     """
 
     supports_filter_pushdown: bool = True
@@ -94,18 +96,25 @@ class ChromaBackend:
         path: str | None = None,
         client: Any = None,
         collection_name: str = "soma",
+        embed_dim: int | None = None,
         dim: int | None = None,
     ) -> None:
         if not _HAS_CHROMA:
             raise ImportError(
-                "ChromaBackend requires chromadb. Install with: pip install 'soma[chroma]'"
+                "ChromaBackend requires chromadb. Install with: pip install 'soma-memory[chroma]'"
             )
         if client is None and path is None:
             raise ValueError("ChromaBackend requires either path= or client=")
+        if embed_dim is not None and dim is not None and int(embed_dim) != int(dim):
+            raise ValueError(
+                "ChromaBackend: pass either embed_dim= or dim= (legacy alias), not "
+                f"both with conflicting values ({embed_dim!r} vs {dim!r})."
+            )
+        effective_dim = embed_dim if embed_dim is not None else dim
         self._external_client = client is not None
         self._path = path
         self._collection_name = collection_name
-        self._dim: int | None = int(dim) if dim is not None else None
+        self._dim: int | None = int(effective_dim) if effective_dim is not None else None
         self._client: Any = client
         self._coll: Any = None
         # Whether any ``add`` call has supplied metadata. Drives
@@ -129,7 +138,20 @@ class ChromaBackend:
             assert self._path is not None
             Path(self._path).mkdir(parents=True, exist_ok=True)
             assert chromadb is not None
-            self._client = chromadb.PersistentClient(path=self._path)
+            # Silence chromadb's anonymous-telemetry background thread.
+            # Without this, callers see a steady stream of
+            # "Failed to send telemetry event ..." warnings on stdout
+            # whenever the posthog endpoint is blocked (common in
+            # private networks / CI). SOMA's local-first pitch means
+            # opting out is the right default — operators who want
+            # telemetry can pass a pre-built ``client=`` with a
+            # custom Settings.
+            from chromadb.config import Settings
+
+            self._client = chromadb.PersistentClient(
+                path=self._path,
+                settings=Settings(anonymized_telemetry=False),
+            )
         # Cosine is the only metric MemoryLayer advertises; encode it
         # in the collection metadata so queries use cosine distance
         # without caller opt-in.

@@ -62,7 +62,9 @@ class RunResult:
     final_pairwise_distances: list[float]
 
 
-def build_config(dim: int, variant: str, seed: int) -> SOMAConfig:
+def build_config(
+    dim: int, variant: str, seed: int, *, position_coupling_weight: float = 1.0,
+) -> SOMAConfig:
     overrides: dict[str, Any] = dict(
         sensor_output_dim=dim,
         text_embed_dim=dim,
@@ -86,7 +88,7 @@ def build_config(dim: int, variant: str, seed: int) -> SOMAConfig:
             projection_distillation_target="llm_spatial",
             position_mode="learnable",
             projection_distillation_winners=3,
-            position_coupling_weight=1.0,
+            position_coupling_weight=position_coupling_weight,
         )
     else:
         raise ValueError(f"unknown variant {variant!r}")
@@ -119,8 +121,12 @@ def run_variant(
     device: torch.device,
     dim: int,
     teacher: CachedEmbedder | None,
+    *,
+    position_coupling_weight: float = 1.0,
 ) -> RunResult:
-    config = build_config(dim, variant, seed)
+    config = build_config(
+        dim, variant, seed, position_coupling_weight=position_coupling_weight
+    )
     ps = PredictiveSOMA(config, device=device)
     # Spatial variant needs a teacher; reference does not.
     if variant == "synap_only_local_spatial":
@@ -230,14 +236,26 @@ def ks_distance(a: list[float], b: list[float]) -> float:
 
 
 def main() -> None:
+    import argparse
+    import sys
+
+    p = argparse.ArgumentParser()
+    p.add_argument(
+        "--beta", type=float, default=1.0,
+        help="position_coupling_weight (default 1.0 = plan default)",
+    )
+    p.add_argument(
+        "--tag", default="",
+        help="suffix appended to output filenames for per-run organisation",
+    )
+    args = p.parse_args(sys.argv[1:])
+
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Device: {device}")
+    print(f"position_coupling_weight (β): {args.beta}")
     DIM = 16
     SEEDS = [0, 1, 42]
-    variants = [
-        "synap_only_local",
-        "synap_only_local_spatial",
-    ]
+    variants = ["synap_only_local", "synap_only_local_spatial"]
     print(f"Seeds: {SEEDS}, Variants: {variants}")
 
     cache_dir = Path("research/developmental/.teacher_cache")
@@ -251,7 +269,10 @@ def main() -> None:
     for seed in SEEDS:
         print(f"\n=== seed={seed} ===")
         for variant in variants:
-            r = run_variant(seed, variant, device, DIM, teacher)
+            r = run_variant(
+                seed, variant, device, DIM, teacher,
+                position_coupling_weight=args.beta,
+            )
             mse_overall = sum(r.mse_per_step) / max(1, len(r.mse_per_step))
             ks = ks_distance(r.initial_pairwise_distances, r.final_pairwise_distances)
             print(
@@ -350,15 +371,17 @@ def main() -> None:
     overall = gate1_pass and gate2_pass and gate3_pass
     print(f"\n  OVERALL: {'PASS — proceed to Phase 3' if overall else 'FAIL — investigate'}")
 
-    # Save raw data
+    # Save raw data — `--tag` keeps β ablations from clobbering the main run
+    suffix = f"_{args.tag}" if args.tag else ""
     out_path = Path(
-        "research/developmental/results/env_sequence_v05_spatial_multiseed.json"
+        f"research/developmental/results/env_sequence_v05_spatial_multiseed{suffix}.json"
     )
     out_path.parent.mkdir(parents=True, exist_ok=True)
     serialized = {
         "schedule": regime_names,
         "seeds": SEEDS,
         "variants": variants,
+        "position_coupling_weight": args.beta,
         "gates": {
             "gate1_all_finite": gate1_pass,
             "gate2_mse_ratio_le_1_5": gate2_pass,

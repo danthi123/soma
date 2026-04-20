@@ -14,12 +14,17 @@ each sample, we build a fresh memory, process that sample's turns,
 then answer that sample's queries. Evidence is expected to be within
 the same conversation (cross-sample matches are false positives).
 
-Systems (3 minimal):
+Systems (4):
 - ``chroma-mxbai``       Chroma with mxbai-embed-large embeddings.
 - ``soma-random``        PredictiveSOMA, frozen random projections,
                          retrieve_hybrid(alpha=0.3).
 - ``soma-distilled``     PredictiveSOMA, learnable projections +
-                         distillation, retrieve_hybrid(alpha=0.3).
+                         ``llm_embedding`` distillation (Direction 4a),
+                         retrieve_hybrid(alpha=0.3).
+- ``soma-spatial``       PredictiveSOMA, learnable projections +
+                         ``llm_spatial`` distillation + learnable
+                         positions + position-coupling loss
+                         (Direction 4b), retrieve_hybrid(alpha=0.3).
 
 Usage:
     python -u -m benchmarks.run_locomo_distill \\
@@ -200,6 +205,9 @@ def _run_soma_on_sample(
     seed: int,
     rerank_weight: float,
     gate_threshold: float,
+    position_mode: str = "frozen_random",
+    position_coupling_weight: float = 1.0,
+    projection_distillation_winners: int = 3,
 ) -> tuple[tuple, float, float]:
     config = SOMAConfig.developmental(
         sensor_output_dim=target_dim,
@@ -213,12 +221,15 @@ def _run_soma_on_sample(
         projection_mode=projection_mode,
         projection_distillation_target=distillation_target,
         projection_distillation_weight=distillation_weight,
+        projection_distillation_winners=projection_distillation_winners,
+        position_mode=position_mode,
+        position_coupling_weight=position_coupling_weight,
         synaptogenesis_max_distance=synap_locality,
         neurogenesis_interval=0,
         seed=seed,
     )
     pred = PredictiveSOMA(config=config, device=device)
-    if distillation_target == "llm_embedding":
+    if distillation_target in ("llm_embedding", "llm_spatial"):
         pred.attach_teacher(teacher)
 
     # Storage: embed turns and feed through SOMA
@@ -318,6 +329,9 @@ def run_soma_predictive(
     seed: int = 0,
     rerank_weight: float = 0.3,
     gate_threshold: float = 0.05,
+    position_mode: str = "frozen_random",
+    position_coupling_weight: float = 1.0,
+    projection_distillation_winners: int = 3,
 ) -> DistillResult:
     per_sample = []
     total_store = 0.0
@@ -340,6 +354,9 @@ def run_soma_predictive(
             seed=seed,
             rerank_weight=rerank_weight,
             gate_threshold=gate_threshold,
+            position_mode=position_mode,
+            position_coupling_weight=position_coupling_weight,
+            projection_distillation_winners=projection_distillation_winners,
         )
         per_sample.append(score_tuple)
         total_store += ss
@@ -400,20 +417,23 @@ def format_markdown(results: list[DistillResult]) -> str:
 
     sys_by_name = {r.system: r for r in results}
     # Primary comparison finds any system starting with "soma-distilled"
-    # vs chroma-mxbai so suffixed variant sweeps still get a summary row
-    distilled_candidates = [
-        name for name in sys_by_name if name.startswith("soma-distilled")
+    # (Direction 4a) or "soma-spatial" (Direction 4b) vs chroma-mxbai so
+    # suffixed variant sweeps still get a summary row.
+    primary_candidates = [
+        name
+        for name in sys_by_name
+        if name.startswith("soma-distilled") or name.startswith("soma-spatial")
     ]
-    if "chroma-mxbai" in sys_by_name and distilled_candidates:
+    if "chroma-mxbai" in sys_by_name and primary_candidates:
         baseline_r5 = sys_by_name["chroma-mxbai"].recall_at_k.get(5, 0)
         lines += [
             "",
-            "## Primary comparison (soma-distilled variants vs chroma-mxbai on R@5)",
+            "## Primary comparison (soma-distilled / soma-spatial variants vs chroma-mxbai on R@5)",
             "",
             "| Variant | R@5 | Delta | Verdict |",
             "| --- | :---: | :---: | :---: |",
         ]
-        for name in distilled_candidates:
+        for name in primary_candidates:
             r5 = sys_by_name[name].recall_at_k.get(5, 0)
             delta = r5 - baseline_r5
             status = "SHIP" if delta > 0.02 else ("WEAK" if delta > 0.005 else "NULL")
@@ -465,6 +485,23 @@ def main() -> None:
         "--variant-suffix",
         default="",
         help="append to soma variant names for distinguishing sweeps",
+    )
+    p.add_argument(
+        "--skip-spatial",
+        action="store_true",
+        help="skip the soma-spatial (Direction 4b) comparison",
+    )
+    p.add_argument(
+        "--spatial-beta",
+        type=float,
+        default=1.0,
+        help="position_coupling_weight for soma-spatial",
+    )
+    p.add_argument(
+        "--spatial-winners",
+        type=int,
+        default=3,
+        help="projection_distillation_winners for soma-spatial",
     )
     args = p.parse_args()
 
@@ -536,6 +573,26 @@ def main() -> None:
     )
     results.append(r)
     print(f"  R@1={r.recall_at_k[1]:.3f} R@5={r.recall_at_k[5]:.3f} R@10={r.recall_at_k[10]:.3f} retrieve={r.retrieve_avg_ms:.1f}ms")
+
+    if not args.skip_spatial:
+        print(
+            f"\n=== soma-spatial (learnable + llm_spatial + positions "
+            f"beta={args.spatial_beta} K={args.spatial_winners}) ==="
+        )
+        r = run_soma_predictive(
+            f"soma-spatial{args.variant_suffix}",
+            samples, turns_by_sample, queries_by_sample, teacher, args.target_dim,
+            projection_mode="learnable",
+            distillation_target="llm_spatial",
+            distillation_weight=args.alpha,
+            synap_locality=args.locality,
+            device=device,
+            position_mode="learnable",
+            position_coupling_weight=args.spatial_beta,
+            projection_distillation_winners=args.spatial_winners,
+        )
+        results.append(r)
+        print(f"  R@1={r.recall_at_k[1]:.3f} R@5={r.recall_at_k[5]:.3f} R@10={r.recall_at_k[10]:.3f} retrieve={r.retrieve_avg_ms:.1f}ms")
 
     args.out.parent.mkdir(parents=True, exist_ok=True)
     md = format_markdown(results)

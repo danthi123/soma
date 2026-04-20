@@ -400,6 +400,81 @@ class TestSaveLoadPositions:
         )
 
 
+class TestSpatialDistillationIntegration:
+    def test_end_to_end_no_crash_no_nan(self) -> None:
+        """Run 10 steps with real-ish config; projections + positions
+        stay finite. Different per-step teacher embeddings exercise the
+        full distill + position-coupling + norm-preservation loop."""
+        cfg = _spatial_config(
+            position_coupling_weight=1.0,
+            projection_distillation_winners=3,
+        )
+        pred = PredictiveSOMA(config=cfg)
+
+        teacher = MagicMock()
+        teacher.name = "fake"
+
+        # Return different embeddings for different texts (more realistic).
+        call_count = {"n": 0}
+
+        def _embed(text):
+            call_count["n"] += 1
+            gen = torch.Generator()
+            gen.manual_seed(call_count["n"])
+            return torch.randn(1024, generator=gen)
+
+        teacher.embed.side_effect = _embed
+        pred.attach_teacher(teacher)
+
+        x = torch.randn(cfg.sensor_output_dim)
+        for step in range(10):
+            result = pred.process_input(x, source_text=f"step-{step}")
+            assert torch.isfinite(torch.tensor(result["prediction_error"])), (
+                f"NaN/Inf prediction_error at step {step}"
+            )
+
+        from soma.core.node import NodeType
+
+        for node in pred.soma.graph.all_nodes():
+            if node.node_type != NodeType.ASSOCIATOR:
+                continue
+            assert torch.isfinite(node.position).all(), (
+                f"non-finite position on {node.id}"
+            )
+            if node.id in pred._input_projections:
+                assert torch.isfinite(pred._input_projections[node.id]).all(), (
+                    f"non-finite projection on {node.id}"
+                )
+
+    def test_backward_compat_llm_embedding_target_unchanged(self) -> None:
+        """Direction 4a (llm_embedding target, frozen positions) must
+        keep working unchanged even after Direction 4b landed —
+        positions stay plain Tensors, no position-coupling block fires."""
+        cfg = SOMAConfig.developmental(
+            initial_associator_count=4,
+            max_nodes=16,
+            projection_mode="learnable",
+            projection_distillation_target="llm_embedding",
+        )
+        pred = PredictiveSOMA(config=cfg)
+
+        teacher = MagicMock()
+        teacher.name = "fake"
+        teacher.embed.return_value = torch.randn(1024)
+        pred.attach_teacher(teacher)
+
+        x = torch.randn(cfg.sensor_output_dim)
+        pred.process_input(x, source_text="t1")
+        pred.process_input(x, source_text="t2")
+
+        # Positions should NOT be Parameters (position_mode default = frozen).
+        from soma.core.node import NodeType
+
+        for node in pred.soma.graph.all_nodes():
+            if node.node_type == NodeType.ASSOCIATOR:
+                assert not isinstance(node.position, torch.nn.Parameter)
+
+
 class TestNormPreservation:
     def test_position_norms_preserved_across_steps(self) -> None:
         """After each optimizer step, each position should be rescaled

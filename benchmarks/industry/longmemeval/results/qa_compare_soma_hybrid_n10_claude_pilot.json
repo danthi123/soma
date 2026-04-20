@@ -1,0 +1,69 @@
+{
+  "method": "soma_hybrid",
+  "model": "claude",
+  "scores": {
+    "f1": 0.7746,
+    "em": 0.6,
+    "rouge1": 0.7746,
+    "rouge2": 0.7657,
+    "rougeL": 0.7746,
+    "per_type": {
+      "single-session-user": {
+        "f1": 0.7746,
+        "em": 0.6,
+        "rouge1": 0.7746,
+        "rouge2": 0.7657,
+        "rougeL": 0.7746
+      }
+    },
+    "n_total": 10
+  },
+  "retrieval_recall_at_k": 1.0,
+  "top_k": 5,
+  "avg_retrieval_ms": 61.59094999966328,
+  "avg_llm_ms": 3842.2147199984465,
+  "avg_input_tokens": 3869.9,
+  "n_items": 10,
+  "predictions": [
+    {
+      "question_id": "e47becba",
+      "hypothesis": "I don't know"
+    },
+    {
+      "question_id": "118b2229",
+      "hypothesis": "45 minutes each way"
+    },
+    {
+      "question_id": "51a45a95",
+      "hypothesis": "Target"
+    },
+    {
+      "question_id": "58bf7951",
+      "hypothesis": "The Glass Menagerie"
+    },
+    {
+      "question_id": "1e043500",
+      "hypothesis": "Summer Vibes"
+    },
+    {
+      "question_id": "c5e8278d",
+      "hypothesis": "Johnson"
+    },
+    {
+      "question_id": "6ade9755",
+      "hypothesis": "Serenity Yoga"
+    },
+    {
+      "question_id": "6f9b354f",
+      "hypothesis": "Lighter shade of gray"
+    },
+    {
+      "question_id": "58ef2f1c",
+      "hypothesis": "Valentine's Day"
+    },
+    {
+      "question_id": "f8c5f88b",
+      "hypothesis": "Sports store downtown"
+    }
+  ]
+}

@@ -327,7 +327,7 @@ def run_soma_predictive(
     synap_locality: float,
     device: torch.device,
     seed: int = 0,
-    rerank_weight: float = 0.3,
+    rerank_weight: float = 0.0,
     gate_threshold: float = 0.05,
     position_mode: str = "frozen_random",
     position_coupling_weight: float = 1.0,
@@ -506,12 +506,14 @@ def main() -> None:
     p.add_argument(
         "--rerank-weight",
         type=float,
-        default=0.3,
+        default=0.0,
         help=(
             "SOMA retrieve_hybrid rerank_weight applied to ALL soma-* variants "
-            "(soma-random / soma-distilled / soma-spatial). 0.0 = pure embedding "
-            "cosine, no graph re-rank — useful for isolating whether the graph "
-            "rerank helps or hurts."
+            "(soma-random / soma-distilled / soma-spatial). Default 0.0 = pure "
+            "embedding cosine. LoCoMo sweep across {0.0, 0.05, 0.1, 0.2, 0.3} "
+            "showed monotonic degradation past w≈0.1; pure cosine matches chroma "
+            "R@5. Set >0 to opt into rerank (e.g. for non-retrieval tasks where "
+            "the graph fingerprint may add signal)."
         ),
     )
     p.add_argument(

@@ -725,19 +725,27 @@ class PredictiveSOMA(nn.Module):
         recall_k: int = 20,
         top_k: int = 5,
         gate_threshold: float = 0.05,
-        rerank_weight: float = 0.2,
+        rerank_weight: float = 0.0,
         adaptive_weight: bool = False,
     ) -> list[tuple[int, str, float]]:
         """Confidence-gated hybrid retrieval.
 
         Uses embedding cosine similarity for candidate recall, then
-        selectively reranks using SOMA's graph fingerprint when the
+        optionally reranks using SOMA's graph fingerprint when the
         graph's confidence exceeds ``gate_threshold``.
 
-        This architecture lets SOMA add value without hurting: the
-        graph only intervenes when it has a strong structural signal
-        (learned co-occurrence / temporal patterns). On queries where
-        the graph is unsure, pure embedding similarity is used.
+        The rerank default is 0.0 (off). Rationale: a LoCoMo sweep
+        across ``rerank_weight ∈ {0.0, 0.05, 0.1, 0.2, 0.3}`` with
+        soma-random and soma-distilled showed monotonic degradation
+        past w≈0.1, with the current-best setting being 0.0 (pure
+        cosine) matching chroma R@5 (0.350 vs 0.349). A tiny +0.002
+        R@5 peak at w=0.05 for soma-random is within seed variance.
+        See ``research/developmental/results/locomo_rerank_isolation_findings.md``.
+
+        The rerank code remains available: set ``rerank_weight > 0``
+        to opt in. Plausible use cases include non-retrieval tasks
+        (prediction, temporal ordering) or reformulated fingerprint
+        scoring that may add real signal.
 
         Parameters
         ----------
@@ -784,6 +792,24 @@ class PredictiveSOMA(nn.Module):
         )
         k = min(recall_k, len(corpus_embeddings))
         top_k_sims, top_k_indices = torch.topk(sims, k)
+
+        # Short-circuit: with rerank_weight=0.0, the graph fingerprint is
+        # never consulted — skip the (expensive) graph forward + lateral-
+        # inhibition + fingerprint steps entirely. Cuts ~10ms/query on
+        # LoCoMo-scale corpora per the rerank-isolation benchmark.
+        if rerank_weight == 0.0:
+            cidx_to_step: dict[int, int] = {
+                cidx: step_num for step_num, cidx in corpus_step_map.items()
+            }
+            results: list[tuple[int, str, float]] = []
+            for i in range(min(top_k, k)):
+                cidx = top_k_indices[i].item()
+                step_num = cidx_to_step.get(cidx)
+                if step_num is not None:
+                    text = self.text_store.get(step_num, "")
+                    if text:
+                        results.append((step_num, text, sims[cidx].item()))
+            return results
 
         # Step 2: Graph fingerprint for query
         self.soma.step({modality: query_tensor}, eval_mode=True)

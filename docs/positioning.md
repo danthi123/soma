@@ -86,12 +86,16 @@ substrate for learning to come**. On the benchmarks committed under
   triples R@1 on LoCoMo (0.098 → 0.287) and lifts R@5 by 21.2 pp. Peers
   that only expose the embedder's cosine can't match this without
   bringing their own lexical stage.
-- **Graph rerank is safe + fast** — on full LoCoMo (5,882 turns, 1,982
-  queries) with mxbai-embed-large, SOMA's graph-rerank retrieval is
-  within 0.006 R@5 of pure Chroma (0.343 vs 0.349) at **~2× lower
-  retrieve latency** (16ms vs 34ms). Enabling the graph doesn't hurt
-  quality, and you pick up the latency win. Note: this is SOMA-on-CUDA
-  vs Chroma-on-CPU, which is how you'd deploy each.
+- **Cosine retrieval matches Chroma** — on full LoCoMo (5,882 turns,
+  1,982 queries) at target_dim=128 with mxbai-embed-large,
+  pure-cosine SOMA ties Chroma on R@5 (0.350 vs 0.349) and slightly
+  edges it on R@1 (0.148 vs 0.147). SOMA's graph-rerank layer is
+  now **off by default** (`rerank_weight=0.0`) after a sweep
+  showed it was net-negative in the current formulation; see
+  `research/developmental/results/locomo_rerank_isolation_findings.md`.
+  The rerank code is opt-in via `retrieve_hybrid(..., rerank_weight=w)`
+  for non-retrieval use cases (temporal/prediction) or future
+  reformulations.
 
 The graph is plastic-by-construction (synaptogenesis, pruning,
 myelination) but under the memory-only workload the growth knobs don't

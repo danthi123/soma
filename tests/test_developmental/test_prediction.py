@@ -104,6 +104,75 @@ class TestPredictiveSOMA:
         assert len(results) <= 2
         assert all(isinstance(r, tuple) and len(r) == 3 for r in results)
 
+    def test_retrieve_hybrid_shortcircuits_when_rerank_weight_zero(self) -> None:
+        """With rerank_weight=0.0, the graph fingerprint is never consulted —
+        skip the graph forward pass entirely for a ~10ms/query latency win
+        (per LoCoMo rerank-isolation study). Verified here by instrumenting
+        the SOMA step method; the short-circuit path must not call it."""
+        config = _make_config()
+        ps = PredictiveSOMA(config, device=torch.device("cpu"))
+        dim = config.sensor_output_dim
+
+        for text in ["alpha", "beta", "gamma"]:
+            ps.process_input(torch.randn(dim), source_text=text)
+
+        corpus_embeddings = torch.randn(3, dim)
+        step_map = {s: i for i, s in enumerate(ps.text_store.keys())}
+
+        # Instrument: count calls into soma.step.
+        original_step = ps.soma.step
+        call_counter = {"n": 0}
+
+        def counting_step(*args, **kwargs):  # type: ignore[no-untyped-def]
+            call_counter["n"] += 1
+            return original_step(*args, **kwargs)
+
+        ps.soma.step = counting_step  # type: ignore[method-assign]
+
+        query = torch.randn(dim)
+        results = ps.retrieve_hybrid(
+            query, corpus_embeddings, step_map,
+            recall_k=3, top_k=2, rerank_weight=0.0,
+        )
+
+        assert call_counter["n"] == 0, (
+            f"rerank_weight=0.0 must not invoke graph forward pass; "
+            f"soma.step called {call_counter['n']} times"
+        )
+        assert len(results) <= 2
+        assert all(isinstance(r, tuple) and len(r) == 3 for r in results)
+
+    def test_retrieve_hybrid_uses_graph_when_rerank_weight_positive(self) -> None:
+        """Opt-in symmetric check: with rerank_weight > 0, the graph
+        forward pass IS invoked (the short-circuit only fires at 0.0)."""
+        config = _make_config()
+        ps = PredictiveSOMA(config, device=torch.device("cpu"))
+        dim = config.sensor_output_dim
+
+        for text in ["a", "b", "c"]:
+            ps.process_input(torch.randn(dim), source_text=text)
+
+        corpus_embeddings = torch.randn(3, dim)
+        step_map = {s: i for i, s in enumerate(ps.text_store.keys())}
+
+        original_step = ps.soma.step
+        call_counter = {"n": 0}
+
+        def counting_step(*args, **kwargs):  # type: ignore[no-untyped-def]
+            call_counter["n"] += 1
+            return original_step(*args, **kwargs)
+
+        ps.soma.step = counting_step  # type: ignore[method-assign]
+
+        query = torch.randn(dim)
+        ps.retrieve_hybrid(
+            query, corpus_embeddings, step_map,
+            recall_k=3, top_k=2, rerank_weight=0.2, gate_threshold=0.0,
+        )
+        assert call_counter["n"] >= 1, (
+            "rerank_weight>0 must invoke graph forward pass"
+        )
+
     def test_retrieve_hybrid_fallback_without_gate(self) -> None:
         """With very high gate threshold, hybrid should match embedding order."""
         config = _make_config()

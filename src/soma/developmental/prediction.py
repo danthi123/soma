@@ -110,6 +110,9 @@ class PredictiveSOMA(nn.Module):
         # When projections are learnable, include them in the prediction
         # optimizer so the prediction loss trains them jointly with
         # prediction_head. Otherwise only prediction_head is optimized.
+        # NOTE: this optimizer-build block is mirrored in `load()`. If
+        # you add a fourth param_group here, update `load()` to match —
+        # or extract both into a shared `_build_pred_optimizer()` helper.
         if config.projection_mode == "learnable":
             position_params = []
             if config.position_mode == "learnable":
@@ -930,6 +933,8 @@ class PredictiveSOMA(nn.Module):
                     self._initial_position_norms[node.id] = node.position.norm().item()
         # Rebuild the optimizer so reloaded Parameter instances are
         # actually optimized (old optimizer references the old instances).
+        # NOTE: this mirrors the `__init__` optimizer build. If you add
+        # a fourth param_group there, update this site to match.
         if self.config.projection_mode == "learnable":
             position_params: list[torch.nn.Parameter] = []
             if self.config.position_mode == "learnable":

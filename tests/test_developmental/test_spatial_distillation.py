@@ -374,6 +374,31 @@ class TestSaveLoadPositions:
             if node.node_type == NodeType.ASSOCIATOR:
                 assert id(node.position) in opt_params
 
+        # Reloaded state must actually train: if the optimizer is
+        # holding stale Parameter identities (a subtle rebuild bug),
+        # backward() would error or silently no-op. Run one more
+        # step with fresh teacher and verify at least one position
+        # moves under the position-coupling loss.
+        teacher2 = MagicMock()
+        teacher2.name = "fake"
+        teacher2.embed.return_value = torch.randn(1024)
+        pred2.attach_teacher(teacher2)
+        positions_pre_step = {
+            n.id: n.position.detach().clone()
+            for n in pred2.soma.graph.all_nodes()
+            if n.node_type == NodeType.ASSOCIATOR
+        }
+        pred2.process_input(x, source_text="post_load")
+        moved_any = any(
+            (pred2.soma.graph.nodes[nid].position - p0).abs().max().item() > 1e-6
+            for nid, p0 in positions_pre_step.items()
+            if nid in pred2.soma.graph.nodes
+        )
+        assert moved_any, (
+            "reloaded positions did not train — optimizer may hold "
+            "stale Parameter identities"
+        )
+
 
 class TestNormPreservation:
     def test_position_norms_preserved_across_steps(self) -> None:

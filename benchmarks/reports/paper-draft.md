@@ -419,6 +419,68 @@ the default-200-question cap keeps the cost under $1 on paid APIs.
 With `DryRunBackend` the harness runs to completion but QA accuracy is
 reported as "-" for every arm (no real LLM to score against).
 
+### 4.4.1 Retrieval → QA amplification on LongMemEval (2026-04-20)
+
+On LongMemEval small (Wu 2024 — 500 multi-session conversational
+items, 6 question types) we ran the full pipeline end-to-end with
+paired retrieval strategies: chroma cosine vs SOMA hybrid (α=0.3),
+both feeding qwen3.5:4b-q8_0 with a 3,800-token context budget and
+strict-answer prompting. Only retrieval strategy varies.
+
+| Mode | R@5 | F1 | EM |
+| --- | ---: | ---: | ---: |
+| chroma cosine | 0.932 | 0.299 | 0.196 |
+| **SOMA hybrid** | **0.980** | **0.368** | **0.242** |
+
+The +5 pp R@5 lift amplifies to +23% F1 / +24% EM. We decomposed the
+F1 lift by partitioning items along (chroma_hit, soma_hit):
+
+| Cell | N | sum(SOMA_F1 − chroma_F1) | contribution |
+| --- | ---: | ---: | ---: |
+| (0,1) only SOMA retrieves | 30 | +11.49 | **34% (recall)** |
+| (1,1) both retrieve gold | 460 | +22.55 | **66% (ranking)** |
+| (1,0) only chroma retrieves | 6 | +0.11 | ~0% |
+| (0,0) neither retrieves | 4 | 0 | 0% |
+
+Two distinct mechanisms drive SOMA's lift:
+
+1. **Recall (34%)** — BM25 catches keyword-heavy queries that cosine
+   smears into a broader semantic neighborhood.
+2. **Ranking (66%)** — LongMemEval sessions are ~2,491 tokens on
+   average; the 3,800-token packer fits ~1.5 sessions. So when
+   chroma places gold at rank 4-5, the gold session is truncated
+   out of context entirely, despite `hit_at_5=1`. SOMA's hybrid
+   pushes gold to rank 1-2 where it fits.
+
+The truncation mechanism is directly measurable by joining the
+rank-probe data (per-item gold rank) with the QA answers: on chroma,
+the LLM's "I don't know" rate climbs monotonically with gold rank —
+rank 1 → 19.4% IDK, rank 3 → 100% IDK. Globally, chroma says IDK on
+30.4% of items vs SOMA's 18.2% (same LLM, same budget, same items).
+In the (1,1) cell where both systems have gold in top-5, chroma
+IDKs 62% more often.
+
+Per question type (strict prompt):
+
+| Type | N | chroma F1 | SOMA F1 | relative lift |
+| --- | ---: | ---: | ---: | ---: |
+| single-session-user | 70 | 0.455 | 0.726 | **+59%** |
+| multi-session | 133 | 0.113 | 0.154 | +36% |
+| temporal-reasoning | 133 | 0.166 | 0.205 | +23% |
+| knowledge-update | 78 | 0.380 | 0.423 | +11% |
+| single-session-assistant | 56 | 0.766 | 0.765 | tie |
+| single-session-preference | 30 | 0.027 | 0.029 | tie |
+
+`single-session-preference` is a benchmark-mismatch case (gold is
+itself a verbose preference sentence; both score F1 ~0.03). The
+`single-session-user` clean sweep (SOMA wins F1 on 22 items, chroma
+wins on 0, 48 tied) is the sharpest evidence of retrieval-as-ceiling:
+when the fact is in one session, retrieval quality determines QA
+quality.
+
+Full decomposition + rank evidence in
+`research/developmental/results/longmemeval_causation_findings.md`.
+
 ### 4.5 ConversationalMemory threshold calibration
 
 `ConversationalMemory` ships with two thresholds that control when the

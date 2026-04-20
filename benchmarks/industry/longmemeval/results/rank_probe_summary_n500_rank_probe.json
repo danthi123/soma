@@ -1,0 +1,32 @@
+{
+  "chroma_cosine": {
+    "mode": "chroma_cosine",
+    "n": 500,
+    "hit_rate": 0.932,
+    "mean_rank_given_hit": 1.3175965665236051,
+    "median_rank_given_hit": 1.0,
+    "rank_hist": {
+      "1": 388,
+      "2": 40,
+      "3": 15,
+      "4": 14,
+      "5": 9
+    },
+    "total_ms": 364133.3079999995
+  },
+  "soma_hybrid": {
+    "mode": "soma_hybrid",
+    "n": 500,
+    "hit_rate": 0.98,
+    "mean_rank_given_hit": 1.1612244897959183,
+    "median_rank_given_hit": 1.0,
+    "rank_hist": {
+      "1": 443,
+      "2": 31,
+      "3": 5,
+      "4": 6,
+      "5": 5
+    },
+    "total_ms": 1022346.2564000001
+  }
+}

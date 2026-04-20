@@ -1284,6 +1284,28 @@ class PredictiveSOMA(nn.Module):
                     total_loss = total_loss + position_loss
                 total_loss.backward()
                 self._pred_optimizer.step()
+
+                # Direction 4b: rescale each learnable position to its
+                # initial L2 norm. Keeps the synaptogenesis_max_distance
+                # cutoff calibrated across training (otherwise positions
+                # could drift to norms that break the 0.5 cutoff).
+                if (
+                    self.config.position_mode == "learnable"
+                    and self._initial_position_norms
+                ):
+                    from soma.core.node import NodeType
+                    with torch.no_grad():
+                        for node in self.soma.graph.all_nodes():
+                            if node.node_type != NodeType.ASSOCIATOR:
+                                continue
+                            target_norm = self._initial_position_norms.get(node.id)
+                            if target_norm is None:
+                                continue
+                            if not isinstance(node.position, torch.nn.Parameter):
+                                continue
+                            current = node.position.norm().item()
+                            if current > 1e-8:
+                                node.position.data.mul_(target_norm / current)
         else:
             self.prediction_error = 0.0
 

@@ -325,3 +325,31 @@ class TestPositionCouplingLoss:
                 f"position for {nid} moved with β=0: "
                 f"max delta {(p1 - p0).abs().max().item()}"
             )
+
+
+class TestNormPreservation:
+    def test_position_norms_preserved_across_steps(self) -> None:
+        """After each optimizer step, each position should be rescaled
+        to its initial L2 norm (keeps 0.5 locality cutoff calibrated)."""
+        cfg = _spatial_config(position_coupling_weight=10.0)
+        pred = PredictiveSOMA(config=cfg)
+
+        teacher = MagicMock()
+        teacher.name = "fake"
+        teacher.embed.return_value = torch.randn(1024)
+        pred.attach_teacher(teacher)
+
+        x = torch.randn(cfg.sensor_output_dim)
+        for step in range(5):
+            pred.process_input(x, source_text=f"t{step}")
+
+        from soma.core.node import NodeType
+        for node in pred.soma.graph.all_nodes():
+            if node.node_type != NodeType.ASSOCIATOR:
+                continue
+            expected = pred._initial_position_norms[node.id]
+            actual = node.position.norm().item()
+            assert abs(actual - expected) < 1e-4, (
+                f"Node {node.id} position norm drifted: "
+                f"init={expected}, now={actual}"
+            )

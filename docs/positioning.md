@@ -313,6 +313,24 @@ research agenda.
   rerank) follow-ups, but this coupling formulation is closed. See
   `research/developmental/results/locomo_direction4b_findings.md`.
 
+- **Bio-inspired sparse codes on retrieval (Path B)**: hippocampal-
+  primitive track (k-WTA sparse codes, pattern separation, designed
+  2026-04-20). Phase 1 used the `neural-simulator` project to measure
+  whether its `HIPPOCAMPUS_CA3_RECURRENT` preset produces sparse
+  separated codes — separation ratio 1.00 at N=500 (no separation).
+  Phase 2 ships `src/soma/memory/sparse_codes.py` (kwta,
+  pattern_separate, 14 TDD tests green) with synthetic calibration
+  ratio 5.66 — the *primitives* work in isolation. Phase 3 added
+  sparse-overlap as a third retrieval score on LongMemEval N=100;
+  rank-1 dropped from 0.790 (hybrid) to 0.660 (hybrid + sparse), with
+  27 paired losses to 5 wins. Root cause: random-projection k-WTA
+  isn't locality-sensitive (top-k boundary flips on small input
+  perturbations), and BM25 already captures the "shared distinctive
+  tokens" structure that sparse codes aim for. Code and findings
+  survive as reusable primitives for other contexts; the retrieval
+  direction is closed. See
+  `research/developmental/results/path_b_closure_summary.md`.
+
 ### Positive graph-side results (non-retrieval)
 
 Two findings worth flagging since they constrain where the graph

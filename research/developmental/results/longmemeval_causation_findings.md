@@ -154,39 +154,40 @@ is dropped from the packed context entirely, even though
 `hit_at_k=1`. SOMA's hybrid scoring pushes gold to rank 1-2 where it
 actually fits.
 
-Partial direct measurement (chroma, N=190 via `rank_probe.py`):
+Full direct measurement (chroma, N=500 via `rank_probe.py`):
 
-| Gold rank | count | % of hits |
-| ---: | ---: | ---: |
-| 1 | 134 | 79% |
-| 2 | 18 | 11% |
-| 3 | 6 | 4% |
-| 4 | 7 | 4% |
-| 5 | 4 | 2% |
+| Gold rank | count | % of hits | % of all items |
+| ---: | ---: | ---: | ---: |
+| 1 | 388 | 83.3% | 77.6% |
+| 2 | 40 | 8.6% | 8.0% |
+| 3 | 15 | 3.2% | 3.0% |
+| 4 | 14 | 3.0% | 2.8% |
+| 5 | 9 | 1.9% | 1.8% |
+| miss | 34 | — | 6.8% |
 
-21% of chroma's "hits" have gold at rank 2-5 where partial or full
-truncation is the outcome. A full rank-distribution comparison
-between chroma and SOMA will quantify this precisely (probe run at
-190/500 when halted for other work; resumable).
+**~17% of chroma's hits have gold at rank 2-5** where partial or
+full truncation is the outcome — 78 items where SOMA's hybrid has
+the opportunity to push gold to rank 1 and recover them.
 
-**Direct corroboration from joining the partial rank probe with the
-QA answers** (chroma, N=190 shared items): the LLM's "I don't know"
-rate rises monotonically with gold_rank:
+**Direct corroboration from joining the rank probe with the QA
+answers on full N=500** (chroma): the LLM's "I don't know" rate
+rises monotonically with gold_rank:
 
 | gold_rank | N | IDK rate |
 | --- | ---: | ---: |
-| 0 (gold not retrieved) | 21 | **90.5%** |
-| 1 | 134 | **19.4%** |
-| 2 | 18 | 55.6% |
-| 3 | 6 | 100.0% |
-| 4 | 7 | 85.7% |
-| 5 | 4 | 75.0% |
+| 0 (gold not retrieved) | 34 | **94.1%** |
+| 1 | 388 | **16.8%** |
+| 2 | 40 | 50.0% |
+| 3 | 15 | 100.0% |
+| 4 | 14 | 85.7% |
+| 5 | 9 | 88.9% |
 
-Rank 1 → 19% IDK, rank 3 → 100% IDK. This is the truncation
-mechanism working in real time: when chroma's cosine scoring places
-the gold session at rank 3+, the 3.8K-budget packer drops it from
-context, and the LLM correctly answers "I don't know" to a question
-whose evidence is no longer there.
+Rank 1 → 17% IDK, rank 3 → 100% IDK. Cleanly monotonic (modulo
+small-N noise at rank 4-5). This is the truncation mechanism
+working in real time: when chroma's cosine scoring places the gold
+session at rank 3+, the 3.8K-budget packer drops it from context,
+and the LLM correctly answers "I don't know" to a question whose
+evidence is no longer there.
 
 SOMA's hybrid scoring pushes many of those rank 3-5 items to rank
 1-2, where the gold fits and the LLM extracts from it. That's

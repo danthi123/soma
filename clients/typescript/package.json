@@ -3,14 +3,14 @@
   "version": "0.1.0",
   "description": "TypeScript client for SOMA — local-first agent memory layer.",
   "license": "MIT",
-  "homepage": "https://github.com/soma-ai/SOMA",
+  "homepage": "https://github.com/danthi123/soma",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/soma-ai/SOMA.git",
+    "url": "git+https://github.com/danthi123/soma.git",
     "directory": "clients/typescript"
   },
   "bugs": {
-    "url": "https://github.com/soma-ai/SOMA/issues"
+    "url": "https://github.com/danthi123/soma/issues"
   },
   "keywords": [
     "soma",

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "soma-memory"
-version = "0.2.0rc1"
+version = "0.2.0rc2"
 description = "Local-first, learning agent-memory layer — a plastic graph that grows and prunes with use, a drop-in for vector-DB-plus-RAG."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -38,11 +38,11 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/dant123/soma"
-Repository = "https://github.com/dant123/soma"
-Documentation = "https://github.com/dant123/soma/blob/main/docs/quickstart.md"
-Changelog = "https://github.com/dant123/soma/blob/main/CHANGELOG.md"
-Issues = "https://github.com/dant123/soma/issues"
+Homepage = "https://github.com/danthi123/soma"
+Repository = "https://github.com/danthi123/soma"
+Documentation = "https://github.com/danthi123/soma/blob/main/docs/quickstart.md"
+Changelog = "https://github.com/danthi123/soma/blob/main/CHANGELOG.md"
+Issues = "https://github.com/danthi123/soma/issues"
 
 [project.optional-dependencies]
 dev = [

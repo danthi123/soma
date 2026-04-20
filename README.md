@@ -1,8 +1,8 @@
 # SOMA
 
-**Local-first agent-memory layer.**
+**Local-first agent-memory layer.** A drop-in replacement for `vector-store + RAG` where the store is a plastic graph that grows and prunes with use. Store text, retrieve by meaning, reconcile conversational facts, and let the structure reshape itself over time. Everything local, everything on your disk, LLM-agnostic.
 
-A drop-in replacement for `vector-store + RAG` where the store is a plastic graph that grows and prunes with use. Store text, retrieve by meaning, reconcile conversational facts, and let the structure reshape itself over time. Everything local, everything on your disk, LLM-agnostic.
+> **M1 — Hybrid retrieval validated** (2026-04-20): **+22.8 % F1** and **+15.6 % rank-1** over a Chroma-cosine baseline on **LongMemEval N=500**, same embedder, same LLM, matched context budgets. Triple-cross-validated (direct Token-F1 +22.8 %, qwen-as-judge +22.2 %, Claude-as-judge +23.7 %) and reproducible across six axes — cross-LLM, cross-embedder, cross-benchmark, cross-judge, α-sweep. Milestone doc: [`docs/milestones/2026-04-20-hybrid-retrieval-validated.md`](docs/milestones/2026-04-20-hybrid-retrieval-validated.md). Evidence: [`research/developmental/results/longmemeval_full_evidence_roundup.md`](research/developmental/results/longmemeval_full_evidence_roundup.md).
 
 > **60-second tour:** install, store a fact, retrieve it — see the [Quick start](#quick-start) below or the full end-to-end flow in [`docs/quickstart.md`](docs/quickstart.md). Picking SOMA over Mem0/Letta/Zep/Chroma? [`docs/comparison.md`](docs/comparison.md). Patterns + recipes: [`docs/cookbook.md`](docs/cookbook.md). Positioning: [`docs/positioning.md`](docs/positioning.md).
 
@@ -28,14 +28,22 @@ pip install -e ".[otel]"
 # Alternative vector backends:
 pip install -e ".[qdrant]"    # Qdrant (local file or HTTP)
 pip install -e ".[lancedb]"   # embedded arrow-native (10M+ scale)
+pip install -e ".[chroma]"    # drop-in for existing Chroma users
+pip install -e ".[pgvector]"  # Postgres + pgvector
+
+# Cloud object-store bundles:
+pip install -e ".[s3]"        # s3:// URLs on save/load
+pip install -e ".[gcs]"       # gs:// URLs on save/load
 
 # Framework adapters:
 pip install -e ".[langchain]"
 pip install -e ".[llamaindex]"
 
-# Everything:
-pip install -e ".[sbert,ann,serve,metrics,otel,qdrant,lancedb,langchain,llamaindex]"
+# Everything runtime-useful:
+pip install -e ".[sbert,ann,serve,metrics,otel,qdrant,lancedb,chroma,pgvector,s3,gcs,langchain,llamaindex]"
 ```
+
+> Installing from PyPI? Replace `pip install -e "."` with `pip install "soma-memory"` (and the same for every `[extra]` variant above — the distribution name is `soma-memory`, the import name stays `soma`).
 
 ## Quick start
 
@@ -162,10 +170,10 @@ soma auth    revoke --token $LEAKED --reason "leaked on slack"
 
 ## Cloud deploy
 
-[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/new/template?template=https://github.com/soma-ai/SOMA&envs=SOMA_API_KEY)
-[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/soma-ai/SOMA)
+[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/new/template?template=https://github.com/danthi123/soma&envs=SOMA_API_KEY)
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/danthi123/soma)
 
-Fly.io: `fly launch --from https://github.com/soma-ai/SOMA --copy-config`. Kubernetes (Helm 3.14+): `helm install soma oci://ghcr.io/soma-ai/charts/soma --version 0.1.0` — runbook in [`docs/deployment-k8s.md`](docs/deployment-k8s.md). Per-platform notes: [`docs/deployment-cloud.md`](docs/deployment-cloud.md). Minimum tier: 2 GB RAM.
+Fly.io: `fly launch --from https://github.com/danthi123/soma --copy-config`. Kubernetes (Helm 3.14+): a Helm chart ships under `deploy/helm/` — `helm install soma deploy/helm/soma` — runbook in [`docs/deployment-k8s.md`](docs/deployment-k8s.md). Per-platform notes: [`docs/deployment-cloud.md`](docs/deployment-cloud.md). Minimum tier: 2 GB RAM.
 
 ## Development
 

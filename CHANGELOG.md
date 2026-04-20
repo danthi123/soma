@@ -11,6 +11,72 @@ New sections land at the top; released versions carry an ISO-8601 date.
 
 _Nothing yet — in-flight work lands here before the next tag._
 
+## [0.2.0rc2] — 2026-04-20
+
+Documentation and metadata fixes over 0.2.0rc1. No behavioural or
+API changes — same tests, same imports, same wheel surface. Re-cut
+because 0.2.0rc1 shipped with broken repo URLs and inaccuracies in
+its own M1 and Path B narratives that surfaced during a post-upload
+audit.
+
+### Fixed
+
+- **PyPI `[project.urls]`** — all five entries (Homepage / Repository /
+  Documentation / Changelog / Issues) now point at
+  `github.com/danthi123/soma`. The 0.2.0rc1 upload sent them to
+  `dant123/soma`, which 404'd on the PyPI project page — the `dant123`
+  handle is the Gitea username, not the GitHub org.
+- **README deploy buttons + Fly/Helm references** — Railway and Render
+  buttons, the Fly `fly launch` command, and the Helm-install hint all
+  pointed to `github.com/soma-ai/SOMA`, an org that doesn't exist.
+  Updated to `danthi123/soma`. The Helm hint now points at the in-tree
+  `deploy/helm/soma/` chart instead of an aspirational
+  `ghcr.io/soma-ai/charts/soma` registry that was never published.
+- **`clients/typescript/package.json`** — the three `github.com/soma-ai`
+  URLs (homepage / repository / bugs) corrected to `danthi123/soma`.
+  The `@soma-ai/client` npm scope is left in place; it remains
+  aspirational until the package actually publishes to npm.
+- **CHANGELOG 0.2.0rc1 M1 section (below) rewritten for accuracy.** The
+  original shipped:
+  - "three independent judges: qwen-4b-judge, qwen-9b-judge,
+    claude-judge" — actually three **evaluation methods** (direct
+    Token-F1 + qwen-as-judge + Claude-as-judge). qwen-9b is a
+    responder cross-check, not a judge, and its F1 is +22.0 % not
+    +22.8 %.
+  - "+22.8 % F1 on LongMemEval N=500" — the milestone headline is
+    `+22.8 % F1 and +15.6 % rank-1`; the rank-1 half was dropped.
+  - `End-to-end evidence roundup in research/hybrid_retrieval/` — that
+    directory doesn't exist. Actual roundup:
+    `research/developmental/results/longmemeval_full_evidence_roundup.md`.
+    Milestone doc: `docs/milestones/2026-04-20-hybrid-retrieval-validated.md`.
+- **CHANGELOG 0.2.0rc1 Path B section (below) rewritten for accuracy.**
+  The original shipped:
+  - "Phase 1: CA3 simulator pattern-separation ceiling (sep = 1.00 on
+    clean patterns) — synthetic primitives work in isolation but can't
+    be ported to retrieval." — sep ratio 1.00 means **no separation**
+    (within ≈ between), a FAIL, not a ceiling. Phase 1 tested the
+    sim's CA3 preset, not synthetic primitives (those were Phase 2).
+  - "Phase 3: ΔR@1 = 0.66× baseline" — 0.660 is the **absolute rank-1**
+    of hybrid+sparse, not a ratio. The correct framing is `rank-1 drops
+    0.790 → 0.660 (−16.4 pp)`; the ratio is 0.835×, not 0.66×.
+
+### Added
+
+- **M1 callout at the top of the README**, directly under the pitch,
+  so the PyPI landing page leads with the +22.8 % F1 / +15.6 % rank-1
+  headline and links to the milestone doc + evidence roundup.
+  Previously the README's scientific content was a LoCoMo-only
+  recall-boosters table further down, burying the flagship cross-
+  benchmark result.
+- **README install section covers all runtime-useful extras.** The
+  "Everything" line was missing `chroma`, `pgvector`, `s3`, `gcs` —
+  four of the most important adapters. Added a dedicated "Alternative
+  vector backends" block covering all five pluggable adapters
+  (Qdrant / LanceDB / Chroma / pgvector), a "Cloud object-store
+  bundles" block covering s3/gcs URLs, and a PyPI install note
+  (`pip install "soma-memory"`) pointing out that distribution name
+  differs from import name.
+
 ## [0.2.0rc1] — 2026-04-20
 
 First release candidate for the 0.2 line. Cuts an actual PyPI
@@ -82,12 +148,23 @@ _(All items below landed in the 0.1 → 0.2 window and are restated
 here as the headline for 0.2.0rc1. Commit-level detail lives in
 the pre-existing entries further down this file.)_
 
-- **+22.8 % F1 on LongMemEval N=500** — hybrid retrieval (BM25 +
-  cosine, α=0.30) cross-validated against three independent
-  judges: qwen-4b-judge (+22.2 %), qwen-9b-judge (+22.8 %),
-  claude-judge (+23.7 %). End-to-end evidence roundup in
-  `research/hybrid_retrieval/` and
-  `research/developmental/results/`.
+- **+22.8 % F1 and +15.6 % rank-1 on LongMemEval N=500** — hybrid
+  retrieval (BM25 + cosine, α=0.30) over a Chroma-cosine baseline,
+  same embedder, same LLM, matched context budgets. The ~22 % F1
+  headline is cross-validated three ways by three independent
+  **evaluation methods**: direct Token-F1 (+22.8 %), qwen-as-judge
+  (+22.2 %), and Claude-as-judge (+23.7 %). Authoritative milestone
+  doc: `docs/milestones/2026-04-20-hybrid-retrieval-validated.md`.
+  End-to-end evidence roundup:
+  `research/developmental/results/longmemeval_full_evidence_roundup.md`.
+- **Six validation axes**, all reproducible in the repo: cross-LLM
+  sanity check (qwen-4b → qwen-9b: +22.8 % → +22.0 % F1;
+  qwen-4b → Claude: +22.8 % → +14.7 % F1 against Claude's
+  harder baseline), cross-embedder (SBERT → mxbai: +15.6 % → +45 %
+  rank-1), cross-benchmark (LongMemEval → LoCoMo: +15.6 % → +88.7 %
+  rank-1), cross-judge (qwen-judge → Claude-judge: +22.2 % → +23.7 %),
+  and an α sweep confirming α=0.30 optimal at N=500. Each axis has a
+  dedicated findings doc under `research/developmental/results/`.
 - **LoCoMo QA eval with LLM-as-judge**, conversational
   threshold-calibration sweep, paper-draft §4.4/§4.5 — see
   "Added — benchmarks" section below for the detailed commit
@@ -97,16 +174,25 @@ the pre-existing entries further down this file.)_
 
 - **Path B (bio-inspired sparse codes on retrieval) — NO-GO,
   documented**. Three-phase evidence trail:
-  - Phase 1: CA3 simulator pattern-separation ceiling (sep = 1.00
-    on clean patterns) — synthetic primitives work in isolation
-    but can't be ported to retrieval.
-  - Phase 2: SOMA-native `sparse_codes.py` module
-    (`SparseCode` dataclass, `kwta`, `pattern_separate`,
-    `code_similarity`) — 14 TDD tests GREEN, synthetic lift of
-    5.66× observed, but didn't transfer to natural-language
-    embeddings.
-  - Phase 3: LongMemEval probe (N=100) with random-projection
-    k-WTA ranker — ΔR@1 = 0.66× baseline → NO-GO.
+  - Phase 1 — sim CA3 baseline: NO-GO. The neural-simulator's
+    `HIPPOCAMPUS_CA3_RECURRENT` preset produced **separation
+    ratio 1.00** at n=500 (within-concept Jaccard ≈ between-concept
+    Jaccard — no separation), so the sim could not serve as a
+    calibration target for the retrieval primitives.
+  - Phase 2 — numpy sparse-code primitives: GREEN in isolation.
+    SOMA-native `sparse_codes.py` (`SparseCode` dataclass,
+    `kwta`, `pattern_separate`, `code_similarity`) produced
+    separation ratio **5.66** on synthetic calibration (50
+    concepts × 10 trials, embed_dim=1024, k=32 / dim=4096,
+    sparsity 0.78 %). 14 TDD tests GREEN.
+  - Phase 3 — LongMemEval N=100 probe with random-projection
+    k-WTA ranker: NO-GO. Adding a sparse-overlap score to the
+    shipping hybrid retrieval **dropped rank-1 from 0.790 to
+    0.660 (−16.4 pp)**; sparse_only alone scored 0.340. Paired
+    analysis: sparse loses 27×, wins 5×, ties 68×. Root cause:
+    random-projection k-WTA is not locality-sensitive — small
+    perturbations flip which dims are "top" so similar inputs
+    produce disjoint sparse codes.
   - Full writeup: `research/developmental/results/path_b_closure_summary.md`.
   - Follow-up plans (extended benchmarks + engram tagging)
     preserved for later in `docs/plans/2026-04-20-path-b-followups-deferred.md`.

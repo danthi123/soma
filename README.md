@@ -54,6 +54,17 @@ mem = MemoryLayer.load("my-brain/")                   # resume anywhere
 
 For the end-to-end agent flow — `soma serve`, JWT issue + revoke, `ConversationalMemory` fact extraction, multi-user scoping, Grafana dashboard import — see [`docs/quickstart.md`](docs/quickstart.md).
 
+## Runnable examples
+
+Self-contained scripts under [`examples/`](examples/) that exercise the core API end-to-end:
+
+- [`01_quickstart.py`](examples/01_quickstart.py) — the 10-line Python API tour (store, retrieve, save/load round-trip with metadata filters).
+- [`02_persistent_chat_agent.py`](examples/02_persistent_chat_agent.py) — chat agent whose memory survives process restarts. Stub LLM inline; hook your own with ~5 lines.
+- [`03_multi_tenant_bundle.py`](examples/03_multi_tenant_bundle.py) — one process, many isolated per-tenant bundles, with a cross-tenant-leak check.
+- [`cloud_s3_demo.py`](examples/cloud_s3_demo.py) — round-trip a bundle through `s3://` object storage.
+
+Run any of them with `python examples/<name>.py` after `pip install -e ".[sbert]"`.
+
 ## How it compares
 
 | Capability                                     | Chroma | Mem0 / Zep | Pinecone | **SOMA** |

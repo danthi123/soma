@@ -129,6 +129,46 @@ The `single-session-preference` ties (N=30) are the documented
 benchmark-mismatch case — gold is itself a paraphrased preference
 sentence; both systems score F1 ~0.03.
 
+## The ranking mechanism, mechanistically
+
+Why does rank-within-top-5 matter when `hit_at_k=1` says gold is
+present? Because `hit_at_k` is computed on top-5 session IDs, but the
+LLM only sees sessions that fit in the 3,800-token budget. And
+LongMemEval sessions average **2,491 tokens** (measured on first 20
+items, 980 sessions) — so `_pack_context(3800)` typically fits **~1.5
+sessions**. Top-ranked sessions get the full text; rank 3-5 often get
+truncated to nothing.
+
+Measured:
+
+```
+mean chars/session:   9963
+median chars/session: 9907
+tokens/session ≈ 2491
+3800-token budget ≈ 15200 chars
+sessions that fit: ~1.53 on average
+```
+
+Consequence: if chroma retrieves gold at rank 4-5, the gold session
+is dropped from the packed context entirely, even though
+`hit_at_k=1`. SOMA's hybrid scoring pushes gold to rank 1-2 where it
+actually fits.
+
+Partial direct measurement (chroma, N=190 via `rank_probe.py`):
+
+| Gold rank | count | % of hits |
+| ---: | ---: | ---: |
+| 1 | 134 | 79% |
+| 2 | 18 | 11% |
+| 3 | 6 | 4% |
+| 4 | 7 | 4% |
+| 5 | 4 | 2% |
+
+21% of chroma's "hits" have gold at rank 2-5 where partial or full
+truncation is the outcome. A full rank-distribution comparison
+between chroma and SOMA will quantify this precisely (probe run at
+190/500 when halted for other work; resumable).
+
 ## "I don't know" asymmetry — direct evidence for the ranking mechanism
 
 If Mechanism 2 is real — i.e. SOMA's hybrid puts gold at rank 1-2 and

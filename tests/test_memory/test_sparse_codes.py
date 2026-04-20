@@ -126,7 +126,7 @@ class TestPatternSeparate:
             overlaps.append(code_similarity(codes[0], codes[1]))
 
         # Non-increasing sequence.
-        for prev, curr in zip(overlaps[:-1], overlaps[1:]):
+        for prev, curr in zip(overlaps[:-1], overlaps[1:], strict=False):
             assert curr <= prev + 1e-9, f"overlap increased at higher strength: {overlaps}"
 
     def test_pattern_separate_preserves_dim(self):

@@ -60,7 +60,6 @@ class TestBasic:
         """Should never create a duplicate edge in the same direction."""
         graph, a, b = _make_pair(config)
         # Pre-insert a -> b.
-        from soma.core.edge import Edge
 
         graph.add_edge(
             Edge(

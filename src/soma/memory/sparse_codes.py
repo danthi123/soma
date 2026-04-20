@@ -22,8 +22,8 @@ score (sparse-overlap) alongside cosine and BM25.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Iterable, Sequence
+from collections.abc import Sequence
+from dataclasses import dataclass
 
 import numpy as np
 

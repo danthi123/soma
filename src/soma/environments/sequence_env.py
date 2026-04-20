@@ -19,7 +19,6 @@ from dataclasses import dataclass, field
 
 import torch
 
-
 Regime = Callable[[torch.Tensor, torch.Generator], torch.Tensor]
 
 

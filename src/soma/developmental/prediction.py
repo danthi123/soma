@@ -54,7 +54,6 @@ class PredictiveSOMA(nn.Module):
         # learnable nn.Parameters. Type is chosen once at init and
         # preserved across neurogenesis-triggered _ensure_projection calls.
         self._input_projections: dict[str, torch.Tensor] = {}
-        dim = config.sensor_output_dim
         gen = torch.Generator()
         if config.seed is not None:
             gen.manual_seed(config.seed + 13)
@@ -1089,7 +1088,7 @@ class PredictiveSOMA(nn.Module):
         neg_fps = torch.stack([self._activation_store[s].detach() for s in negatives[:8]])
 
         # Project query embedding to fingerprint space for comparison
-        query_fp = self._get_node_fingerprint()  # detached from graph
+        self._get_node_fingerprint()  # detached from graph
 
         # The loss: we want query_fp to be close to pos_fps and far
         # from neg_fps. But query_fp is detached from the encoder.

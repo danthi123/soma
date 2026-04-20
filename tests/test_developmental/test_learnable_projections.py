@@ -96,7 +96,7 @@ class TestProjectionParameters:
         cfg = _tiny_config(projection_mode="learnable")
         ps = PredictiveSOMA(cfg, device=torch.device("cpu"))
         assert len(ps._input_projections) > 0
-        for node_id, proj in ps._input_projections.items():
+        for _node_id, proj in ps._input_projections.items():
             assert isinstance(proj, torch.nn.Parameter), (
                 f"learnable mode should produce nn.Parameter, got {type(proj)}"
             )
@@ -155,7 +155,7 @@ class TestGradientFlow:
         but NOT via backprop."""
         cfg = _tiny_config(projection_mode="frozen_random")
         ps = PredictiveSOMA(cfg, device=torch.device("cpu"))
-        before = {
+        {
             nid: proj.detach().clone()
             for nid, proj in ps._input_projections.items()
         }
@@ -164,7 +164,7 @@ class TestGradientFlow:
         # updates: zero competitive_learning lr effectively.
         for _ in range(3):
             ps.process_input(inp)
-        for nid, proj in ps._input_projections.items():
+        for _nid, proj in ps._input_projections.items():
             # Some drift from Hebbian is allowed; assert the tensor
             # type is still a plain Tensor and not something that
             # backprop modified.

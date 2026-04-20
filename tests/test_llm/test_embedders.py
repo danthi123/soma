@@ -44,9 +44,8 @@ class TestOllamaEmbedder:
         with patch(
             "soma.llm.embedders.urllib.request.urlopen",
             side_effect=urllib.error.URLError("connection refused"),
-        ):
-            with pytest.raises(RuntimeError, match="Ollama"):
-                embedder.embed("hello")
+        ), pytest.raises(RuntimeError, match="Ollama"):
+            embedder.embed("hello")
 
     def test_embed_batch_returns_stacked_tensor(self) -> None:
         from soma.llm.embedders import OllamaEmbedder

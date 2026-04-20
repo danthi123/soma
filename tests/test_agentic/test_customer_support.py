@@ -71,7 +71,7 @@ class TestCustomerSupport:
     def test_escalate(self) -> None:
         task = CustomerSupportTask(seed=0)
         task.setup()
-        result = task.execute_action(json.dumps({
+        task.execute_action(json.dumps({
             "tool": "escalate",
             "arguments": {"reason": "Complex multi-system issue"},
         }))
@@ -81,7 +81,7 @@ class TestCustomerSupport:
     def test_resolve(self) -> None:
         task = CustomerSupportTask(seed=0)
         task.setup()
-        result = task.execute_action(json.dumps({
+        task.execute_action(json.dumps({
             "tool": "resolve",
             "arguments": {
                 "solution": (

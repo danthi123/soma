@@ -863,6 +863,7 @@ class PredictiveSOMA(nn.Module):
                 "last_prediction": (
                     self._last_prediction.cpu() if self._last_prediction is not None else None
                 ),
+                "initial_position_norms": dict(self._initial_position_norms),
             },
             save_dir / "predictive_state.pt",
         )
@@ -906,22 +907,56 @@ class PredictiveSOMA(nn.Module):
                 self._input_projections[k] = torch.nn.Parameter(tensor)
             else:
                 self._input_projections[k] = tensor
+        # Direction 4b: reconstruct learnable positions as Parameters.
+        # SOMA reloads node.position as a plain Tensor — rewrap so
+        # the position-coupling loss can still gradient-update it.
+        raw_norms = state.get("initial_position_norms", {})
+        self._initial_position_norms = dict(raw_norms)
+        if self.config.position_mode == "learnable":
+            from soma.core.node import NodeType
+
+            for node in self.soma.graph.all_nodes():
+                if node.node_type != NodeType.ASSOCIATOR:
+                    continue
+                if node.position is None:
+                    continue
+                if not isinstance(node.position, torch.nn.Parameter):
+                    node.position = torch.nn.Parameter(
+                        node.position.detach().clone().to(self.device)
+                    )
+                # Fallback for pre-4b checkpoints missing norms: seed
+                # from current norm so norm-preservation still works.
+                if node.id not in self._initial_position_norms:
+                    self._initial_position_norms[node.id] = node.position.norm().item()
         # Rebuild the optimizer so reloaded Parameter instances are
         # actually optimized (old optimizer references the old instances).
         if self.config.projection_mode == "learnable":
-            self._pred_optimizer = torch.optim.Adam(
-                [
-                    {"params": list(self.prediction_head.parameters()), "lr": 0.0003},
-                    {
-                        "params": [
-                            p
-                            for p in self._input_projections.values()
-                            if isinstance(p, torch.nn.Parameter)
-                        ],
-                        "lr": self.config.projection_lr,
-                    },
-                ]
-            )
+            position_params: list[torch.nn.Parameter] = []
+            if self.config.position_mode == "learnable":
+                from soma.core.node import NodeType
+
+                for node in self.soma.graph.all_nodes():
+                    if node.node_type == NodeType.ASSOCIATOR and isinstance(
+                        node.position, torch.nn.Parameter
+                    ):
+                        position_params.append(node.position)
+
+            param_groups: list[dict[str, Any]] = [
+                {"params": list(self.prediction_head.parameters()), "lr": 0.0003},
+                {
+                    "params": [
+                        p
+                        for p in self._input_projections.values()
+                        if isinstance(p, torch.nn.Parameter)
+                    ],
+                    "lr": self.config.projection_lr,
+                },
+            ]
+            if position_params:
+                param_groups.append(
+                    {"params": position_params, "lr": self.config.projection_lr}
+                )
+            self._pred_optimizer = torch.optim.Adam(param_groups)
         self._win_counts = state.get("win_counts", {})
         self._last_summary = (
             state["last_summary"].to(self.device) if state["last_summary"] is not None else None

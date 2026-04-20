@@ -327,6 +327,54 @@ class TestPositionCouplingLoss:
             )
 
 
+class TestSaveLoadPositions:
+    def test_learnable_positions_survive_round_trip(self, tmp_path) -> None:
+        """Save → load reconstructs positions as nn.Parameters with the
+        same values and registered with the optimizer."""
+        cfg = _spatial_config()
+        pred = PredictiveSOMA(config=cfg)
+
+        teacher = MagicMock()
+        teacher.name = "fake"
+        teacher.embed.return_value = torch.randn(1024)
+        pred.attach_teacher(teacher)
+
+        # Run a few steps to move positions
+        x = torch.randn(cfg.sensor_output_dim)
+        for step in range(3):
+            pred.process_input(x, source_text=f"t{step}")
+
+        # Capture state
+        from soma.core.node import NodeType
+        before = {
+            n.id: n.position.detach().clone()
+            for n in pred.soma.graph.all_nodes()
+            if n.node_type == NodeType.ASSOCIATOR
+        }
+
+        save_dir = tmp_path / "pred_state"
+        pred.save(str(save_dir))
+
+        # Fresh instance, same config, load
+        pred2 = PredictiveSOMA(config=cfg)
+        pred2.load(str(save_dir))
+
+        for nid, p0 in before.items():
+            assert nid in pred2.soma.graph.nodes
+            loaded = pred2.soma.graph.nodes[nid].position
+            assert isinstance(loaded, torch.nn.Parameter)
+            assert torch.allclose(loaded.detach(), p0.to(loaded.device), atol=1e-5)
+
+        # Reloaded positions should be in optimizer
+        opt_params = set()
+        for g in pred2._pred_optimizer.param_groups:
+            for p in g["params"]:
+                opt_params.add(id(p))
+        for node in pred2.soma.graph.all_nodes():
+            if node.node_type == NodeType.ASSOCIATOR:
+                assert id(node.position) in opt_params
+
+
 class TestNormPreservation:
     def test_position_norms_preserved_across_steps(self) -> None:
         """After each optimizer step, each position should be rescaled

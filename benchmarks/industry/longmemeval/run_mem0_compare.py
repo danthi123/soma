@@ -57,6 +57,24 @@ CHARS_PER_TOKEN = 4
 RESULTS_DIR = Path("benchmarks/industry/longmemeval/results")
 
 
+SYSTEM_PROMPT_VERBOSE = (
+    "You are an AI assistant that recalls information from past conversations. "
+    "Answer the question using ONLY the evidence provided. Be concise and direct. "
+    "If the evidence does not contain the answer, say 'I don't know'."
+)
+
+SYSTEM_PROMPT_STRICT = (
+    "Answer with ONLY the specific fact in 1-5 words. "
+    "No explanation, no preamble (e.g. 'Based on...', 'According to...'). "
+    "Extract the single value that answers the question. "
+    "If the evidence does not contain the answer, reply exactly 'I don't know'. "
+    "Examples:\n"
+    "  Question: What's my favorite brand?  Answer: Nike\n"
+    "  Question: How many pages are left?  Answer: 190\n"
+    "  Question: Where did I travel?  Answer: Hawaii"
+)
+
+
 def _call_llm(
     context: str,
     question: str,
@@ -64,13 +82,12 @@ def _call_llm(
     *,
     api_base: str,
     model: str,
+    strict_prompt: bool = False,
 ) -> str:
     import requests
 
     system_prompt = (
-        "You are an AI assistant that recalls information from past conversations. "
-        "Answer the question using ONLY the evidence provided. Be concise and direct. "
-        "If the evidence does not contain the answer, say 'I don't know'."
+        SYSTEM_PROMPT_STRICT if strict_prompt else SYSTEM_PROMPT_VERBOSE
     )
     user_msg = ""
     if context.strip():
@@ -127,7 +144,7 @@ def _session_text(session, session_date: str) -> str:
 
 
 def _run_mem0(item: LongMemEvalItem, *, api_base: str, model: str, top_k: int,
-              user_id: str, infer: bool) -> dict[str, Any]:
+              user_id: str, infer: bool, strict_prompt: bool = False) -> dict[str, Any]:
     from mem0 import Memory
 
     # Ephemeral tmp dir per item (Mem0 stores to disk)
@@ -184,7 +201,7 @@ def _run_mem0(item: LongMemEvalItem, *, api_base: str, model: str, top_k: int,
     t_llm = time.perf_counter()
     answer = _call_llm(
         context, item.question, item.question_date,
-        api_base=api_base, model=model,
+        api_base=api_base, model=model, strict_prompt=strict_prompt,
     )
     llm_ms = (time.perf_counter() - t_llm) * 1000
 
@@ -208,7 +225,8 @@ def _run_mem0(item: LongMemEvalItem, *, api_base: str, model: str, top_k: int,
 
 
 def _run_soma(item: LongMemEvalItem, *, sbert_model, dim: int, embed_fn,
-              api_base: str, model: str, top_k: int) -> dict[str, Any]:
+              api_base: str, model: str, top_k: int,
+              strict_prompt: bool = False) -> dict[str, Any]:
     from soma.memory import MemoryLayer
 
     t_ing = time.perf_counter()
@@ -232,7 +250,7 @@ def _run_soma(item: LongMemEvalItem, *, sbert_model, dim: int, embed_fn,
     t_llm = time.perf_counter()
     answer = _call_llm(
         context, item.question, item.question_date,
-        api_base=api_base, model=model,
+        api_base=api_base, model=model, strict_prompt=strict_prompt,
     )
     llm_ms = (time.perf_counter() - t_llm) * 1000
 
@@ -259,6 +277,8 @@ def main() -> None:
     p.add_argument("--api-base", default=DEFAULT_API_BASE)
     p.add_argument("--top-k", type=int, default=5)
     p.add_argument("--out-suffix", default="")
+    p.add_argument("--strict-prompt", action="store_true",
+                   help="Use strict 1-5 word answer prompt (matches run_qa_compare)")
     args = p.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
@@ -287,17 +307,20 @@ def main() -> None:
                     row = _run_mem0(
                         item, api_base=args.api_base, model=args.model,
                         top_k=args.top_k, user_id=item.question_id, infer=True,
+                        strict_prompt=args.strict_prompt,
                     )
                 elif mode == "mem0_raw":
                     row = _run_mem0(
                         item, api_base=args.api_base, model=args.model,
                         top_k=args.top_k, user_id=item.question_id, infer=False,
+                        strict_prompt=args.strict_prompt,
                     )
                 elif mode == "soma_hybrid":
                     row = _run_soma(
                         item, sbert_model=sbert, dim=dim, embed_fn=embed_fn,
                         api_base=args.api_base, model=args.model,
                         top_k=args.top_k,
+                        strict_prompt=args.strict_prompt,
                     )
                 else:
                     raise ValueError(f"unknown mode: {mode}")

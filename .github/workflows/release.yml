@@ -1,0 +1,117 @@
+name: release
+
+# Publishes tagged versions to PyPI via trusted-publisher OIDC.
+#
+# Trigger: push a semver tag (``v0.2.0rc1`` / ``v0.2.0`` / ``v0.3.0``).
+# ``release`` and ``workflow_dispatch`` are also accepted so a maintainer
+# can cut a release from the GitHub UI without pushing a tag first
+# (useful for republishing after a broken upload).
+#
+# How the PyPI trust is established:
+#
+# 1. On PyPI, add a Trusted Publisher entry for this repo:
+#      - Owner:       dant123
+#      - Repository:  soma
+#      - Workflow:    release.yml
+#      - Environment: pypi
+#    (No API token needs to be stored in GitHub secrets — the OIDC
+#    handshake between GitHub Actions and PyPI replaces tokens
+#    entirely.)
+#
+# 2. The ``environment: pypi`` stanza below activates the trust
+#    relationship. GitHub mints a short-lived OIDC token, PyPI
+#    verifies the workflow identity, and ``pypa/gh-action-pypi-publish``
+#    uploads using that token.
+#
+# First-release bootstrap:
+#   The initial cut of the project can't use trusted-publisher OIDC
+#   (the PyPI project doesn't exist yet; OIDC can't claim a name that
+#   hasn't been registered). One option: publish ``0.2.0rc1`` manually
+#   with ``python -m build && twine upload``, configure the trusted
+#   publisher on the new PyPI project page, then let this workflow
+#   drive every subsequent release.
+#
+# Dry-run:
+#   Pushing a tag shaped like ``vTEST-*`` (e.g. ``vTEST-0.2.0``) skips
+#   the actual upload and only builds + uploads artefacts to the
+#   workflow run, so a maintainer can verify the wheel/sdist shape
+#   before the first real publish.
+
+on:
+  push:
+    tags:
+      - "v*"
+  release:
+    types: [published]
+  workflow_dispatch:
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build sdist + wheel
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history so setuptools_scm (if we ever adopt it) sees
+          # the tag. Harmless without it.
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install build tooling
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install --upgrade build twine
+
+      - name: Build sdist + wheel
+        run: python -m build
+
+      - name: Verify metadata with twine
+        # ``twine check`` catches the common PyPI-rejection reasons
+        # (missing long-description, malformed metadata, invalid
+        # classifiers) before we attempt the upload.
+        run: python -m twine check dist/*
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+          retention-days: 14
+
+  publish:
+    name: Publish to PyPI
+    needs: build
+    runs-on: ubuntu-latest
+    # Skip the actual upload for ``vTEST-*`` tags — lets maintainers
+    # validate the build pipeline end-to-end without touching PyPI.
+    if: ${{ !startsWith(github.ref_name, 'vTEST-') }}
+    environment:
+      name: pypi
+      url: https://pypi.org/p/soma-memory
+    permissions:
+      # Required for the OIDC handshake with PyPI.
+      id-token: write
+    steps:
+      - name: Download built artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          # print-hash ensures the run log records the sha256 of each
+          # uploaded file — useful for release notes.
+          print-hash: true

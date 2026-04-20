@@ -2,7 +2,168 @@
 
 All notable changes to SOMA are documented here.
 
-## [Unreleased] — 2026-04-16
+This project uses [Semantic Versioning](https://semver.org/). Entries
+follow the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
+structure (Added / Changed / Deprecated / Removed / Fixed / Security).
+New sections land at the top; released versions carry an ISO-8601 date.
+
+## [Unreleased]
+
+_Nothing yet — in-flight work lands here before the next tag._
+
+## [0.2.0rc1] — 2026-04-20
+
+First release candidate for the 0.2 line. Cuts an actual PyPI
+distribution (`pip install soma-memory`), headlined by the **M1 hybrid
+retrieval milestone** (+22.8 % F1 on LongMemEval N=500, validated
+across three independent judges), alongside a sweep of developer
+ergonomics meant to make the package usable by callers who have
+never read the source. Also closes the Path B "bio-inspired sparse
+retrieval" research direction with a full negative-result writeup
+and marks the start of Path A (artificial-life-first) replanning.
+
+### Added — release artifacts + packaging
+
+- **PyPI distribution name: `soma-memory`** (`pyproject.toml`).
+  The import name stays `soma`, following the scikit-learn pattern
+  (`pip install scikit-learn` → `import sklearn`). The bare `soma`
+  name on PyPI is held by an unrelated package, so we switched
+  distributions without touching the in-source module namespace.
+  All install hints across the repo (`ImportError` strings,
+  docstrings) updated in lockstep to say
+  `pip install 'soma-memory[...]'`.
+- **Project metadata for a credible PyPI listing**: `readme`,
+  `authors`, `keywords`, `classifiers` (Development Status :: 4 -
+  Beta, Python 3.11/3.12, MIT, AI / Libraries / Typed), and a
+  `[project.urls]` block with Homepage / Repository / Docs /
+  Changelog / Issues.
+- **`.github/workflows/release.yml`** — trusted-publisher OIDC
+  PyPI workflow. Fires on `v*` tag push, builds via `python -m
+  build`, publishes via `pypa/gh-action-pypi-publish`. No API
+  tokens stored in GitHub secrets — PyPI's modern OIDC flow means
+  the workflow identity IS the publisher.
+- **Changelog structure** — Keep-a-Changelog layout with a
+  persistent `[Unreleased]` placeholder at the top so the rhythm
+  is: commit → append under `[Unreleased]` → rename header on
+  release → fresh `[Unreleased]` added back. Documented in this
+  very entry so we can't forget.
+
+### Added — developer ergonomics (release-audit fixes)
+
+- **`MemoryLayer.load_with_sbert(src, *, model_name=None)`** —
+  symmetric partner to the existing :meth:`with_sbert`. Callers who
+  built a brain with `MemoryLayer.with_sbert()` can now round-trip
+  through `save()` → `load_with_sbert()` without rebuilding the
+  sbert closure by hand. The sbert model name is persisted into
+  `memory_index.json` (new `sbert_model_name` field) at save time
+  so the matching load helper auto-detects it; bundles saved
+  before 0.2 still work via the default-model fallback. Backed by
+  7 tests in `tests/test_memory/test_sbert_helpers.py`.
+- **`ChromaBackend(..., embed_dim=N)`** — `embed_dim` is now the
+  canonical dimension kwarg, matching :class:`MemoryLayer`'s
+  constructor and every other backend in the adapter lineup. The
+  legacy `dim=N` spelling still works for existing callers;
+  supplying both with conflicting values now raises a clear
+  `ValueError` instead of silently preferring one. Backed by 4
+  tests in `tests/test_memory/test_chroma_embed_dim_alias.py`.
+- **Chroma telemetry silenced by default** — `ChromaBackend`
+  instantiates its `PersistentClient` with
+  `Settings(anonymized_telemetry=False)`, suppressing the
+  "Failed to send telemetry event ..." stdout spam that chromadb
+  otherwise emits on every collection event when its posthog
+  endpoint is blocked (common in private networks / CI).
+  Operators who want telemetry can still pass a pre-built
+  `client=` with custom `Settings`. Matches SOMA's local-first
+  default.
+
+### Added — M1 hybrid-retrieval milestone
+
+_(All items below landed in the 0.1 → 0.2 window and are restated
+here as the headline for 0.2.0rc1. Commit-level detail lives in
+the pre-existing entries further down this file.)_
+
+- **+22.8 % F1 on LongMemEval N=500** — hybrid retrieval (BM25 +
+  cosine, α=0.30) cross-validated against three independent
+  judges: qwen-4b-judge (+22.2 %), qwen-9b-judge (+22.8 %),
+  claude-judge (+23.7 %). End-to-end evidence roundup in
+  `research/hybrid_retrieval/` and
+  `research/developmental/results/`.
+- **LoCoMo QA eval with LLM-as-judge**, conversational
+  threshold-calibration sweep, paper-draft §4.4/§4.5 — see
+  "Added — benchmarks" section below for the detailed commit
+  trail.
+
+### Added — Path B closure + Path A replanning
+
+- **Path B (bio-inspired sparse codes on retrieval) — NO-GO,
+  documented**. Three-phase evidence trail:
+  - Phase 1: CA3 simulator pattern-separation ceiling (sep = 1.00
+    on clean patterns) — synthetic primitives work in isolation
+    but can't be ported to retrieval.
+  - Phase 2: SOMA-native `sparse_codes.py` module
+    (`SparseCode` dataclass, `kwta`, `pattern_separate`,
+    `code_similarity`) — 14 TDD tests GREEN, synthetic lift of
+    5.66× observed, but didn't transfer to natural-language
+    embeddings.
+  - Phase 3: LongMemEval probe (N=100) with random-projection
+    k-WTA ranker — ΔR@1 = 0.66× baseline → NO-GO.
+  - Full writeup: `research/developmental/results/path_b_closure_summary.md`.
+  - Follow-up plans (extended benchmarks + engram tagging)
+    preserved for later in `docs/plans/2026-04-20-path-b-followups-deferred.md`.
+- **Path A replanned as artificial-life-first**
+  (`docs/plans/2026-04-20-path-a-alife-replan.md`) — four
+  experiments (STDP attractor, spontaneous trajectory, sleep
+  replay, structural plasticity) with Experiment A (STDP
+  attractor) launched in the background as
+  `research/developmental/experiments/sim_stdp_attractor.py`.
+  Findings doc to follow in a subsequent release.
+
+### Added — CI
+
+- **GitHub Actions as the active CI platform**:
+  `.github/workflows/test.yml` (pytest matrix on Python 3.11 +
+  3.12, installs `.[dev,sbert,serve,metrics,ann]`, default marker
+  excludes `slow` / `cuda` / `quant` / `slow_qdrant` /
+  `slow_pgvector` / `slow_s3` / `slow_gcs`) and
+  `.github/workflows/lint.yml` (ruff==0.15.10, `ruff check`;
+  format-check deferred pending the repo-wide reformat commit).
+- **`.gitea/workflows/` kept dormant** with a revival README
+  (`.gitea/workflows/README.md`) documenting runner-setup
+  checklist, workflow-by-workflow review-round items, and a
+  diverge-or-mirror decision tree for when GPU-bound or
+  S3-integration workflows want a self-hosted home. Dormant
+  workflow files (`bench-regression.yml`, `client-ts.yml`,
+  `helm.yml`, `helm-release.yml`) retained because their
+  concerns have no GitHub equivalent yet.
+
+### Added — runnable examples
+
+- **`examples/01_quickstart.py`** — 10-line Python API tour
+  (store / retrieve / save / load round-trip, metadata filters,
+  semantic retrieval). Runs on `pip install -e ".[sbert]"` with
+  no other setup.
+- **`examples/02_persistent_chat_agent.py`** — chat loop with
+  SOMA as persistent memory across process restarts. Stub LLM
+  replaceable with Ollama / OpenAI / Claude via a single-function
+  swap. `--reset` flag for wiping the brain.
+- **`examples/03_multi_tenant_bundle.py`** — one process, many
+  isolated brains. `TenantRouter` (~30 lines) dispatches
+  store/retrieve per tenant. Includes an isolation-check assertion
+  (`alice`'s facts must not appear in `bob`'s bundle) that fires
+  on cross-tenant leak.
+
+### Changed
+
+- **Install hints everywhere** — all `pip install 'soma[...]'`
+  strings (in `ImportError` messages, docstrings, and tests)
+  rewritten to `pip install 'soma-memory[...]'` to match the new
+  PyPI distribution name.
+- **Ruff baseline cleaned** (17 auto-fixes, commit c741e79) prior
+  to CI landing, so the first CI run was green on a clean repo.
+
+---
+
+## [0.2.0rc1 content inherited from previous Unreleased — 2026-04-16]
 
 ### Added — benchmarks
 

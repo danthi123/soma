@@ -464,12 +464,12 @@ Per question type (strict prompt):
 
 | Type | N | chroma F1 | SOMA F1 | relative lift |
 | --- | ---: | ---: | ---: | ---: |
-| single-session-user | 70 | 0.455 | 0.726 | **+59%** |
+| single-session-user | 70 | 0.482 | 0.767 | **+59%** |
 | multi-session | 133 | 0.113 | 0.154 | +36% |
-| temporal-reasoning | 133 | 0.166 | 0.205 | +23% |
-| knowledge-update | 78 | 0.380 | 0.423 | +11% |
-| single-session-assistant | 56 | 0.766 | 0.765 | tie |
-| single-session-preference | 30 | 0.027 | 0.029 | tie |
+| temporal-reasoning | 133 | 0.188 | 0.231 | +23% |
+| knowledge-update | 78 | 0.408 | 0.451 | +11% |
+| single-session-assistant | 56 | 0.772 | 0.766 | ~tie |
+| single-session-preference | 30 | 0.031 | 0.031 | tie |
 
 `single-session-preference` is a benchmark-mismatch case (gold is
 itself a verbose preference sentence; both score F1 ~0.03). The

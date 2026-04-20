@@ -111,6 +111,29 @@ Reproduce: `benchmarks/industry/longmemeval/run_qa_compare.py
 Full decomposition in
 `research/developmental/results/longmemeval_causation_findings.md`.
 
+### When does hybrid's ranking mechanism matter most?
+
+Both mechanisms (recall + ranking) help retrieval quality. But the
+ranking mechanism's impact depends on the relationship between
+**retrieved-passage length** and **context budget**:
+
+- **Short passages, budget fits top-k comfortably** (e.g. LoCoMo
+  turns at ~50 tokens, budget fits all top-5 easily): only the
+  recall mechanism matters. Ranking within top-5 doesn't change
+  what the LLM sees. Hybrid is still worth using — it lifts R@5 by
+  +17pp on LoCoMo — but the lift comes from catching keyword queries,
+  not from reordering.
+- **Long passages, budget holds ~1 passage** (e.g. LongMemEval
+  sessions at ~2500 tokens, 3.8K budget holds ~1.5): the ranking
+  mechanism dominates. Gold at rank 4-5 literally gets truncated out
+  of context; the LLM then correctly says "I don't know". Hybrid's
+  reordering pulls gold into the budget. This is why LongMemEval
+  shows +23% F1 from hybrid while LoCoMo shows quality parity at
+  the retrieval layer.
+
+Rule of thumb: if `sum(avg_passage_tokens * top_k) > context_budget`,
+you're in the ranking regime and hybrid is doing double duty.
+
 ## Not-yet-shipped — ranked by expected impact
 
 ### 4. In-index metadata filtering at retrieve time — SHIPPED (2026-04-16)

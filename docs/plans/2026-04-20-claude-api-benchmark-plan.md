@@ -139,9 +139,15 @@ Using Claude sonnet 4 (~$3/M input, ~$15/M output):
 
 ### What we learn
 
-Definitive answer to "does the +10% F1 overall and +49% single-session
-story hold with a strong LLM?" If yes, the positioning gets
-strengthened. If no, we need to narrow the claim further.
+Definitive answer to "does the +23% F1 overall / +59% single-session-user
+story hold with Claude?" (Strict-prompt numbers from the 2026-04-20
+N=500 qwen3.5:4b run — strict-prompt update replaced the verbose +10%
+claim.) If yes, the positioning gets strengthened and the
+recall-vs-ranking decomposition gets re-measured on Claude. If
+Claude's IDK rate on chroma contexts is lower than qwen9b's, the
+"ranking mechanism" contribution should shrink (stronger reasoners
+partially compensate for truncation by inferring from adjacent
+context).
 
 ## Experiment 3: Plastic graph activation test (optional)
 

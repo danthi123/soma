@@ -46,18 +46,17 @@ def _headline_table(mode_data: dict[str, dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
-def _pairwise_win_loss(mode_data: dict[str, dict[str, Any]]) -> str:
+def _pairwise_win_loss(mode_data: dict[str, dict[str, Any]], suffix: str) -> str:
     """For each pair of modes, count items where one has strictly higher F1."""
     modes = list(mode_data.keys())
     # Build qid -> {mode: f1} map
     from benchmarks.industry.longmemeval.metrics import token_f1
 
     qid_f1: dict[str, dict[str, float]] = {}
-    for mode, d in mode_data.items():
+    for mode in mode_data:
         # Recompute per-item F1 from predictions (need gold)
         # Load from jsonl which has both hyp and gold
-        jsonl_path = RESULTS_DIR / f"qa_compare_{mode}{d.get('suffix', '')}.jsonl"
-        # If no jsonl available, fall back to predictions
+        jsonl_path = RESULTS_DIR / f"qa_compare_{mode}{suffix}.jsonl"
         if jsonl_path.exists():
             with open(jsonl_path, encoding="utf-8") as f:
                 for line in f:
@@ -138,7 +137,7 @@ def main() -> None:
     print()
     print("## Per-question pairwise comparison")
     print()
-    print(_pairwise_win_loss(mode_data))
+    print(_pairwise_win_loss(mode_data, args.suffix))
 
 
 if __name__ == "__main__":

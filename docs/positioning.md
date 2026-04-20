@@ -107,6 +107,19 @@ substrate for learning to come**. On the benchmarks committed under
   long multi-topic docs (LongMemEval). See
   `research/developmental/results/recall_boost_mxbai_findings.md` and
   `research/developmental/results/longmemeval_retrieval_findings.md`.
+- **+42% F1 end-to-end on LongMemEval QA** — same LLM
+  (qwen3.5:4b-q8_0), same 3.8K-token context budget, only retrieval
+  strategy varies. SOMA hybrid (α=0.3, no rerank) reaches F1=0.238 and
+  R@5=0.990 vs Chroma cosine 0.168 / 0.850 and Chroma + same-reranker
+  0.170 / 0.830 (N=100, first 100 items of LongMemEval small). SOMA
+  strictly wins 27 items, ties 64, loses 9 vs Chroma cosine — i.e.
+  the retrieval R@K advantage translates directly to **more correct
+  answers from the same LLM**, not just higher retrieval numbers.
+  For the same budget, `full_context` truncation (dump everything,
+  drop oldest to fit) collapses to F1=0.029 / R@5=0.040 — retrieval
+  crushes "just stuff it in" when the context budget can't hold the
+  whole haystack. See
+  `research/developmental/results/longmemeval_qa_compare_findings.md`.
 - **Matches Chroma on recall, ~2.4× faster on retrieve** — on full
   LoCoMo (5,882 turns, 1,982 queries) at target_dim=128 with
   mxbai-embed-large, pure-cosine SOMA ties Chroma on R@5 (0.350 vs

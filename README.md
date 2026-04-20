@@ -126,9 +126,9 @@ docker compose up
 
 Endpoints: `/health`, `/version`, `/status`, `/store`, `/store_batch`, `/retrieve`, `/get/{id}`, `/related/{id}`, `/recent`, `/forget`, `/consolidate`, `/save`, plus `/bundles/{name}/...` multi-tenant variants under per-bundle JWT auth.
 
-**Auth** (`pip install "soma[serve]"`): per-bundle JWTs with `read`/`write`/`admin` scopes, HS256 or RS256, rotation via `soma auth rotate-secret`, single-token revocation via a file-backed blocklist (`SOMA_JWT_BLOCKLIST_PATH`). Full reference: [`docs/auth.md`](docs/auth.md).
+**Auth** (`pip install "soma-memory[serve]"`): per-bundle JWTs with `read`/`write`/`admin` scopes, HS256 or RS256, rotation via `soma auth rotate-secret`, single-token revocation via a file-backed blocklist (`SOMA_JWT_BLOCKLIST_PATH`). Full reference: [`docs/auth.md`](docs/auth.md).
 
-**Observability** (`pip install "soma[metrics]"`): `GET /metrics` exposes 18+ Prometheus counters/gauges/histograms covering every MemoryLayer hot path plus per-route HTTP timings. Three importable Grafana dashboards ship under [`deploy/grafana/`](deploy/grafana/) (RED overview, auth, USE bundle-health). Set `SOMA_LOG_JSON=1` for Loki/Datadog-ready structured logs. OpenTelemetry spans via `[otel]` + `SOMA_OTEL_ENABLED=1`. Metric reference: [`docs/observability.md`](docs/observability.md).
+**Observability** (`pip install "soma-memory[metrics]"`): `GET /metrics` exposes 18+ Prometheus counters/gauges/histograms covering every MemoryLayer hot path plus per-route HTTP timings. Three importable Grafana dashboards ship under [`deploy/grafana/`](deploy/grafana/) (RED overview, auth, USE bundle-health). Set `SOMA_LOG_JSON=1` for Loki/Datadog-ready structured logs. OpenTelemetry spans via `[otel]` + `SOMA_OTEL_ENABLED=1`. Metric reference: [`docs/observability.md`](docs/observability.md).
 
 ### TypeScript client
 

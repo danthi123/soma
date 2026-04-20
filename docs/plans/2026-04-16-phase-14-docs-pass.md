@@ -41,7 +41,7 @@ Record findings in a comment or throwaway note; no commits from Task 1.
 **Focus:**
 - Headline pitch — "Local-first agent-memory layer" (from positioning.md), not "drop-in vector DB"
 - Feature list: update feature comparison table to reflect everything shipped (JWT auth + revocation, ConversationalMemory + multi-user, Grafana dashboards, LanceDB, bundle CLI). Cross-check against the list in docs/positioning.md.
-- Installation: `pip install soma`, `pip install "soma[metrics]"`, `pip install "soma[serve]"`, `pip install "soma[lancedb]"` — all extras we now have
+- Installation: `pip install soma`, `pip install "soma-memory[metrics]"`, `pip install "soma-memory[serve]"`, `pip install "soma-memory[lancedb]"` — all extras we now have
 - Quickstart snippet: a 10-line example that exercises the happy path (create bundle, store, retrieve, forget)
 - Link to docs/quickstart.md for the full flow (JWT → ConversationalMemory → retrieve → bundle mgmt)
 - Link to deploy/grafana/ for the dashboards
@@ -55,7 +55,7 @@ Record findings in a comment or throwaway note; no commits from Task 1.
 - Modify (or create): `docs/quickstart.md`
 
 **Flow (end-to-end agent-memory use case):**
-1. Install the extras needed for the full flow (`pip install 'soma[serve,metrics]'`)
+1. Install the extras needed for the full flow (`pip install 'soma-memory[serve,metrics]'`)
 2. Start the server (`soma serve`)
 3. Mint a JWT (`soma auth rotate-secret`, then `soma auth issue --sub alice --bundle alice:read,write --expires 30d`)
 4. Create a bundle via REST (`POST /store`)

@@ -5,8 +5,8 @@ The default adapter is :class:`soma.memory.backends.inproc.InProcBackend`
 SOMA already ships. Additional adapters (Qdrant, LanceDB, ...) live
 alongside it and are imported on demand.
 
-``QdrantBackend`` is an optional dep (``pip install soma[qdrant]``);
-``LanceDBBackend`` is an optional dep (``pip install soma[lancedb]``).
+``QdrantBackend`` is an optional dep (``pip install soma-memory[qdrant]``);
+``LanceDBBackend`` is an optional dep (``pip install soma-memory[lancedb]``).
 Both are re-exported from this module when the underlying dep is
 installed and silently skipped otherwise so SOMA still imports on
 bare environments.

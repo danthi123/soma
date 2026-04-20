@@ -70,7 +70,7 @@ class ChromaBackend:
     ) -> None:
         if not _HAS_CHROMA:
             raise ImportError(
-                'chromadb not installed; pip install "soma[chroma]"'
+                'chromadb not installed; pip install "soma-memory[chroma]"'
             )
         if client is None:
             if path is None:

@@ -55,7 +55,7 @@ def _ensure_qdrant_available() -> None:
     except ImportError as exc:
         raise ImportError(
             "QdrantBackend requires qdrant-client. "
-            "Install with: pip install 'soma[qdrant]'"
+            "Install with: pip install 'soma-memory[qdrant]'"
         ) from exc
 
 

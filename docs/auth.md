@@ -295,7 +295,7 @@ split workers — you need a shared store with instant propagation.
 Install the optional extra and point the env var at your Redis:
 
 ```bash
-pip install 'soma[redis-revocation]'
+pip install 'soma-memory[redis-revocation]'
 export SOMA_JWT_BLOCKLIST_REDIS_URL=redis://redis.internal:6379/0
 # SOMA_JWT_BLOCKLIST_PATH is ignored when REDIS_URL is set (warning logged).
 # SOMA_JWT_BLOCKLIST_HASHED=1 still works — same sha256(jti) key scheme

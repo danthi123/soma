@@ -428,7 +428,7 @@ class RedisBlocklist:
         except ImportError as exc:  # pragma: no cover — tested via monkeypatch
             raise ImportError(
                 "RedisBlocklist requires the 'redis' package. "
-                "Install with: pip install 'soma[redis-revocation]'"
+                "Install with: pip install 'soma-memory[redis-revocation]'"
             ) from exc
         # ``decode_responses=True`` keeps the reason string a plain str
         # round-trip; our reads don't need raw bytes.

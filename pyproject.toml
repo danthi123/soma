@@ -3,11 +3,31 @@ requires = ["setuptools>=68.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "soma"
-version = "0.1.0"
-description = "Self-Organizing Memory Architecture — A brain-inspired developmental AI system"
+name = "soma-memory"
+version = "0.2.0rc1"
+description = "Local-first, learning agent-memory layer — a plastic graph that grows and prunes with use, a drop-in for vector-DB-plus-RAG."
+readme = "README.md"
 requires-python = ">=3.11"
 license = {text = "MIT"}
+authors = [
+    {name = "Daniel Thiberge", email = "daniel.thiberge@gmail.com"},
+]
+keywords = [
+    "memory", "rag", "agent", "llm", "vector-search", "embeddings",
+    "local-first", "retrieval", "semantic-search", "agent-memory",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Typing :: Typed",
+]
 
 dependencies = [
     "torch>=2.1.0",
@@ -16,6 +36,13 @@ dependencies = [
     "PyYAML>=6.0",
     "portalocker>=2.8",
 ]
+
+[project.urls]
+Homepage = "https://github.com/dant123/soma"
+Repository = "https://github.com/dant123/soma"
+Documentation = "https://github.com/dant123/soma/blob/main/docs/quickstart.md"
+Changelog = "https://github.com/dant123/soma/blob/main/CHANGELOG.md"
+Issues = "https://github.com/dant123/soma/issues"
 
 [project.optional-dependencies]
 dev = [

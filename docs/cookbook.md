@@ -641,7 +641,7 @@ store = S3ObjectStore(
 mem.save(store)
 ```
 
-Install `pip install "soma[s3]"` or `pip install "soma[gcs]"`.
+Install `pip install "soma-memory[s3]"` or `pip install "soma-memory[gcs]"`.
 Full deploy recipes (Dockerfile, IAM, env vars) in [`docs/cloud.md`](cloud.md).
 
 ## 23. GDPR-grade forgetting with audit trail

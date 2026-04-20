@@ -56,7 +56,7 @@ class GCSObjectStore:
     ) -> None:
         if not _HAS_GCS:
             raise ImportError(
-                'google-cloud-storage not installed; pip install "soma[gcs]"'
+                'google-cloud-storage not installed; pip install "soma-memory[gcs]"'
             )
         self._prefix = prefix.rstrip("/")
         self._client = client or gcs.Client(project=project)

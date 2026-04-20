@@ -10,10 +10,10 @@ which backend is attached.
 Five adapters ship in-tree:
 
 - **`InProcBackend`** (default, zero new deps)
-- **`LanceDBBackend`** (optional extra: `pip install soma[lancedb]`)
-- **`QdrantBackend`** (optional extra: `pip install soma[qdrant]`)
-- **`ChromaBackend`** (optional extra: `pip install soma[chroma]`)
-- **`PgvectorBackend`** (optional extra: `pip install soma[pgvector]`)
+- **`LanceDBBackend`** (optional extra: `pip install soma-memory[lancedb]`)
+- **`QdrantBackend`** (optional extra: `pip install soma-memory[qdrant]`)
+- **`ChromaBackend`** (optional extra: `pip install soma-memory[chroma]`)
+- **`PgvectorBackend`** (optional extra: `pip install soma-memory[pgvector]`)
 
 Swapping adapters does not change MemoryLayer's Python-facing API:
 `store`, `retrieve(where=...)`, `related`, `forget`, `consolidate`,
@@ -129,7 +129,7 @@ keep loading without migration.
 
 ## LanceDBBackend
 
-Install: `pip install soma[lancedb]`.
+Install: `pip install soma-memory[lancedb]`.
 
 ```python
 from soma.memory.api import MemoryLayer
@@ -230,7 +230,7 @@ matching the filter come back.
 
 ## ChromaBackend
 
-Install: `pip install soma[chroma]`.
+Install: `pip install soma-memory[chroma]`.
 
 ```python
 from soma.memory.api import MemoryLayer
@@ -274,7 +274,7 @@ Pinned minimum: `chromadb>=0.5`. Earlier versions had a different
 
 ## PgvectorBackend
 
-Install: `pip install soma[pgvector]`.
+Install: `pip install soma-memory[pgvector]`.
 
 ```python
 from soma.memory.api import MemoryLayer
@@ -338,7 +338,7 @@ for the gating pattern.
 
 ## QdrantBackend
 
-Install: `pip install soma[qdrant]`.
+Install: `pip install soma-memory[qdrant]`.
 
 ```python
 from soma.memory.api import MemoryLayer

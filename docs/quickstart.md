@@ -219,7 +219,7 @@ For `grafana-cli admin`, docker-compose provisioning, or a Kubernetes
 `ConfigMap` pattern — plus the smoke-test procedure — see
 [`deploy/grafana/README.md`](../deploy/grafana/README.md).
 
-The dashboards expect metrics emitted by `pip install "soma[metrics]"`.
+The dashboards expect metrics emitted by `pip install "soma-memory[metrics]"`.
 Every PromQL query maps 1:1 to a metric documented in
 [`observability.md`](observability.md).
 

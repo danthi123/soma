@@ -57,8 +57,8 @@ treated as `file://`.
 | Scheme | Backend | Extra required |
 | --- | --- | --- |
 | `file:///abs/path` (or plain path) | `LocalFSObjectStore` | none (default) |
-| `s3://bucket/prefix` | `S3ObjectStore` | `pip install "soma[s3]"` |
-| `gs://bucket/prefix` | `GCSObjectStore` | `pip install "soma[gcs]"` |
+| `s3://bucket/prefix` | `S3ObjectStore` | `pip install "soma-memory[s3]"` |
+| `gs://bucket/prefix` | `GCSObjectStore` | `pip install "soma-memory[gcs]"` |
 
 Keys beneath the prefix follow the bundle layout documented below.
 
@@ -157,7 +157,7 @@ Gateway. The bundle lives in S3; the Lambda reads it on cold start.
 ```dockerfile
 FROM public.ecr.aws/lambda/python:3.11
 
-RUN pip install "soma[s3]" sentence-transformers
+RUN pip install "soma-memory[s3]" sentence-transformers
 COPY handler.py ${LAMBDA_TASK_ROOT}/
 CMD ["handler.handler"]
 ```
@@ -251,7 +251,7 @@ service reads it on cold start.
 ```dockerfile
 FROM python:3.11-slim
 
-RUN pip install "soma[gcs]" sentence-transformers uvicorn
+RUN pip install "soma-memory[gcs]" sentence-transformers uvicorn
 COPY app.py /app/
 WORKDIR /app
 CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8080"]
@@ -362,7 +362,7 @@ primary_region = "iad"
 ```dockerfile
 FROM python:3.11-slim
 
-RUN pip install "soma[s3]" sentence-transformers uvicorn
+RUN pip install "soma-memory[s3]" sentence-transformers uvicorn
 COPY app.py /app/
 WORKDIR /app
 CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8080"]

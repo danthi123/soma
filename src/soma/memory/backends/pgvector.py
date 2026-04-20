@@ -52,7 +52,7 @@ score matches the ``[-1, 1]`` contract every other VectorBackend uses
 ``psycopg`` and ``pgvector`` are optional deps — imports are guarded
 so SOMA still ships without them. Constructing a ``PgvectorBackend``
 when either is missing raises :class:`ImportError` with a
-``pip install "soma[pgvector]"`` hint.
+``pip install "soma-memory[pgvector]"`` hint.
 """
 
 from __future__ import annotations
@@ -133,7 +133,7 @@ class PgvectorBackend:
         if not (_HAS_PSYCOPG and _HAS_PGVECTOR):
             raise ImportError(
                 "PgvectorBackend requires psycopg and pgvector. "
-                'Install with: pip install "soma[pgvector]"'
+                'Install with: pip install "soma-memory[pgvector]"'
             )
         self._dsn = dsn
         self._table = _validate_identifier(table_name)

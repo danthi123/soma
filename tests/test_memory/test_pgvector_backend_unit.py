@@ -160,7 +160,7 @@ def test_missing_deps_raises_import_error() -> None:
     with (
         patch.object(pg_mod, "_HAS_PSYCOPG", False),
         patch.object(pg_mod, "_HAS_PGVECTOR", True),
-        pytest.raises(ImportError, match=r"soma\[pgvector\]"),
+        pytest.raises(ImportError, match=r"soma-memory\[pgvector\]"),
     ):
         pg_mod.PgvectorBackend(dsn="postgresql://x", dim=8)
 

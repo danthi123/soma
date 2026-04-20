@@ -202,7 +202,7 @@ if self._backend.supports_filter_pushdown:
 - Modify: `docs/positioning.md` (updated scale story)
 - Modify: `CHANGELOG.md`
 
-**Step 1:** test: `test_qdrant_backend_raises_clear_error_when_dep_missing` — monkeypatch `qdrant_client` import to fail; instantiation raises `ImportError` with "pip install soma[qdrant]" message.
+**Step 1:** test: `test_qdrant_backend_raises_clear_error_when_dep_missing` — monkeypatch `qdrant_client` import to fail; instantiation raises `ImportError` with "pip install soma-memory[qdrant]" message.
 
 **Step 2:** implement guards. Write docs: protocol overview, InProc tradeoffs, Qdrant local vs HTTP positioning (20K cap for local, HTTP for scale).
 

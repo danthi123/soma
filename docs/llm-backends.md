@@ -101,7 +101,7 @@ chat = RAGSession(
 When no other backend is available, SOMA falls back to a local
 HuggingFace model loaded by `soma.deploy.chat_head_factory`. Tier
 `auto` lets the deploy module pick a model that fits your
-VRAM/RAM. Needs `pip install soma[dev-chat]`.
+VRAM/RAM. Needs `pip install soma-memory[dev-chat]`.
 
 ```python
 from soma.llm import HuggingFaceBackend, RAGSession

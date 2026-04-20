@@ -178,9 +178,9 @@ def test_qdrant_backend_raises_clear_error_when_dep_missing(monkeypatch) -> None
     def _fake_ensure():
         raise ImportError(
             "QdrantBackend requires qdrant-client. "
-            "Install with: pip install 'soma[qdrant]'"
+            "Install with: pip install 'soma-memory[qdrant]'"
         )
 
     monkeypatch.setattr(qdrant_module, "_ensure_qdrant_available", _fake_ensure)
-    with pytest.raises(ImportError, match="soma\\[qdrant\\]"):
+    with pytest.raises(ImportError, match="soma-memory\\[qdrant\\]"):
         QdrantBackend(mode="memory", dim=8)

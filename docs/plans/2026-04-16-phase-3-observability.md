@@ -5,7 +5,7 @@
 **Goal:** `GET /metrics` exposes Prometheus counters/gauges/histograms matching the 2026 vector-DB norm (Qdrant native, Chroma via OTel, Pinecone via Prom HTTP SD). One structured JSON log line per store/retrieve/forget. OTel spans as opt-in extra.
 
 **Architecture:**
-- `prometheus-fastapi-instrumentator` as **optional extra** (`pip install soma[metrics]`). Hand-rolled `prometheus-client` primitives for memory-layer-specific counters/histograms.
+- `prometheus-fastapi-instrumentator` as **optional extra** (`pip install soma-memory[metrics]`). Hand-rolled `prometheus-client` primitives for memory-layer-specific counters/histograms.
 - Stdlib `logging` + ~30-line `JSONFormatter` — zero new hard deps.
 - OTel via `opentelemetry-instrumentation-fastapi` behind `soma[otel]` extra + `SOMA_OTEL_ENABLED=1` gate.
 - All instrumentation imports behind `try/except ImportError`; core `serve` extra works without observability deps.
@@ -133,7 +133,7 @@ Also call `configure_json_logging()` if `SOMA_LOG_JSON=1`.
 - Modify: `CHANGELOG.md`
 
 **Step 1:** docs sections:
-- Install: `pip install soma[metrics]` / `soma[otel]`.
+- Install: `pip install soma-memory[metrics]` / `soma[otel]`.
 - Metrics reference: table of all 14 metrics, labels, meanings, Grafana query examples.
 - Logs: `SOMA_LOG_JSON=1` flag, sample log line, pipeline recommendations (Loki/Datadog/CloudWatch).
 - OTel: env vars, collector setup, sample Jaeger trace.

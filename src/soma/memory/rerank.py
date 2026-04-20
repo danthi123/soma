@@ -60,7 +60,7 @@ class CrossEncoderReranker(Reranker):
         except ImportError as exc:
             raise ImportError(
                 "CrossEncoderReranker needs sentence-transformers. "
-                "Install: pip install 'soma[sbert]'"
+                "Install: pip install 'soma-memory[sbert]'"
             ) from exc
         self._model = CrossEncoder(self.model_name, device=self.device)
         return self._model

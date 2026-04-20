@@ -272,7 +272,7 @@ def _cmd_serve(args: argparse.Namespace) -> int:
         import uvicorn
     except ImportError:
         print(
-            "error: serve needs uvicorn. Install: pip install 'soma[serve]'",
+            "error: serve needs uvicorn. Install: pip install 'soma-memory[serve]'",
             file=sys.stderr,
         )
         return 1

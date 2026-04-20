@@ -163,11 +163,11 @@ def test_redis_import_error_on_missing_dep(monkeypatch: pytest.MonkeyPatch) -> N
     def _fake_build(url: str) -> None:
         raise ImportError(
             "RedisBlocklist requires the 'redis' package. "
-            "Install with: pip install 'soma[redis-revocation]'"
+            "Install with: pip install 'soma-memory[redis-revocation]'"
         )
 
     monkeypatch.setattr(RedisBlocklist, "_build_client", staticmethod(_fake_build))
-    with pytest.raises(ImportError, match="soma\\[redis-revocation\\]"):
+    with pytest.raises(ImportError, match="soma-memory\\[redis-revocation\\]"):
         RedisBlocklist(url="redis://fake")
 
 

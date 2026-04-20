@@ -162,7 +162,7 @@ class PgvectorBackend:
         if not (_HAS_PSYCOPG and _HAS_PGVECTOR):
             raise ImportError(
                 'pgvector deps not installed; '
-                'pip install "soma[pgvector]"'
+                'pip install "soma-memory[pgvector]"'
             )
         self._dsn = dsn
         self._table = table_name

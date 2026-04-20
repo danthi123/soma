@@ -104,7 +104,7 @@ class S3ObjectStore:
     ) -> None:
         if not _HAS_BOTO3:
             raise ImportError(
-                'boto3 not installed; install with: pip install "soma[s3]"'
+                'boto3 not installed; install with: pip install "soma-memory[s3]"'
             )
         self._bucket: str = bucket
         # Normalise: strip leading + trailing slashes and backslashes so

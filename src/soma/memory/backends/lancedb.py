@@ -60,7 +60,7 @@ def _ensure_lancedb_available() -> None:
         import pyarrow  # noqa: F401
     except ImportError as exc:
         raise ImportError(
-            "LanceDBBackend requires lancedb. Install with: pip install 'soma[lancedb]'"
+            "LanceDBBackend requires lancedb. Install with: pip install 'soma-memory[lancedb]'"
         ) from exc
 
 

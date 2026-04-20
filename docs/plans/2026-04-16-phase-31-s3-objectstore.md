@@ -64,7 +64,7 @@ class S3ObjectStore:
         client: Any = None,
     ) -> None:
         if not _HAS_BOTO3:
-            raise ImportError('boto3 not installed; pip install "soma[s3]"')
+            raise ImportError('boto3 not installed; pip install "soma-memory[s3]"')
         self._bucket = bucket
         self._prefix = prefix.rstrip("/")
         self._client = client or boto3.client(

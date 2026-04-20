@@ -119,7 +119,7 @@ class GCSObjectStore:
         if not _HAS_GCS:
             raise ImportError(
                 'google-cloud-storage not installed; '
-                'install with: pip install "soma[gcs]"'
+                'install with: pip install "soma-memory[gcs]"'
             )
         self._bucket_name: str = bucket
         # Normalise: strip leading + trailing slashes and backslashes so

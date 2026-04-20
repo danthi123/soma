@@ -444,11 +444,11 @@ def test_lancedb_backend_raises_clear_error_when_dep_missing(tmp_path: Path, mon
 
     def _fake_ensure():
         raise ImportError(
-            "LanceDBBackend requires lancedb. Install with: pip install 'soma[lancedb]'"
+            "LanceDBBackend requires lancedb. Install with: pip install 'soma-memory[lancedb]'"
         )
 
     monkeypatch.setattr(lancedb_module, "_ensure_lancedb_available", _fake_ensure)
-    with pytest.raises(ImportError, match=r"soma\[lancedb\]"):
+    with pytest.raises(ImportError, match=r"soma-memory\[lancedb\]"):
         LanceDBBackend(path=tmp_path / "x", dim=8)
 
 

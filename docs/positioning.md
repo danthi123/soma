@@ -351,7 +351,7 @@ substrate *does* work:
 ```python
 from soma.memory import MemoryLayer
 
-# Create with sentence-transformers (pip install soma[sbert]):
+# Create with sentence-transformers (pip install soma-memory[sbert]):
 mem = MemoryLayer.with_sbert()
 
 # Or load an existing brain:

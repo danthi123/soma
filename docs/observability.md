@@ -18,9 +18,9 @@ works with none of them installed.
 ## Install
 
 ```bash
-pip install "soma[metrics]"           # /metrics endpoint + prometheus-client
-pip install "soma[otel]"              # OpenTelemetry spans
-pip install "soma[metrics,otel]"      # both
+pip install "soma-memory[metrics]"           # /metrics endpoint + prometheus-client
+pip install "soma-memory[otel]"              # OpenTelemetry spans
+pip install "soma-memory[metrics,otel]"      # both
 ```
 
 Enable the JSON log formatter at runtime:
@@ -193,7 +193,7 @@ Output when `SOMA_LOG_JSON=1`:
 Install the extra and flip the env var:
 
 ```bash
-pip install "soma[otel]"
+pip install "soma-memory[otel]"
 export SOMA_OTEL_ENABLED=1
 export OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
 export OTEL_SERVICE_NAME=soma

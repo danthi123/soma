@@ -397,7 +397,7 @@ def test_import_error_when_chromadb_missing(tmp_path: Path, monkeypatch) -> None
     import soma.memory.backends.chroma as chroma_module
 
     monkeypatch.setattr(chroma_module, "_HAS_CHROMA", False)
-    with pytest.raises(ImportError, match=r"soma\[chroma\]"):
+    with pytest.raises(ImportError, match=r"soma-memory\[chroma\]"):
         ChromaBackend(
             path=str(tmp_path / "x"),
             collection_name="soma_test",

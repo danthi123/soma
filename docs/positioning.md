@@ -82,21 +82,31 @@ substrate for learning to come**. On the benchmarks committed under
 - **Old memories don't rot** — a 30-day streaming-facts simulation
   holds old-fact Recall@3 at 0.883, essentially level with recent
   recall (0.938).
-- **+13% R@5 over Chroma + same reranker** — on full LoCoMo (5,882
-  turns, 1,982 queries) with mxbai-embed-large and the same
-  `cross-encoder/ms-marco-MiniLM-L-6-v2` reranker attached to both
-  systems, SOMA's built-in hybrid (BM25 + cosine) + rerank reaches
-  **R@1 = 0.291, R@5 = 0.459, R@10 = 0.512**, vs Chroma's cosine +
-  the same reranker at R@1 = 0.259, R@5 = 0.405, R@10 = 0.471. That's
-  a **+12% / +13% / +9%** relative lift for **+0.054 R@5 absolute** at
-  **2.8× the retrieve latency** (24.6ms vs 8.8ms — still well under
-  interactive budgets). The win is structural: SOMA ships BM25
-  lexical + cosine semantic + cross-encoder rerank behind one API;
-  Chroma ships cosine alone. The BM25 leg widens the candidate pool
-  with exact-term matches (names, numbers, dates) that cosine
-  alone disperses.  Sbert (weak embedder) shows the same directional
-  win at +21.2 pp absolute R@5 — the lift is embedder-agnostic. See
-  `research/developmental/results/recall_boost_mxbai_findings.md`.
+- **Beats Chroma + same reranker on two benchmarks** — the hybrid
+  (BM25 + cosine) leg is SOMA's structural advantage; Chroma ships
+  cosine alone, so users wanting lexical + semantic wire it themselves.
+
+  * **LoCoMo** (5,882 turns, 1,982 queries, mxbai-embed-large,
+    turn-level retrieval): SOMA hybrid+rerank reaches R@1=0.291,
+    R@5=0.459, R@10=0.512 vs Chroma+same-rerank at R@1=0.259,
+    R@5=0.405, R@10=0.471 — **+12% / +13% / +9% relative**. Latency
+    24.6ms vs 8.8ms (2.8× slower; SOMA trades latency for recall).
+
+  * **LongMemEval** (500 items, ~50 sessions each, sbert, long-horizon
+    session retrieval): SOMA hybrid alone reaches R@1=0.892,
+    R@5=**0.980**, R@10=0.992 vs Chroma+same-rerank at R@1=0.854,
+    R@5=0.936, R@10=0.962 — **+4.4% / +4.7% / +3.1% relative** AT
+    **8.3× LOWER latency** (34.4ms vs 286.7ms). Notably, the
+    cross-encoder rerank HURTS on LongMemEval's long multi-topic
+    sessions (adds noise that the reranker wasn't trained for);
+    `mem.retrieve(query, k=5, hybrid_alpha=0.3)` with no reranker is
+    the optimal config here.
+
+  The lift is structural and corpus-general. The optional rerank is
+  corpus-dependent: helps on atomic short docs (LoCoMo), hurts on
+  long multi-topic docs (LongMemEval). See
+  `research/developmental/results/recall_boost_mxbai_findings.md` and
+  `research/developmental/results/longmemeval_retrieval_findings.md`.
 - **Matches Chroma on recall, ~2.4× faster on retrieve** — on full
   LoCoMo (5,882 turns, 1,982 queries) at target_dim=128 with
   mxbai-embed-large, pure-cosine SOMA ties Chroma on R@5 (0.350 vs

@@ -182,9 +182,11 @@ class TestEnsurePosition:
 
 class TestCompetitiveDistillation:
     def test_only_top_k_winners_receive_distill_gradient(self) -> None:
-        """With K=2 winners, only 2 nodes' projections should receive
-        distillation gradient per step. Others get zero grad on the
-        distill path."""
+        """With K=2 winners and 4+ associators, `_last_distill_winners`
+        must have length <= K (exactly K when K <= available) and must
+        be a subset of the active associator ids. Verifies the gating
+        actually gates, not just that the path fires."""
+        # Helper already sets initial_associator_count=4.
         cfg = _spatial_config(projection_distillation_winners=2)
         pred = PredictiveSOMA(config=cfg)
 
@@ -196,28 +198,40 @@ class TestCompetitiveDistillation:
         from soma.core.node import NodeType
 
         associators = [n for n in pred.soma.graph.all_nodes() if n.node_type == NodeType.ASSOCIATOR]
-        assert len(associators) >= 3, "need at least 3 associators for test"
+        assert len(associators) >= 4, "need at least 4 associators to distinguish top-2 gating"
+        assoc_ids = {n.id for n in associators}
 
         x = torch.randn(cfg.sensor_output_dim)
         # Prime _last_summary
         pred.process_input(x, source_text="step 1")
-        # Second step: distill + position losses fire
+        # Second step: distill path fires
         pred.process_input(x, source_text="step 2")
 
-        # Llm_spatial path must have actually fired: teacher.embed
-        # should have been called at least once (during step 2 when
-        # _last_summary is available).
+        # Teacher consulted on second step (after summary primed).
         assert teacher.embed.call_count >= 1, (
             "teacher.embed should be called when target=llm_spatial"
         )
+
+        # Gating: exactly 2 winners recorded, and they must be real
+        # associator ids. If gating were broken and distill hit all
+        # nodes, the list would have 4 entries.
+        winners = pred._last_distill_winners
+        assert len(winners) == 2, (
+            f"expected exactly K=2 winners, got {len(winners)}: {winners}"
+        )
+        assert set(winners) <= assoc_ids
+        # No duplicates in winners.
+        assert len(set(winners)) == len(winners)
+
         # Projections remain finite (no NaN/Inf from optimizer step).
         for proj in pred._input_projections.values():
             assert torch.isfinite(proj).all()
 
     def test_k_zero_means_all_nodes_receive_distill(self) -> None:
         """Backward-compat: K=0 means no competitive gate (fall back to
-        Direction 4a mean-target behavior). Must still fire under
-        target=llm_spatial."""
+        Direction 4a mean-target behavior). Must fire under
+        target=llm_spatial AND leave `_last_distill_winners` untouched
+        (empty), proving the K>0 selection branch was NOT entered."""
         cfg = _spatial_config(projection_distillation_winners=0)
         pred = PredictiveSOMA(config=cfg)
 
@@ -233,6 +247,11 @@ class TestCompetitiveDistillation:
         # K=0 path must still engage the teacher (mean-target fallback).
         assert teacher.embed.call_count >= 1, (
             "K=0 should fall back to mean-target and still consult teacher"
+        )
+        # Gating: K=0 must NOT enter the winner-selection branch, so
+        # the debug hook stays empty.
+        assert pred._last_distill_winners == [], (
+            f"K=0 should skip winner selection, got {pred._last_distill_winners}"
         )
         for proj in pred._input_projections.values():
             assert torch.isfinite(proj).all()

@@ -90,6 +90,11 @@ class PredictiveSOMA(nn.Module):
         # Keeps the synaptogenesis_max_distance=0.5 cutoff calibrated
         # even as positions train toward the P.T · W_i target.
         self._initial_position_norms: dict[str, float] = {}
+        # Direction 4b: debug/test hook — the list of node ids that
+        # received distillation gradient on the last process_input
+        # call. Empty when K<=0 (mean-target mode) or distillation is
+        # inactive. Tests read this to verify competitive gating.
+        self._last_distill_winners: list[str] = []
         if config.position_mode == "learnable":
             for node in self.soma.graph.all_nodes():
                 if node.node_type != NodeType.ASSOCIATOR:
@@ -1196,11 +1201,11 @@ class PredictiveSOMA(nn.Module):
                     # inputs activate different nodes, so projections
                     # diverge per-node rather than collapsing toward a
                     # shared target (Direction 4a's degeneracy).
-                    from soma.core.node import NodeType as _NT_D4b
+                    from soma.core.node import NodeType
 
                     scored_nodes: list[tuple[float, str]] = []
                     for node in self.soma.graph.all_nodes():
-                        if node.node_type != _NT_D4b.ASSOCIATOR:
+                        if node.node_type != NodeType.ASSOCIATOR:
                             continue
                         if node.id not in self._input_projections:
                             continue
@@ -1210,6 +1215,10 @@ class PredictiveSOMA(nn.Module):
                         scored_nodes.append((mag, node.id))
                     scored_nodes.sort(key=lambda t: -t[0])
                     winners = [nid for _, nid in scored_nodes[:K]]
+                    # Debug/test hook: record which nodes received
+                    # distill gradient this step. Downstream tests
+                    # verify gating by asserting |winners| <= K.
+                    self._last_distill_winners = winners
 
                     if winners:
                         per_winner_losses = []

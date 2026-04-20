@@ -1,0 +1,109 @@
+{
+  "method": "soma_hybrid",
+  "model": "qwen3.5:9b-q8_0",
+  "scores": {
+    "f1": 0.7517,
+    "em": 0.5,
+    "rouge1": 0.7517,
+    "rouge2": 0.6862,
+    "rougeL": 0.7517,
+    "per_type": {
+      "single-session-user": {
+        "f1": 0.7517,
+        "em": 0.5,
+        "rouge1": 0.7517,
+        "rouge2": 0.6862,
+        "rougeL": 0.7517
+      }
+    },
+    "n_total": 20
+  },
+  "retrieval_recall_at_k": 1.0,
+  "top_k": 5,
+  "avg_retrieval_ms": 35.02381000000696,
+  "avg_llm_ms": 1756.259875000012,
+  "avg_input_tokens": 3870.9,
+  "n_items": 20,
+  "predictions": [
+    {
+      "question_id": "e47becba",
+      "hypothesis": "I don't know"
+    },
+    {
+      "question_id": "118b2229",
+      "hypothesis": "45 minutes each way"
+    },
+    {
+      "question_id": "51a45a95",
+      "hypothesis": "Target"
+    },
+    {
+      "question_id": "58bf7951",
+      "hypothesis": "The Glass Menagerie"
+    },
+    {
+      "question_id": "1e043500",
+      "hypothesis": "Summer Vibes"
+    },
+    {
+      "question_id": "c5e8278d",
+      "hypothesis": "Johnson"
+    },
+    {
+      "question_id": "6ade9755",
+      "hypothesis": "Serenity Yoga"
+    },
+    {
+      "question_id": "6f9b354f",
+      "hypothesis": "Lighter shade of gray"
+    },
+    {
+      "question_id": "58ef2f1c",
+      "hypothesis": "I don't know"
+    },
+    {
+      "question_id": "f8c5f88b",
+      "hypothesis": "Sports store downtown"
+    },
+    {
+      "question_id": "5d3d2817",
+      "hypothesis": "Marketing specialist"
+    },
+    {
+      "question_id": "7527f7e2",
+      "hypothesis": "$800"
+    },
+    {
+      "question_id": "c960da58",
+      "hypothesis": "20"
+    },
+    {
+      "question_id": "3b6f954b",
+      "hypothesis": "University of Melbourne"
+    },
+    {
+      "question_id": "726462e0",
+      "hypothesis": "I don't know"
+    },
+    {
+      "question_id": "94f70d80",
+      "hypothesis": "4 hours"
+    },
+    {
+      "question_id": "66f24dbb",
+      "hypothesis": "Yellow dress and earrings"
+    },
+    {
+      "question_id": "ad7109d1",
+      "hypothesis": "500 Mbps"
+    },
+    {
+      "question_id": "af8d2e46",
+      "hypothesis": "7 shirts"
+    },
+    {
+      "question_id": "dccbc061",
+      "hypothesis": "Staunch atheist"
+    }
+  ]
+}

@@ -119,20 +119,23 @@ LongMemEval is notable: SOMA is **8.3× faster** than Chroma+rerank
 ### End-to-end QA (retrieval lift → answer lift)
 
 LongMemEval QA with the SAME LLM (qwen3.5:4b-q8_0), SAME 3.8K-token
-context budget, only retrieval strategy changes (full 500-item run):
+context budget, strict-answer prompting (1-5 words) on both sides,
+only retrieval strategy changes (full 500-item run):
 
-| Mode | F1 | R@5 |
-| --- | :---: | :---: |
-| **soma_hybrid (α=0.3)** | **0.164** | **0.980** |
-| chroma cosine | 0.148 | 0.932 |
-| full_context (truncation, N=100) | 0.029 | 0.040 |
+| Mode | F1 | EM | R@5 |
+| --- | :---: | :---: | :---: |
+| **soma_hybrid (α=0.3)** | **0.368** | **0.242** | **0.980** |
+| chroma cosine | 0.299 | 0.196 | 0.932 |
 
-**SOMA hybrid delivers +10% F1 overall — and +49% F1 on
-single-session-user questions specifically** where retrieval quality
-is the binding constraint. On multi-session / temporal-reasoning /
-knowledge-update questions, the LLM (4B parameters) is the
-bottleneck, and SOMA's retrieval win translates to only +3-6% F1
-despite consistent R@5 lifts. See
+**SOMA hybrid delivers +23% F1, +24% EM overall.** Per-type:
+single-session-user +59%, multi-session +36%, temporal-reasoning
++23%, knowledge-update +11%, single-session-assistant ~tied,
+single-session-preference ~tied. Roughly a quarter of SOMA's
+answers are exact matches to the gold string.
+
+At matched 3.8K budget, `full_context` truncation collapses to
+F1=0.029 (tested on N=100) — retrieval crushes "just stuff it in"
+when budget can't hold the full haystack. See
 `research/developmental/results/longmemeval_qa_compare_findings.md`
 for the full per-type breakdown.
 

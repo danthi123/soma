@@ -1,0 +1,812 @@
+{
+  "total_turns": 5882,
+  "total_qa": 100,
+  "avg_f1_dev": 0.0224,
+  "avg_f1_blank": 0.0165,
+  "dev_wins": 24,
+  "blank_wins": 14,
+  "dev_time_s": 2398.7,
+  "total_time_s": 2636.2,
+  "results": [
+    {
+      "question": "When did Caroline go to the LGBTQ support group?",
+      "answer": "7 May 2023",
+      "category": "temporal",
+      "f1_dev": 0.0,
+      "f1_blank": 0.0,
+      "delta": 0.0
+    },
+    {
+      "question": "When did Melanie paint a sunrise?",
+      "answer": "2022",
+      "category": "temporal",
+      "f1_dev": 0.0,
+      "f1_blank": 0.0,
+      "delta": 0.0
+    },
+    {
+      "question": "What fields would Caroline be likely to pursue in her educaton?",
+      "answer": "Psychology, counseling certification",
+      "category": "multi_hop",
+      "f1_dev": 0.0,
+      "f1_blank": 0.0,
+      "delta": 0.0
+    },
+    {
+      "question": "What did Caroline research?",
+      "answer": "Adoption agencies",
+      "category": "single_hop",
+      "f1_dev": 0.0,
+      "f1_blank": 0.0,
+      "delta": 0.0
+    },
+    {
+      "question": "What is Caroline's identity?",
+      "answer": "Transgender woman",
+      "category": "single_hop",
+      "f1_dev": 0.0,
+      "f1_blank": 0.0,
+      "delta": 0.0
+    },
+    {
+      "question": "When did Melanie run a charity race?",
+      "answer": "The sunday before 25 May 2023",
+      "category": "temporal",
+      "f1_dev": 0.0571,
+      "f1_blank": 0.0,
+      "delta": 0.0571
+    },
+    {
+      "question": "When is Melanie planning on going camping?",
+      "answer": "June 2023",
+      "category": "temporal",
+      "f1_dev": 0.0,
+      "f1_blank": 0.0,
+      "delta": 0.0
+    },
+    {
+      "question": "What is Caroline's relationship status?",
+      "answer": "Single",
+      "category": "single_hop",
+      "f1_dev": 0.0,
+      "f1_blank": 0.0,
+      "delta": 0.0
+    },
+    {
+      "question": "When did Caroline give a speech at a school?",
+      "answer": "The week before 9 June 2023",
+      "category": "temporal",
+      "f1_dev": 0.08,
+      "f1_blank": 0.0,
+      "delta": 0.08
+    },
+    {
+      "question": "When did Caroline meet up with her friends, family, and mentors?",
+      "answer": "The week before 9 June 2023",
+      "category": "temporal",
+      "f1_dev": 0.0417,
+      "f1_blank": 0.0,
+      "delta": 0.0417
+    },
+    {
+      "question": "When Jon has lost his job as a banker?",
+      "answer": "19 January, 2023",
+      "category": "temporal",
+      "f1_dev": 0.0,
+      "f1_blank": 0.0,
+      "delta": 0.0
+    },
+    {
+      "question": "When Gina has lost her job at Door Dash?",
+      "answer": "January, 2023",
+      "category": "temporal",
+      "f1_dev": 0.0,
+      "f1_blank": 0.0,
+      "delta": 0.0
+    },
+    {
+      "question": "How do Jon and Gina both like to destress?",
+      "answer": "by dancing",
+      "category": "open_domain",
+      "f1_dev": 0.0,
+      "f1_blank": 0.0,
+      "delta": 0.0
+    },
+    {
+      "question": "What do Jon and Gina both have in common?",
+      "answer": "They lost their jobs and decided to start their own businesses.",
+      "category": "single_hop",
+      "f1_dev": 0.0588,
+      "f1_blank": 0.0,
+      "delta": 0.0588
+    },
+    {
+      "question": "Why did Jon decide to start his dance studio?",
+      "answer": "He lost his job and decided to start his own business to share his passion.",
+      "category": "open_domain",
+      "f1_dev": 0.2963,
+      "f1_blank": 0.0513,
+      "delta": 0.245
+    },
+    {
+      "question": "What Jon thinks the ideal dance studio should look like?",
+      "answer": "By the water, with natural light and Marley flooring",
+      "category": "single_hop",
+      "f1_dev": 0.0392,
+      "f1_blank": 0.0571,
+      "delta": -0.0179
+    },
+    {
+      "question": "When is Jon's group performing at a festival?",
+      "answer": "February, 2023",
+      "category": "temporal",
+      "f1_dev": 0.0,
+      "f1_blank": 0.0,
+      "delta": 0.0
+    },
+    {
+      "question": "When did Gina launch an ad campaign for her store?",
+      "answer": "29 January, 2023",
+      "category": "temporal",
+      "f1_dev": 0.0,
+      "f1_blank": 0.0,
+      "delta": 0.0
+    },
+    {
+      "question": "When was Jon in Paris?",
+      "answer": "28 January 2023",
+      "category": "temporal",
+      "f1_dev": 0.0,
+      "f1_blank": 0.0,
+      "delta": 0.0
+    },
+    {
+      "question": "Which city have both Jean and John visited?",
+      "answer": "Rome",
+      "category": "single_hop",
+      "f1_dev": 0.0,
+      "f1_blank": 0.0,
+      "delta": 0.0
+    },
+    {
+      "question": "Who did Maria have dinner with on May 3, 2023?",
+      "answer": "her mother",
+      "category": "temporal",
+      "f1_dev": 0.0,
+      "f1_blank": 0.0,
+      "delta": 0.0
+    },
+    {
+      "question": "When did Maria donate her car?",
+      "answer": "21 December 2022",
+      "category": "temporal",
+      "f1_dev": 0.0,
+      "f1_blank": 0.0,
+      "delta": 0.0
+    },
+    {
+      "question": "What martial arts has John done?",
+      "answer": "Kickboxing, Taekwondo",
+      "category": "single_hop",
+      "f1_dev": 0.0,
+      "f1_blank": 0.0,
+      "delta": 0.0
+    },
+    {
+      "question": "What type of volunteering have John and Maria both done?",
+      "answer": "Volunteering at a homeless shelter",
+      "category": "single_hop",
+      "f1_dev": 0.1,
+      "f1_blank": 0.1333,
+      "delta": -0.0333
+    },
+    {
+      "question": "When did John join the online support group?",
+      "answer": "The week before 1 January 2023",
+      "category": "temporal",
+      "f1_dev": 0.0556,
+      "f1_blank": 0.0571,
+      "delta": -0.0016
+    },
+    {
+      "question": "When did Maria go to the beach?",
+      "answer": "December 2022",
+      "category": "temporal",
+      "f1_dev": 0.0,
+      "f1_blank": 0.0,
+      "delta": 0.0
+    },
+    {
+      "question": "Where has Maria made friends?",
+      "answer": "homeless shelter, gym, church",
+      "category": "single_hop",
+      "f1_dev": 0.0,
+      "f1_blank": 0.0,
+      "delta": 0.0
+    },
+    {
+      "question": "What items des John mention having as a child?",
+      "answer": "A doll, a film camera",
+      "category": "single_hop",
+      "f1_dev": 0.05,
+      "f1_blank": 0.1176,
+      "delta": -0.0676
+    },
+    {
+      "question": "What might John's financial status be?",
+      "answer": "Middle-class or wealthy",
+      "category": "multi_hop",
+      "f1_dev": 0.0278,
+      "f1_blank": 0.0741,
+      "delta": -0.0463
+    },
+    {
+      "question": "Who gave Maria's family money when she was younger and her family was going through tough times?",
+      "answer": "Her aunt",
+      "category": "single_hop",
+      "f1_dev": 0.0,
+      "f1_blank": 0.0,
+      "delta": 0.0
+    },
+    {
+      "question": "Is it likely that Nate has friends besides Joanna?",
+      "answer": "Yesteammates on hisvideo game team.",
+      "category": "multi_hop",
+      "f1_dev": 0.0,
+      "f1_blank": 0.0,
+      "delta": 0.0
+    },
+    {
+      "question": "What kind of interests do Joanna and Nate share?",
+      "answer": "Watching movies, making desserts",
+      "category": "single_hop",
+      "f1_dev": 0.0,
+      "f1_blank": 0.0,
+      "delta": 0.0
+    },
+    {
+      "question": "When did Joanna first watch \"Eternal Sunshine of the Spotless Mind?",
+      "answer": "2019",
+      "category": "temporal",
+      "f1_dev": 0.0,
+      "f1_blank": 0.0,
+      "delta": 0.0
+    },
+    {
+      "question": "When did Nate win his first video game tournament?",
+      "answer": "the week before 21Janury, 2022",
+      "category": "temporal",
+      "f1_dev": 0.0488,
+      "f1_blank": 0.0,
+      "delta": 0.0488
+    },
+    {
+      "question": "What pets wouldn't cause any discomfort to Joanna?",
+      "answer": "Hairless cats or pigs,since they don't have fur, which is one of the main causes of Joanna's allergy.",
+      "category": "multi_hop",
+      "f1_dev": 0.1818,
+      "f1_blank": 0.1463,
+      "delta": 0.0355
+    },
+    {
+      "question": "What are Joanna's hobbies?",
+      "answer": "Writing, watchingmovies, exploringnature, hanging withfriends.",
+      "category": "single_hop",
+      "f1_dev": 0.0,
+      "f1_blank": 0.0,
+      "delta": 0.0
+    },
+    {
+      "question": "How long has Nate had his first two turtles?",
+      "answer": "three years",
+      "category": "temporal",
+      "f1_dev": 0.0,
+      "f1_blank": 0.0,
+      "delta": 0.0
+    },
+    {
+      "question": "When did Joanna finish her first screenplay?",
+      "answer": "The Friday before 23January, 2022",
+      "category": "temporal",
+      "f1_dev": 0.08,
+      "f1_blank": 0.0,
+      "delta": 0.08
+    },
+    {
+      "question": "When did Nate get his first two turtles?",
+      "answer": "2019",
+      "category": "temporal",
+      "f1_dev": 0.0,
+      "f1_blank": 0.0,
+      "delta": 0.0
+    },
+    {
+      "question": "What major achievement did Joanna accomplish in January 2022?",
+      "answer": "finished her screenplay and printed it",
+      "category": "temporal",
+      "f1_dev": 0.0,
+      "f1_blank": 0.0,
+      "delta": 0.0
+    },
+    {
+      "question": "what are John's goals with regards to his basketball career?",
+      "answer": "improve shooting percentage, win a championship",
+      "category": "single_hop",
+      "f1_dev": 0.0,
+      "f1_blank": 0.0667,
+      "delta": -0.0667
+    },
+    {
+      "question": "What are John's goals for his career that are not related to his basketball skills?",
+      "answer": "get endorsements, build his brand, do charity work",
+      "category": "single_hop",
+      "f1_dev": 0.0889,
+      "f1_blank": 0.125,
+      "delta": -0.0361
+    },
+    {
+      "question": "What items does John collect?",
+      "answer": "sneakers, fantasy movie DVDs, jerseys",
+      "category": "single_hop",
+      "f1_dev": 0.0,
+      "f1_blank": 0.0,
+      "delta": 0.0
+    },
+    {
+      "question": "Would Tim enjoy reading books by C. S. Lewis or John Greene?",
+      "answer": "C. S.Lewis",
+      "category": "multi_hop",
+      "f1_dev": 0.0455,
+      "f1_blank": 0.0,
+      "delta": 0.0455
+    },
+    {
+      "question": "What books has Tim read?",
+      "answer": "Harry Potter, Game of Thrones, the Name of the Wind, The Alchemist, The Hobbit, A Dance with Dragons, and the Wheel of Time.",
+      "category": "single_hop",
+      "f1_dev": 0.1091,
+      "f1_blank": 0.0784,
+      "delta": 0.0307
+    },
+    {
+      "question": "Based on Tim's collections, what is a shop that he would enjoy visiting in New York city?",
+      "answer": "House of MinaLima",
+      "category": "multi_hop",
+      "f1_dev": 0.0323,
+      "f1_blank": 0.0,
+      "delta": 0.0323
+    },
+    {
+      "question": "In which month's game did John achieve a career-high score in points?",
+      "answer": "June 2023",
+      "category": "temporal",
+      "f1_dev": 0.0,
+      "f1_blank": 0.0,
+      "delta": 0.0
+    },
+    {
+      "question": "Which geographical locations has Tim been to?",
+      "answer": "California, London, the Smoky Mountains",
+      "category": "single_hop",
+      "f1_dev": 0.0294,
+      "f1_blank": 0.0,
+      "delta": 0.0294
+    },
+    {
+      "question": "Which outdoor gear company likely signed up John for an endorsement deal?",
+      "answer": "Under Armour",
+      "category": "multi_hop",
+      "f1_dev": 0.0,
+      "f1_blank": 0.0,
+      "delta": 0.0
+    },
+    {
+      "question": "Which endorsement deals has John been offered?",
+      "answer": "basketball shoes and gear deal with Nike, potential sponsorship with Gatorade, Moxie a popular beverage company, outdoor gear company",
+      "category": "single_hop",
+      "f1_dev": 0.0714,
+      "f1_blank": 0.037,
+      "delta": 0.0344
+    },
+    {
+      "question": "Which year did Audrey adopt the first three of her dogs?",
+      "answer": "2020",
+      "category": "temporal",
+      "f1_dev": 0.0,
+      "f1_blank": 0.0,
+      "delta": 0.0
+    },
+    {
+      "question": "When did Andrew start his new job as a financial analyst?",
+      "answer": "The week before March 27, 2023",
+      "category": "temporal",
+      "f1_dev": 0.0,
+      "f1_blank": 0.0,
+      "delta": 0.0
+    },
+    {
+      "question": "What kind of indoor activities has Andrew pursued with his girlfriend?",
+      "answer": "boardgames, volunteering at pet shelter, wine tasting, growing flowers",
+      "category": "single_hop",
+      "f1_dev": 0.0,
+      "f1_blank": 0.0,
+      "delta": 0.0
+    },
+    {
+      "question": "What kind of places have Andrew and his girlfriend checked out around the city?",
+      "answer": "cafes, new places to eat, open space for hikes, pet shelter, wine tasting event, park",
+      "category": "single_hop",
+      "f1_dev": 0.0465,
+      "f1_blank": 0.0,
+      "delta": 0.0465
+    },
+    {
+      "question": "When did Audrey make muffins for herself?",
+      "answer": "The week of April 3rd to 9th",
+      "category": "temporal",
+      "f1_dev": 0.0702,
+      "f1_blank": 0.0,
+      "delta": 0.0702
+    },
+    {
+      "question": "When did Audrey see a hummingbird?",
+      "answer": "first week of May 2023",
+      "category": "temporal",
+      "f1_dev": 0.0571,
+      "f1_blank": 0.0,
+      "delta": 0.0571
+    },
+    {
+      "question": "When did Audrey adopt Pixie?",
+      "answer": "around April 2, 2023",
+      "category": "temporal",
+      "f1_dev": 0.0,
+      "f1_blank": 0.0,
+      "delta": 0.0
+    },
+    {
+      "question": "How many years passed between Audrey adopting Pixie and her other three dogs?",
+      "answer": "three years",
+      "category": "temporal",
+      "f1_dev": 0.0,
+      "f1_blank": 0.0,
+      "delta": 0.0
+    },
+    {
+      "question": "Did Andrew have a pet dog during March 2023?",
+      "answer": "No",
+      "category": "temporal",
+      "f1_dev": 0.0,
+      "f1_blank": 0.1053,
+      "delta": -0.1053
+    },
+    {
+      "question": "What kind of classes or groups has Audrey joined to take better care of her dogs?",
+      "answer": "positive reinforcement training workshop to bond with pets, dog training course, agility training course, grooming course, dog-owners group",
+      "category": "single_hop",
+      "f1_dev": 0.0656,
+      "f1_blank": 0.0488,
+      "delta": 0.0168
+    },
+    {
+      "question": "What are John's suspected health problems?",
+      "answer": "Obesity",
+      "category": "multi_hop",
+      "f1_dev": 0.0,
+      "f1_blank": 0.0,
+      "delta": 0.0
+    },
+    {
+      "question": "Which recreational activity was James pursuing on March 16, 2022?",
+      "answer": "bowling",
+      "category": "temporal",
+      "f1_dev": 0.0,
+      "f1_blank": 0.0,
+      "delta": 0.0
+    },
+    {
+      "question": "Which places or events have John and James planned to meet at?",
+      "answer": "VR Club, McGee's, baseball game",
+      "category": "single_hop",
+      "f1_dev": 0.0,
+      "f1_blank": 0.0,
+      "delta": 0.0
+    },
+    {
+      "question": "Do both James and John have pets?",
+      "answer": "No",
+      "category": "single_hop",
+      "f1_dev": 0.0,
+      "f1_blank": 0.0833,
+      "delta": -0.0833
+    },
+    {
+      "question": "When did John resume playing drums in his adulthood?",
+      "answer": "February 2022",
+      "category": "temporal",
+      "f1_dev": 0.0,
+      "f1_blank": 0.0,
+      "delta": 0.0
+    },
+    {
+      "question": "What are John and James' favorite games?",
+      "answer": "John's favorite game is CS:GO, and James's is Apex Legends.",
+      "category": "single_hop",
+      "f1_dev": 0.0816,
+      "f1_blank": 0.1143,
+      "delta": -0.0327
+    },
+    {
+      "question": "Does James live in Connecticut?",
+      "answer": "Likely yes",
+      "category": "multi_hop",
+      "f1_dev": 0.0,
+      "f1_blank": 0.0,
+      "delta": 0.0
+    },
+    {
+      "question": "In which state is the shelter from which James adopted the puppy?",
+      "answer": "Connecticut.",
+      "category": "multi_hop",
+      "f1_dev": 0.0,
+      "f1_blank": 0.0,
+      "delta": 0.0
+    },
+    {
+      "question": "How many pets does James have?",
+      "answer": "Three dogs.",
+      "category": "single_hop",
+      "f1_dev": 0.0,
+      "f1_blank": 0.0,
+      "delta": 0.0
+    },
+    {
+      "question": "What are the names of James's dogs?",
+      "answer": "Ned, Daisy, Max",
+      "category": "single_hop",
+      "f1_dev": 0.0,
+      "f1_blank": 0.0,
+      "delta": 0.0
+    },
+    {
+      "question": "What kind of project was Jolene working on in the beginning of January 2023?",
+      "answer": "electricity engineering project",
+      "category": "temporal",
+      "f1_dev": 0.0,
+      "f1_blank": 0.0,
+      "delta": 0.0
+    },
+    {
+      "question": "Which of Deborah`s family and friends have passed away?",
+      "answer": "mother, father, her friend Karlie",
+      "category": "single_hop",
+      "f1_dev": 0.0,
+      "f1_blank": 0.0588,
+      "delta": -0.0588
+    },
+    {
+      "question": "When did Deborah`s mother pass away?",
+      "answer": "a few years before 2023",
+      "category": "temporal",
+      "f1_dev": 0.0,
+      "f1_blank": 0.0714,
+      "delta": -0.0714
+    },
+    {
+      "question": "When did Jolene`s mother pass away?",
+      "answer": "in 2022",
+      "category": "temporal",
+      "f1_dev": 0.0,
+      "f1_blank": 0.0,
+      "delta": 0.0
+    },
+    {
+      "question": "When did Jolene's mom gift her a pendant?",
+      "answer": "in 2010",
+      "category": "temporal",
+      "f1_dev": 0.0,
+      "f1_blank": 0.0,
+      "delta": 0.0
+    },
+    {
+      "question": "In what country did Jolene's mother buy her the pendant?",
+      "answer": "In France",
+      "category": "multi_hop",
+      "f1_dev": 0.04,
+      "f1_blank": 0.0,
+      "delta": 0.04
+    },
+    {
+      "question": "What symbolic gifts do Deborah and Jolene have from their mothers?",
+      "answer": "pendants",
+      "category": "single_hop",
+      "f1_dev": 0.0,
+      "f1_blank": 0.0,
+      "delta": 0.0
+    },
+    {
+      "question": "Which country were Jolene and her mother visiting in 2010?",
+      "answer": "France",
+      "category": "temporal",
+      "f1_dev": 0.0,
+      "f1_blank": 0.0,
+      "delta": 0.0
+    },
+    {
+      "question": "What helped Deborah find peace when grieving deaths of her loved ones?",
+      "answer": "yoga, old photos, the roses and dahlias in a flower garden, nature",
+      "category": "single_hop",
+      "f1_dev": 0.0784,
+      "f1_blank": 0.0541,
+      "delta": 0.0244
+    },
+    {
+      "question": "When did Deborah's father pass away?",
+      "answer": "January 25, 2023",
+      "category": "temporal",
+      "f1_dev": 0.0,
+      "f1_blank": 0.0,
+      "delta": 0.0
+    },
+    {
+      "question": "What kind of car does Evan drive?",
+      "answer": "Prius",
+      "category": "single_hop",
+      "f1_dev": 0.0,
+      "f1_blank": 0.0,
+      "delta": 0.0
+    },
+    {
+      "question": "What kinds of things did Evan have broken?",
+      "answer": "His old Prius and his new Prius.",
+      "category": "single_hop",
+      "f1_dev": 0.0588,
+      "f1_blank": 0.0,
+      "delta": 0.0588
+    },
+    {
+      "question": "Where has Evan been on roadtrips with his family?",
+      "answer": "Rockies, Jasper",
+      "category": "single_hop",
+      "f1_dev": 0.0,
+      "f1_blank": 0.0,
+      "delta": 0.0
+    },
+    {
+      "question": "How many Prius has Evan owned?",
+      "answer": "two",
+      "category": "single_hop",
+      "f1_dev": 0.0,
+      "f1_blank": 0.0,
+      "delta": 0.0
+    },
+    {
+      "question": "Which hobby did Sam take up in May 2023?",
+      "answer": "painting",
+      "category": "temporal",
+      "f1_dev": 0.0,
+      "f1_blank": 0.0,
+      "delta": 0.0
+    },
+    {
+      "question": "Which country was Evan visiting in May 2023?",
+      "answer": "Canada",
+      "category": "multi_hop",
+      "f1_dev": 0.0,
+      "f1_blank": 0.0,
+      "delta": 0.0
+    },
+    {
+      "question": "How many roadtrips did Evan take in May 2023?",
+      "answer": "two",
+      "category": "single_hop",
+      "f1_dev": 0.0,
+      "f1_blank": 0.0,
+      "delta": 0.0
+    },
+    {
+      "question": "What new hobbies did Sam consider trying?",
+      "answer": "Painting, kayaking, hiking, cooking, running",
+      "category": "single_hop",
+      "f1_dev": 0.0,
+      "f1_blank": 0.0,
+      "delta": 0.0
+    },
+    {
+      "question": "What hobby did Evan start practicing a few years ago that he enjoys?",
+      "answer": "Watercolor painting",
+      "category": "single_hop",
+      "f1_dev": 0.0,
+      "f1_blank": 0.0,
+      "delta": 0.0
+    },
+    {
+      "question": "When did Evan go to Jasper with his family?",
+      "answer": "weekend before May 24, 2023",
+      "category": "temporal",
+      "f1_dev": 0.0,
+      "f1_blank": 0.0,
+      "delta": 0.0
+    },
+    {
+      "question": "When did Calvin first travel to Tokyo?",
+      "answer": "between 26 March and 20 April 2023",
+      "category": "temporal",
+      "f1_dev": 0.0488,
+      "f1_blank": 0.0,
+      "delta": 0.0488
+    },
+    {
+      "question": "What items did Calvin buy in March 2023?",
+      "answer": "mansion in Japan, luxury car Ferrari 488 GTB",
+      "category": "single_hop",
+      "f1_dev": 0.0417,
+      "f1_blank": 0.0541,
+      "delta": -0.0124
+    },
+    {
+      "question": "When did Dave see Aerosmith perform live?",
+      "answer": "on the weekend before March 26, 2023",
+      "category": "temporal",
+      "f1_dev": 0.0606,
+      "f1_blank": 0.0,
+      "delta": 0.0606
+    },
+    {
+      "question": "Which bands has Dave enjoyed listening to?",
+      "answer": "Aerosmith, The Fireworks",
+      "category": "single_hop",
+      "f1_dev": 0.0476,
+      "f1_blank": 0.0,
+      "delta": 0.0476
+    },
+    {
+      "question": "Which country do Calvin and Dave want to meet in?",
+      "answer": "United States",
+      "category": "multi_hop",
+      "f1_dev": 0.0,
+      "f1_blank": 0.0,
+      "delta": 0.0
+    },
+    {
+      "question": "What are Dave's dreams?",
+      "answer": "open a car maintenance shop, work on classic cars, build a custom car from scratch",
+      "category": "single_hop",
+      "f1_dev": 0.0,
+      "f1_blank": 0.0513,
+      "delta": -0.0513
+    },
+    {
+      "question": "Which types of cars does Dave like the most?",
+      "answer": "classic vintage cars",
+      "category": "single_hop",
+      "f1_dev": 0.0526,
+      "f1_blank": 0.0,
+      "delta": 0.0526
+    },
+    {
+      "question": "Does Dave's shop employ a lot of people?",
+      "answer": "Yes",
+      "category": "multi_hop",
+      "f1_dev": 0.0,
+      "f1_blank": 0.0,
+      "delta": 0.0
+    },
+    {
+      "question": "When did Dave start his car maintenance shop?",
+      "answer": "May 1, 2023",
+      "category": "temporal",
+      "f1_dev": 0.0,
+      "f1_blank": 0.0,
+      "delta": 0.0
+    },
+    {
+      "question": "When did a mishap occur with Calvin's musical gear and favorite mic?",
+      "answer": "On a week before 16 May, 2023",
+      "category": "temporal",
+      "f1_dev": 0.0,
+      "f1_blank": 0.0625,
+      "delta": -0.0625
+    }
+  ]
+}

@@ -1,0 +1,36 @@
+{
+  "method": "chroma_rerank",
+  "model": "qwen3.5:4b-q8_0",
+  "scores": {
+    "f1": 0.3333,
+    "em": 0.0,
+    "rouge1": 0.3333,
+    "rouge2": 0.3,
+    "rougeL": 0.3333,
+    "per_type": {
+      "single-session-user": {
+        "f1": 0.3333,
+        "em": 0.0,
+        "rouge1": 0.3333,
+        "rouge2": 0.3,
+        "rougeL": 0.3333
+      }
+    },
+    "n_total": 2
+  },
+  "retrieval_recall_at_k": 0.5,
+  "top_k": 5,
+  "avg_retrieval_ms": 60.003350023180246,
+  "avg_llm_ms": 3756.87770001241,
+  "n_items": 2,
+  "predictions": [
+    {
+      "question_id": "e47becba",
+      "hypothesis": "I don't know. The provided conversation history does not contain information about your graduation degree."
+    },
+    {
+      "question_id": "118b2229",
+      "hypothesis": "Your daily commute is 45 minutes each way."
+    }
+  ]
+}

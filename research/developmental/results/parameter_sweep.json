@@ -1,0 +1,28 @@
+{
+  "sweep_config": {
+    "node_counts": [
+      14,
+      50,
+      100,
+      200
+    ],
+    "inhibitions": [
+      0.1,
+      0.2,
+      0.3,
+      0.5
+    ],
+    "train_lengths": [
+      100,
+      300,
+      1000,
+      3000
+    ],
+    "embed_dims": [
+      64,
+      128
+    ]
+  },
+  "results": [],
+  "total_time_s": 13.5
+}

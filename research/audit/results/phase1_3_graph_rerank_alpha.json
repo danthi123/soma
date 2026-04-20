@@ -1,0 +1,120 @@
+{
+  "results": [
+    {
+      "alpha": 0.0,
+      "f1": 0.1419,
+      "em": 0.0,
+      "rouge1": 0.1419,
+      "rouge2": 0.075,
+      "rougeL": 0.1308,
+      "n": 20,
+      "retrieval_time_s": 47.7,
+      "per_type": {
+        "temporal-reasoning": {
+          "f1": 0.1419,
+          "em": 0.0,
+          "rouge1": 0.1419,
+          "rouge2": 0.075,
+          "rougeL": 0.1308
+        }
+      }
+    },
+    {
+      "alpha": 0.1,
+      "f1": 0.1435,
+      "em": 0.0,
+      "rouge1": 0.1435,
+      "rouge2": 0.0751,
+      "rougeL": 0.1324,
+      "n": 20,
+      "retrieval_time_s": 24.7,
+      "per_type": {
+        "temporal-reasoning": {
+          "f1": 0.1435,
+          "em": 0.0,
+          "rouge1": 0.1435,
+          "rouge2": 0.0751,
+          "rougeL": 0.1324
+        }
+      }
+    },
+    {
+      "alpha": 0.3,
+      "f1": 0.1379,
+      "em": 0.0,
+      "rouge1": 0.1379,
+      "rouge2": 0.0624,
+      "rougeL": 0.1218,
+      "n": 20,
+      "retrieval_time_s": 26.9,
+      "per_type": {
+        "temporal-reasoning": {
+          "f1": 0.1379,
+          "em": 0.0,
+          "rouge1": 0.1379,
+          "rouge2": 0.0624,
+          "rougeL": 0.1218
+        }
+      }
+    },
+    {
+      "alpha": 0.5,
+      "f1": 0.1419,
+      "em": 0.0,
+      "rouge1": 0.1419,
+      "rouge2": 0.0719,
+      "rougeL": 0.1268,
+      "n": 20,
+      "retrieval_time_s": 26.8,
+      "per_type": {
+        "temporal-reasoning": {
+          "f1": 0.1419,
+          "em": 0.0,
+          "rouge1": 0.1419,
+          "rouge2": 0.0719,
+          "rougeL": 0.1268
+        }
+      }
+    },
+    {
+      "alpha": 0.7,
+      "f1": 0.1509,
+      "em": 0.0,
+      "rouge1": 0.1509,
+      "rouge2": 0.0775,
+      "rougeL": 0.1378,
+      "n": 20,
+      "retrieval_time_s": 28.0,
+      "per_type": {
+        "temporal-reasoning": {
+          "f1": 0.1509,
+          "em": 0.0,
+          "rouge1": 0.1509,
+          "rouge2": 0.0775,
+          "rougeL": 0.1378
+        }
+      }
+    },
+    {
+      "alpha": 1.0,
+      "f1": 0.1625,
+      "em": 0.0,
+      "rouge1": 0.1625,
+      "rouge2": 0.0864,
+      "rougeL": 0.1491,
+      "n": 20,
+      "retrieval_time_s": 28.5,
+      "per_type": {
+        "temporal-reasoning": {
+          "f1": 0.1625,
+          "em": 0.0,
+          "rouge1": 0.1625,
+          "rouge2": 0.0864,
+          "rougeL": 0.1491
+        }
+      }
+    }
+  ],
+  "consolidation_time_s": 6038.1,
+  "total_wall_clock_s": 6229.2
+}

@@ -1,0 +1,224 @@
+{
+  "method": "soma",
+  "model": "qwen3.5:4b-q8_0",
+  "variant": "oracle",
+  "scores": {
+    "f1": 0.1241,
+    "em": 0.0,
+    "rouge1": 0.1241,
+    "rouge2": 0.0586,
+    "rougeL": 0.1177,
+    "per_type": {
+      "temporal-reasoning": {
+        "f1": 0.1241,
+        "em": 0.0,
+        "rouge1": 0.1241,
+        "rouge2": 0.0586,
+        "rougeL": 0.1177
+      }
+    },
+    "n_total": 50
+  },
+  "predictions": [
+    {
+      "question_id": "gpt4_2655b836",
+      "hypothesis": "The first issue mentioned was with the **GPS system**, which occurred on **March 22**. The user had to take the car back to the dealership, where the entire system was replaced.\n\n(Note: The user also mentioned getting serviced for the first time on March 15, but no specific issue was reported at that time; the first reported problem was the GPS failure a week later.)"
+    },
+    {
+      "question_id": "gpt4_2487a7cb",
+      "hypothesis": "I don't know. The conversation history does not mention attending any workshops or webinars, nor does it contain information about the dates of the 'Effective Time Management' workshop or the 'Data Analysis using Python' webinar."
+    },
+    {
+      "question_id": "gpt4_76048e76",
+      "hypothesis": "Based on the conversation history, you took care of your **bike** first. You mentioned in mid-February that you had to take it in for repairs. There is no mention of taking care of your car in February."
+    },
+    {
+      "question_id": "gpt4_2312f94c",
+      "hypothesis": "I don't know. The conversation history mentions you received a Samsung Galaxy S22 on February 20th, but there is no mention of a Dell XPS 13."
+    },
+    {
+      "question_id": "0bb5a684",
+      "hypothesis": "You attended the workshop 3 days before the team meeting.\n\n*   Workshop date: January 10th\n*   Meeting preparation date: January 13th\n*   Difference: 3 days"
+    },
+    {
+      "question_id": "08f4fc43",
+      "hypothesis": "I don't know. The conversation history mentions the Ash Wednesday service on February 1st and a Sunday mass at St. Mary's Church, but it does not specify the date of the St. Mary's mass."
+    },
+    {
+      "question_id": "2c63a862",
+      "hypothesis": "I don't know"
+    },
+    {
+      "question_id": "gpt4_385a5000",
+      "hypothesis": "I don't know"
+    },
+    {
+      "question_id": "2a1811e2",
+      "hypothesis": "I don't know. The conversation history mentions the Hindu festival of Holi, but it does not provide a specific date for it. It only states that the user attended a mass at St. Mary's Church on March 19th. Without the date of Holi, the number of days cannot be calculated."
+    },
+    {
+      "question_id": "bbf86515",
+      "hypothesis": "I don't know. The conversation history mentions the \"Turbocharged Tuesdays\" event on June 14th, but it does not mention a \"Rack Fest\" event or provide a date for it."
+    },
+    {
+      "question_id": "gpt4_5dcc0aab",
+      "hypothesis": "You cleaned your white Adidas sneakers last month."
+    },
+    {
+      "question_id": "gpt4_0b2f1d21",
+      "hypothesis": "I don't know. The conversation history only mentions the purchase of a coffee maker; there is no mention of a stand mixer or any malfunction."
+    },
+    {
+      "question_id": "f0853d11",
+      "hypothesis": "I don't know. The provided context does not contain information about the 'Walk for Hunger' or 'Coastal Cleanup' events."
+    },
+    {
+      "question_id": "gpt4_6ed717ea",
+      "hypothesis": "Based on the conversation history provided, there is no mention of purchasing a dog bed for Max. Therefore, it is impossible to determine which item was purchased first.\n\nAnswer: I don't know"
+    },
+    {
+      "question_id": "gpt4_70e84552",
+      "hypothesis": "I don't know. The conversation history mentions fixing the fence three weeks ago and getting the goats vaccinated last Thursday, but it does not mention trimming the goats' hooves."
+    },
+    {
+      "question_id": "a3838d2b",
+      "hypothesis": "Based on the conversation history, the user participated in **one** charity event before the \"Run for the Cure\" event: the \"Dance for a Cause\" event on May 1st.\n\n(Note: The user also mentioned volunteering at the \"Food for Thought\" charity gala on September 25th, which would make the total **two** events prior to the \"Run for the Cure\" event on October 15th.)"
+    },
+    {
+      "question_id": "gpt4_93159ced",
+      "hypothesis": "I don't know. The provided conversation history does not contain information about how long you have been working before starting your current job at NovaTech. It only states that you have been working at NovaTech for about 4 years and 3 months."
+    },
+    {
+      "question_id": "gpt4_2d58bcd6",
+      "hypothesis": "I don't know. The conversation history mentions that you finished \"The Nightingale\" last weekend, but it does not mention reading or finishing \"The Hate U Give.\""
+    },
+    {
+      "question_id": "gpt4_65aabe59",
+      "hypothesis": "I don't know. The conversation history mentions setting up a smart thermostat, but there is no mention of a mesh network system."
+    },
+    {
+      "question_id": "982b5123",
+      "hypothesis": "I don't know. The conversation history mentions a previous trip to San Francisco for a wedding two months ago, but it does not mention booking an Airbnb."
+    },
+    {
+      "question_id": "b9cfe692",
+      "hypothesis": "Based on the provided conversation history, I don't know how long it took to finish \"The Seven Husbands of Evelyn Hugo.\" The text mentions that \"The Nightingale\" took three weeks to finish, but there is no information regarding the completion time for \"The Seven Husbands of Evelyn Hugo.\""
+    },
+    {
+      "question_id": "gpt4_4edbafa2",
+      "hypothesis": "You attended the first BBQ event on **June 17, 2023**."
+    },
+    {
+      "question_id": "c8090214",
+      "hypothesis": "I don't know. The conversation history mentions attending the Holiday Market a week before Black Friday, but it does not mention buying an iPhone 13 Pro."
+    },
+    {
+      "question_id": "gpt4_483dd43c",
+      "hypothesis": "I don't know. The conversation history mentions that you started watching \"Game of Thrones\" about a month ago, but it does not mention whether you have watched or started \"The Crown\"."
+    },
+    {
+      "question_id": "e4e14d04",
+      "hypothesis": "I don't know. The conversation mentions attending a meetup organized by 'Book Lovers Unite' last week, but it does not state how long the user had been a member of the group."
+    },
+    {
+      "question_id": "c9f37c46",
+      "hypothesis": "I don't know"
+    },
+    {
+      "question_id": "gpt4_2c50253f",
+      "hypothesis": "I don't know. The conversation history does not mention specific wake-up times for Tuesdays or Thursdays; it only states the user's usual wake-up time was 8:30 AM and they recently started waking up at 7:00 AM."
+    },
+    {
+      "question_id": "dcfa8644",
+      "hypothesis": "I don't know. The conversation history mentions you bought your Adidas running shoes on January 10th, but it does not mention anything about a broken shoelace on your old Converse sneakers or when that incident occurred."
+    },
+    {
+      "question_id": "gpt4_b4a80587",
+      "hypothesis": "I don't know. The conversation history mentions the user got the new 50mm f/1.8 prime lens \"a month ago\" relative to the current date (2023/05/30), but there is no mention of a road trip to the coast."
+    },
+    {
+      "question_id": "gpt4_9a159967",
+      "hypothesis": "Based on the conversation history, you flew with **United Airlines** in March (two flights each way to Chicago) and in April (four flights mentioned in the context of baggage fees). Therefore, you flew with United Airlines the most in March and April."
+    },
+    {
+      "question_id": "cc6d1ec1",
+      "hypothesis": "I don't know. The conversation history mentions you have been bird watching for about three months, but it does not mention attending a bird watching workshop."
+    },
+    {
+      "question_id": "gpt4_8c8961ae",
+      "hypothesis": "I don't know. The conversation history mentions a solo trip to Thailand, but it does not mention a trip to Europe with family."
+    },
+    {
+      "question_id": "gpt4_d9af6064",
+      "hypothesis": "You set up the smart thermostat first.\n\n*   **Smart thermostat:** Set up on **2/10**.\n*   **New router:** Got on **January 15th**."
+    },
+    {
+      "question_id": "gpt4_7de946e7",
+      "hypothesis": "I don't know. The conversation history mentions a persistent cough and a visit to Dr. Smith, but it does not mention anything about a skin tag removal."
+    },
+    {
+      "question_id": "d01c6aa8",
+      "hypothesis": "I don't know. The conversation history does not contain information about when you moved to the United States or your age at that time."
+    },
+    {
+      "question_id": "993da5e2",
+      "hypothesis": "I don't know. The conversation mentions that the furniture was rearranged three weeks ago, but it does not state how long the user had been using the new area rug at that time."
+    },
+    {
+      "question_id": "a3045048",
+      "hypothesis": "You ordered the gift 30 days before your best friend's birthday party.\n\n*   **Order date:** April 15\n*   **Birthday month:** June\n*   **Days remaining in April:** 16 (April has 30 days; 30 - 15 = 15 days left, but since the 15th is the order day, the days *after* the order in April are 16).\n*   **Days in May:** 31\n*   **Days in June (up to birthday):** 0 (assuming birthday is on June 1st for the calculation based on \"in June\").\n\nWait, let's recalculate precisely:\n*   From April 15 to April 30: 15 days.\n*   All of May: 31 days.\n*   Total: 15 + 31 = 46 days.\n\nCorrection:\n*   April 15 to April 30 is 15 days (30 - 15).\n*   May has 31 days.\n*   Total = 15 + 31 = 46 days.\n\nAnswer: 46 days."
+    },
+    {
+      "question_id": "gpt4_d31cdae3",
+      "hypothesis": "The narrator took the solo trip to Europe (Munich) first.\n\nThis is determined by the timestamps in the conversation history:\n*   The conversation about the **American Southwest** (Hoover Dam) is dated **2023/05/23 (Tue) 00:24**.\n*   The conversation about **Munich, Germany** is dated **2023/05/23 (Tue) 16:49**.\n\nSince the Munich conversation occurred later in the same day, the Southwest trip happened first."
+    },
+    {
+      "question_id": "gpt4_cd90e484",
+      "hypothesis": "I don't know. The conversation history does not mention using binoculars or specify how long it took to see the American goldfinches."
+    },
+    {
+      "question_id": "gpt4_88806d6e",
+      "hypothesis": "I don't know. The conversation history mentions meeting a guy named Tom at a previous event, but it does not mention meeting anyone named Mark or Sarah."
+    },
+    {
+      "question_id": "gpt4_4cd9eba1",
+      "hypothesis": "I don't know. The conversation mentions you started attending pre-departure orientation sessions on 3/27, but it does not state when you were accepted into the exchange program."
+    },
+    {
+      "question_id": "gpt4_93f6379c",
+      "hypothesis": "I don't know. The conversation history only mentions joining the book club group called \"Page Turners\"; there is no mention of a \"Marketing Professionals\" group."
+    },
+    {
+      "question_id": "b29f3365",
+      "hypothesis": "I don't know. The conversation history mentions you have been taking lessons with Alex for six weeks, but it does not state when you bought your new guitar amp."
+    },
+    {
+      "question_id": "gpt4_2f56ae70",
+      "hypothesis": "Based on the conversation history, you started using **Apple TV+** most recently.\n\nThe conversation indicates you have been using Netflix, Hulu, and Amazon Prime for the past 6 months, and you mentioned starting Apple TV+ \"for a few months now.\""
+    },
+    {
+      "question_id": "6613b389",
+      "hypothesis": "Rachel got engaged 2 months before your anniversary.\n\n*   Rachel's engagement date: May 15th (2023)\n*   Your anniversary date: July 22nd (2023)\n*   Time difference: Approximately 2 months and 7 days."
+    },
+    {
+      "question_id": "gpt4_78cf46a3",
+      "hypothesis": "I don't know"
+    },
+    {
+      "question_id": "gpt4_0a05b494",
+      "hypothesis": "I don't know. The conversation history mentions meeting a tourist from Australia on the subway last Thursday, but it does not mention meeting a woman selling jam at a farmer's market."
+    },
+    {
+      "question_id": "gpt4_1a1dc16d",
+      "hypothesis": "I don't know. The provided context does not contain information about a meeting with Rachel or a pride parade."
+    },
+    {
+      "question_id": "gpt4_2f584639",
+      "hypothesis": "You bought the necklace for your sister first. The conversation history shows you mentioned getting the necklace before mentioning the Shutterfly photo album for your mom's anniversary."
+    },
+    {
+      "question_id": "gpt4_213fd887",
+      "hypothesis": "I don't know. The conversation history mentions participating in a recreational volleyball league for about two months, but it does not mention participating in a charity 5K run."
+    }
+  ]
+}

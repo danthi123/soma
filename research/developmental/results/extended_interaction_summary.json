@@ -1,0 +1,78 @@
+{
+  "total_inputs": 220,
+  "total_time_s": 2.5,
+  "final_nodes": 14,
+  "final_edges": 37,
+  "final_wm_used": 32,
+  "final_episodic": 220,
+  "tracker_summary": {
+    "prediction_error": {
+      "mean": 0.0013398182426747306,
+      "min": 0.0,
+      "max": 0.0072860512882471085,
+      "last": 1.981673267437145e-05,
+      "count": 220.0
+    },
+    "novelty": {
+      "mean": 0.08188733676803918,
+      "min": 0.0,
+      "max": 1.0,
+      "last": 0.0006823672647432241,
+      "count": 220.0
+    },
+    "num_nodes": {
+      "mean": 14.0,
+      "min": 14.0,
+      "max": 14.0,
+      "last": 14.0,
+      "count": 220.0
+    },
+    "num_edges": {
+      "mean": 30.90909090909091,
+      "min": 24.0,
+      "max": 37.0,
+      "last": 37.0,
+      "count": 220.0
+    },
+    "wm_occupancy": {
+      "mean": 29.745454545454546,
+      "min": 1.0,
+      "max": 32.0,
+      "last": 32.0,
+      "count": 220.0
+    },
+    "episodic_count": {
+      "mean": 110.5,
+      "min": 1.0,
+      "max": 220.0,
+      "last": 220.0,
+      "count": 220.0
+    }
+  },
+  "per_topic_errors": {
+    "cooking": {
+      "count": 60,
+      "mean": 0.002250195210823828
+    },
+    "travel": {
+      "count": 60,
+      "mean": 0.0019526008120616704
+    },
+    "music": {
+      "count": 45,
+      "mean": 0.0007227333666782619
+    },
+    "science": {
+      "count": 25,
+      "mean": 0.0003075908904429525
+    },
+    "exercise": {
+      "count": 25,
+      "mean": 7.262423576321454e-05
+    },
+    "novel": {
+      "count": 5,
+      "mean": 0.00011277447192696855
+    }
+  }
+}

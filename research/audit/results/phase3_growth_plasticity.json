@@ -1,0 +1,98 @@
+{
+  "synaptogenesis_interval": [
+    {
+      "recall": 1.0,
+      "query_time_s": 0.1089,
+      "consolidation_time_s": 65.6275,
+      "total_time_s": 72.9712,
+      "node_count": 26,
+      "edge_count": 48,
+      "memory_count": 250,
+      "param_name": "synaptogenesis_interval",
+      "param_value": 0
+    },
+    {
+      "recall": 1.0,
+      "query_time_s": 0.1037,
+      "consolidation_time_s": 65.9091,
+      "total_time_s": 67.2658,
+      "node_count": 26,
+      "edge_count": 48,
+      "memory_count": 250,
+      "param_name": "synaptogenesis_interval",
+      "param_value": 100
+    }
+  ],
+  "neurogenesis_interval": [
+    {
+      "recall": 1.0,
+      "query_time_s": 0.1105,
+      "consolidation_time_s": 66.9853,
+      "total_time_s": 68.3845,
+      "node_count": 26,
+      "edge_count": 48,
+      "memory_count": 250,
+      "param_name": "neurogenesis_interval",
+      "param_value": 0
+    },
+    {
+      "recall": 1.0,
+      "query_time_s": 0.1021,
+      "consolidation_time_s": 66.2225,
+      "total_time_s": 67.5934,
+      "node_count": 26,
+      "edge_count": 48,
+      "memory_count": 250,
+      "param_name": "neurogenesis_interval",
+      "param_value": 500
+    }
+  ],
+  "pruning_interval": [
+    {
+      "recall": 1.0,
+      "query_time_s": 0.1137,
+      "consolidation_time_s": 66.3508,
+      "total_time_s": 67.7949,
+      "node_count": 26,
+      "edge_count": 48,
+      "memory_count": 250,
+      "param_name": "pruning_interval",
+      "param_value": 0
+    },
+    {
+      "recall": 1.0,
+      "query_time_s": 0.1048,
+      "consolidation_time_s": 67.6363,
+      "total_time_s": 69.0236,
+      "node_count": 26,
+      "edge_count": 48,
+      "memory_count": 250,
+      "param_name": "pruning_interval",
+      "param_value": 1000
+    }
+  ],
+  "compound": [
+    {
+      "recall": 1.0,
+      "query_time_s": 0.1292,
+      "consolidation_time_s": 66.96,
+      "total_time_s": 68.4107,
+      "node_count": 26,
+      "edge_count": 48,
+      "memory_count": 250,
+      "param_name": "compound",
+      "param_value": "static_graph"
+    },
+    {
+      "recall": 1.0,
+      "query_time_s": 0.1258,
+      "consolidation_time_s": 66.5442,
+      "total_time_s": 68.0051,
+      "node_count": 26,
+      "edge_count": 48,
+      "memory_count": 250,
+      "param_name": "compound",
+      "param_value": "full_pipeline"
+    }
+  ]
+}

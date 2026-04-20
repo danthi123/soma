@@ -1,0 +1,712 @@
+Device: cuda
+Loaded 20 items
+
+Item                 Type         Sess Turns  F1@0.0  F1@1.0   Delta  Winner
+------------------------------------------------------------------------------
+2026-04-17 14:01:57,641 INFO PyTorch version 2.10.0+cu128 available.
+2026-04-17 14:01:57,642 INFO TensorFlow version 2.17.0 available.
+2026-04-17 14:01:57,859 INFO Use pytorch device_name: cuda:0
+2026-04-17 14:01:57,859 INFO Load pretrained SentenceTransformer: all-MiniLM-L6-v2
+2026-04-17 14:01:58,104 INFO HTTP Request: HEAD https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/modules.json "HTTP/1.1 307 Temporary Redirect"
+2026-04-17 14:01:58,115 INFO HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/sentence-transformers/all-MiniLM-L6-v2/c9745ed1d9f207416be6d2e6f8de32d1f16199bf/modules.json "HTTP/1.1 200 OK"
+2026-04-17 14:01:58,141 INFO HTTP Request: HEAD https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/config_sentence_transformers.json "HTTP/1.1 307 Temporary Redirect"
+2026-04-17 14:01:58,151 INFO HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/sentence-transformers/all-MiniLM-L6-v2/c9745ed1d9f207416be6d2e6f8de32d1f16199bf/config_sentence_transformers.json "HTTP/1.1 200 OK"
+2026-04-17 14:01:58,174 INFO HTTP Request: HEAD https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/README.md "HTTP/1.1 307 Temporary Redirect"
+2026-04-17 14:01:58,183 INFO HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/sentence-transformers/all-MiniLM-L6-v2/c9745ed1d9f207416be6d2e6f8de32d1f16199bf/README.md "HTTP/1.1 200 OK"
+2026-04-17 14:01:58,205 INFO HTTP Request: HEAD https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/modules.json "HTTP/1.1 307 Temporary Redirect"
+2026-04-17 14:01:58,215 INFO HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/sentence-transformers/all-MiniLM-L6-v2/c9745ed1d9f207416be6d2e6f8de32d1f16199bf/modules.json "HTTP/1.1 200 OK"
+2026-04-17 14:01:58,239 INFO HTTP Request: HEAD https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/sentence_bert_config.json "HTTP/1.1 307 Temporary Redirect"
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+2026-04-17 14:01:58,239 WARNING Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+2026-04-17 14:01:58,246 INFO HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/sentence-transformers/all-MiniLM-L6-v2/c9745ed1d9f207416be6d2e6f8de32d1f16199bf/sentence_bert_config.json "HTTP/1.1 200 OK"
+2026-04-17 14:01:58,270 INFO HTTP Request: HEAD https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/adapter_config.json "HTTP/1.1 404 Not Found"
+2026-04-17 14:01:58,291 INFO HTTP Request: HEAD https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/config.json "HTTP/1.1 307 Temporary Redirect"
+2026-04-17 14:01:58,298 INFO HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/sentence-transformers/all-MiniLM-L6-v2/c9745ed1d9f207416be6d2e6f8de32d1f16199bf/config.json "HTTP/1.1 200 OK"
+Loading weights:   0%|          | 0/103 [00:00<?, ?it/s]Loading weights:   1%|          | 1/103 [00:00<?, ?it/s, Materializing param=embeddings.LayerNorm.bias]Loading weights:   1%|          | 1/103 [00:00<?, ?it/s, Materializing param=embeddings.LayerNorm.bias]Loading weights:   2%|1         | 2/103 [00:00<00:00, 1999.67it/s, Materializing param=embeddings.LayerNorm.weight]Loading weights:   2%|1         | 2/103 [00:00<00:00, 1999.67it/s, Materializing param=embeddings.LayerNorm.weight]Loading weights:   3%|2         | 3/103 [00:00<00:00, 2999.50it/s, Materializing param=embeddings.position_embeddings.weight]Loading weights:   3%|2         | 3/103 [00:00<00:00, 2999.50it/s, Materializing param=embeddings.position_embeddings.weight]Loading weights:   4%|3         | 4/103 [00:00<00:00, 3999.34it/s, Materializing param=embeddings.token_type_embeddings.weight]Loading weights:   4%|3         | 4/103 [00:00<00:00, 3999.34it/s, Materializing param=embeddings.token_type_embeddings.weight]Loading weights:   5%|4         | 5/103 [00:00<00:00, 4999.17it/s, Materializing param=embeddings.word_embeddings.weight]      Loading weights:   5%|4         | 5/103 [00:00<00:00, 4999.17it/s, Materializing param=embeddings.word_embeddings.weight]Loading weights:   6%|5         | 6/103 [00:00<00:00, 5999.00it/s, Materializing param=encoder.layer.0.attention.output.LayerNorm.bias]Loading weights:   6%|5         | 6/103 [00:00<00:00, 5999.00it/s, Materializing param=encoder.layer.0.attention.output.LayerNorm.bias]Loading weights:   7%|6         | 7/103 [00:00<00:00, 3499.00it/s, Materializing param=encoder.layer.0.attention.output.LayerNorm.weight]Loading weights:   7%|6         | 7/103 [00:00<00:00, 3499.00it/s, Materializing param=encoder.layer.0.attention.output.LayerNorm.weight]Loading weights:   8%|7         | 8/103 [00:00<00:00, 3998.86it/s, Materializing param=encoder.layer.0.attention.output.dense.bias]      Loading weights:   8%|7         | 8/103 [00:00<00:00, 3998.86it/s, Materializing param=encoder.layer.0.attention.output.dense.bias]Loading weights:   9%|8         | 9/103 [00:00<00:00, 4498.72it/s, Materializing param=encoder.layer.0.attention.output.dense.weight]Loading weights:   9%|8         | 9/103 [00:00<00:00, 4498.72it/s, Materializing param=encoder.layer.0.attention.output.dense.weight]Loading weights:  10%|9         | 10/103 [00:00<00:00, 4998.57it/s, Materializing param=encoder.layer.0.attention.self.key.bias]     Loading weights:  10%|9         | 10/103 [00:00<00:00, 4998.57it/s, Materializing param=encoder.layer.0.attention.self.key.bias]Loading weights:  11%|#         | 11/103 [00:00<00:00, 5498.43it/s, Materializing param=encoder.layer.0.attention.self.key.weight]Loading weights:  11%|#         | 11/103 [00:00<00:00, 5498.43it/s, Materializing param=encoder.layer.0.attention.self.key.weight]Loading weights:  12%|#1        | 12/103 [00:00<00:00, 5998.29it/s, Materializing param=encoder.layer.0.attention.self.query.bias]Loading weights:  12%|#1        | 12/103 [00:00<00:00, 5998.29it/s, Materializing param=encoder.layer.0.attention.self.query.bias]Loading weights:  13%|#2        | 13/103 [00:00<00:00, 6498.15it/s, Materializing param=encoder.layer.0.attention.self.query.weight]Loading weights:  13%|#2        | 13/103 [00:00<00:00, 6498.15it/s, Materializing param=encoder.layer.0.attention.self.query.weight]Loading weights:  14%|#3        | 14/103 [00:00<00:00, 6998.00it/s, Materializing param=encoder.layer.0.attention.self.value.bias]  Loading weights:  14%|#3        | 14/103 [00:00<00:00, 6998.00it/s, Materializing param=encoder.layer.0.attention.self.value.bias]Loading weights:  15%|#4        | 15/103 [00:00<00:00, 4999.97it/s, Materializing param=encoder.layer.0.attention.self.value.weight]Loading weights:  15%|#4        | 15/103 [00:00<00:00, 4999.97it/s, Materializing param=encoder.layer.0.attention.self.value.weight]Loading weights:  16%|#5        | 16/103 [00:00<00:00, 5333.30it/s, Materializing param=encoder.layer.0.intermediate.dense.bias]    Loading weights:  16%|#5        | 16/103 [00:00<00:00, 5333.30it/s, Materializing param=encoder.layer.0.intermediate.dense.bias]Loading weights:  17%|#6        | 17/103 [00:00<00:00, 5666.63it/s, Materializing param=encoder.layer.0.intermediate.dense.weight]Loading weights:  17%|#6        | 17/103 [00:00<00:00, 5666.63it/s, Materializing param=encoder.layer.0.intermediate.dense.weight]Loading weights:  17%|#7        | 18/103 [00:00<00:00, 5999.96it/s, Materializing param=encoder.layer.0.output.LayerNorm.bias]    Loading weights:  17%|#7        | 18/103 [00:00<00:00, 5999.96it/s, Materializing param=encoder.layer.0.output.LayerNorm.bias]Loading weights:  18%|#8        | 19/103 [00:00<00:00, 6333.29it/s, Materializing param=encoder.layer.0.output.LayerNorm.weight]Loading weights:  18%|#8        | 19/103 [00:00<00:00, 6333.29it/s, Materializing param=encoder.layer.0.output.LayerNorm.weight]Loading weights:  19%|#9        | 20/103 [00:00<00:00, 6666.62it/s, Materializing param=encoder.layer.0.output.dense.bias]      Loading weights:  19%|#9        | 20/103 [00:00<00:00, 6666.62it/s, Materializing param=encoder.layer.0.output.dense.bias]Loading weights:  20%|##        | 21/103 [00:00<00:00, 6999.95it/s, Materializing param=encoder.layer.0.output.dense.weight]Loading weights:  20%|##        | 21/103 [00:00<00:00, 6999.95it/s, Materializing param=encoder.layer.0.output.dense.weight]Loading weights:  21%|##1       | 22/103 [00:00<00:00, 7333.28it/s, Materializing param=encoder.layer.1.attention.output.LayerNorm.bias]Loading weights:  21%|##1       | 22/103 [00:00<00:00, 7333.28it/s, Materializing param=encoder.layer.1.attention.output.LayerNorm.bias]Loading weights:  22%|##2       | 23/103 [00:00<00:00, 7666.61it/s, Materializing param=encoder.layer.1.attention.output.LayerNorm.weight]Loading weights:  22%|##2       | 23/103 [00:00<00:00, 7666.61it/s, Materializing param=encoder.layer.1.attention.output.LayerNorm.weight]Loading weights:  23%|##3       | 24/103 [00:00<00:00, 7999.94it/s, Materializing param=encoder.layer.1.attention.output.dense.bias]      Loading weights:  23%|##3       | 24/103 [00:00<00:00, 7999.94it/s, Materializing param=encoder.layer.1.attention.output.dense.bias]Loading weights:  24%|##4       | 25/103 [00:00<00:00, 8333.28it/s, Materializing param=encoder.layer.1.attention.output.dense.weight]Loading weights:  24%|##4       | 25/103 [00:00<00:00, 8333.28it/s, Materializing param=encoder.layer.1.attention.output.dense.weight]Loading weights:  25%|##5       | 26/103 [00:00<00:00, 6499.70it/s, Materializing param=encoder.layer.1.attention.self.key.bias]      Loading weights:  25%|##5       | 26/103 [00:00<00:00, 6499.70it/s, Materializing param=encoder.layer.1.attention.self.key.bias]Loading weights:  26%|##6       | 27/103 [00:00<00:00, 6749.68it/s, Materializing param=encoder.layer.1.attention.self.key.weight]Loading weights:  26%|##6       | 27/103 [00:00<00:00, 6749.68it/s, Materializing param=encoder.layer.1.attention.self.key.weight]Loading weights:  27%|##7       | 28/103 [00:00<00:00, 6999.67it/s, Materializing param=encoder.layer.1.attention.self.query.bias]Loading weights:  27%|##7       | 28/103 [00:00<00:00, 6999.67it/s, Materializing param=encoder.layer.1.attention.self.query.bias]Loading weights:  28%|##8       | 29/103 [00:00<00:00, 7249.66it/s, Materializing param=encoder.layer.1.attention.self.query.weight]Loading weights:  28%|##8       | 29/103 [00:00<00:00, 7249.66it/s, Materializing param=encoder.layer.1.attention.self.query.weight]Loading weights:  29%|##9       | 30/103 [00:00<00:00, 7499.65it/s, Materializing param=encoder.layer.1.attention.self.value.bias]  Loading weights:  29%|##9       | 30/103 [00:00<00:00, 7499.65it/s, Materializing param=encoder.layer.1.attention.self.value.bias]Loading weights:  30%|###       | 31/103 [00:00<00:00, 7749.64it/s, Materializing param=encoder.layer.1.attention.self.value.weight]Loading weights:  30%|###       | 31/103 [00:00<00:00, 7749.64it/s, Materializing param=encoder.layer.1.attention.self.value.weight]Loading weights:  31%|###1      | 32/103 [00:00<00:00, 7999.63it/s, Materializing param=encoder.layer.1.intermediate.dense.bias]    Loading weights:  31%|###1      | 32/103 [00:00<00:00, 7999.63it/s, Materializing param=encoder.layer.1.intermediate.dense.bias]Loading weights:  32%|###2      | 33/103 [00:00<00:00, 8249.61it/s, Materializing param=encoder.layer.1.intermediate.dense.weight]Loading weights:  32%|###2      | 33/103 [00:00<00:00, 8249.61it/s, Materializing param=encoder.layer.1.intermediate.dense.weight]Loading weights:  33%|###3      | 34/103 [00:00<00:00, 8499.60it/s, Materializing param=encoder.layer.1.output.LayerNorm.bias]    Loading weights:  33%|###3      | 34/103 [00:00<00:00, 8499.60it/s, Materializing param=encoder.layer.1.output.LayerNorm.bias]Loading weights:  34%|###3      | 35/103 [00:00<00:00, 8749.59it/s, Materializing param=encoder.layer.1.output.LayerNorm.weight]Loading weights:  34%|###3      | 35/103 [00:00<00:00, 8749.59it/s, Materializing param=encoder.layer.1.output.LayerNorm.weight]Loading weights:  35%|###4      | 36/103 [00:00<00:00, 8999.58it/s, Materializing param=encoder.layer.1.output.dense.bias]      Loading weights:  35%|###4      | 36/103 [00:00<00:00, 8999.58it/s, Materializing param=encoder.layer.1.output.dense.bias]Loading weights:  36%|###5      | 37/103 [00:00<00:00, 9249.57it/s, Materializing param=encoder.layer.1.output.dense.weight]Loading weights:  36%|###5      | 37/103 [00:00<00:00, 9249.57it/s, Materializing param=encoder.layer.1.output.dense.weight]Loading weights:  37%|###6      | 38/103 [00:00<00:00, 7600.55it/s, Materializing param=encoder.layer.2.attention.output.LayerNorm.bias]Loading weights:  37%|###6      | 38/103 [00:00<00:00, 7600.55it/s, Materializing param=encoder.layer.2.attention.output.LayerNorm.bias]Loading weights:  38%|###7      | 39/103 [00:00<00:00, 7800.57it/s, Materializing param=encoder.layer.2.attention.output.LayerNorm.weight]Loading weights:  38%|###7      | 39/103 [00:00<00:00, 7800.57it/s, Materializing param=encoder.layer.2.attention.output.LayerNorm.weight]Loading weights:  39%|###8      | 40/103 [00:00<00:00, 8000.58it/s, Materializing param=encoder.layer.2.attention.output.dense.bias]      Loading weights:  39%|###8      | 40/103 [00:00<00:00, 8000.58it/s, Materializing param=encoder.layer.2.attention.output.dense.bias]Loading weights:  40%|###9      | 41/103 [00:00<00:00, 8200.59it/s, Materializing param=encoder.layer.2.attention.output.dense.weight]Loading weights:  40%|###9      | 41/103 [00:00<00:00, 8200.59it/s, Materializing param=encoder.layer.2.attention.output.dense.weight]Loading weights:  41%|####      | 42/103 [00:00<00:00, 8400.61it/s, Materializing param=encoder.layer.2.attention.self.key.bias]      Loading weights:  41%|####      | 42/103 [00:00<00:00, 8400.61it/s, Materializing param=encoder.layer.2.attention.self.key.bias]Loading weights:  42%|####1     | 43/103 [00:00<00:00, 8600.62it/s, Materializing param=encoder.layer.2.attention.self.key.weight]Loading weights:  42%|####1     | 43/103 [00:00<00:00, 8600.62it/s, Materializing param=encoder.layer.2.attention.self.key.weight]Loading weights:  43%|####2     | 44/103 [00:00<00:00, 8800.64it/s, Materializing param=encoder.layer.2.attention.self.query.bias]Loading weights:  43%|####2     | 44/103 [00:00<00:00, 8800.64it/s, Materializing param=encoder.layer.2.attention.self.query.bias]Loading weights:  44%|####3     | 45/103 [00:00<00:00, 9000.65it/s, Materializing param=encoder.layer.2.attention.self.query.weight]Loading weights:  44%|####3     | 45/103 [00:00<00:00, 9000.65it/s, Materializing param=encoder.layer.2.attention.self.query.weight]Loading weights:  45%|####4     | 46/103 [00:00<00:00, 9200.67it/s, Materializing param=encoder.layer.2.attention.self.value.bias]  Loading weights:  45%|####4     | 46/103 [00:00<00:00, 9200.67it/s, Materializing param=encoder.layer.2.attention.self.value.bias]Loading weights:  46%|####5     | 47/103 [00:00<00:00, 9400.68it/s, Materializing param=encoder.layer.2.attention.self.value.weight]Loading weights:  46%|####5     | 47/103 [00:00<00:00, 9400.68it/s, Materializing param=encoder.layer.2.attention.self.value.weight]Loading weights:  47%|####6     | 48/103 [00:00<00:00, 7999.94it/s, Materializing param=encoder.layer.2.intermediate.dense.bias]    Loading weights:  47%|####6     | 48/103 [00:00<00:00, 7999.94it/s, Materializing param=encoder.layer.2.intermediate.dense.bias]Loading weights:  48%|####7     | 49/103 [00:00<00:00, 8166.61it/s, Materializing param=encoder.layer.2.intermediate.dense.weight]Loading weights:  48%|####7     | 49/103 [00:00<00:00, 8166.61it/s, Materializing param=encoder.layer.2.intermediate.dense.weight]Loading weights:  49%|####8     | 50/103 [00:00<00:00, 8333.28it/s, Materializing param=encoder.layer.2.output.LayerNorm.bias]    Loading weights:  49%|####8     | 50/103 [00:00<00:00, 8333.28it/s, Materializing param=encoder.layer.2.output.LayerNorm.bias]Loading weights:  50%|####9     | 51/103 [00:00<00:00, 8499.94it/s, Materializing param=encoder.layer.2.output.LayerNorm.weight]Loading weights:  50%|####9     | 51/103 [00:00<00:00, 8499.94it/s, Materializing param=encoder.layer.2.output.LayerNorm.weight]Loading weights:  50%|#####     | 52/103 [00:00<00:00, 8666.61it/s, Materializing param=encoder.layer.2.output.dense.bias]      Loading weights:  50%|#####     | 52/103 [00:00<00:00, 8666.61it/s, Materializing param=encoder.layer.2.output.dense.bias]Loading weights:  51%|#####1    | 53/103 [00:00<00:00, 8833.27it/s, Materializing param=encoder.layer.2.output.dense.weight]Loading weights:  51%|#####1    | 53/103 [00:00<00:00, 8833.27it/s, Materializing param=encoder.layer.2.output.dense.weight]Loading weights:  52%|#####2    | 54/103 [00:00<00:00, 8999.94it/s, Materializing param=encoder.layer.3.attention.output.LayerNorm.bias]Loading weights:  52%|#####2    | 54/103 [00:00<00:00, 8999.94it/s, Materializing param=encoder.layer.3.attention.output.LayerNorm.bias]Loading weights:  53%|#####3    | 55/103 [00:00<00:00, 7856.64it/s, Materializing param=encoder.layer.3.attention.output.LayerNorm.weight]Loading weights:  53%|#####3    | 55/103 [00:00<00:00, 7856.64it/s, Materializing param=encoder.layer.3.attention.output.LayerNorm.weight]Loading weights:  54%|#####4    | 56/103 [00:00<00:00, 7999.49it/s, Materializing param=encoder.layer.3.attention.output.dense.bias]      Loading weights:  54%|#####4    | 56/103 [00:00<00:00, 7999.49it/s, Materializing param=encoder.layer.3.attention.output.dense.bias]Loading weights:  55%|#####5    | 57/103 [00:00<00:00, 8142.34it/s, Materializing param=encoder.layer.3.attention.output.dense.weight]Loading weights:  55%|#####5    | 57/103 [00:00<00:00, 8142.34it/s, Materializing param=encoder.layer.3.attention.output.dense.weight]Loading weights:  56%|#####6    | 58/103 [00:00<00:00, 8285.19it/s, Materializing param=encoder.layer.3.attention.self.key.bias]      Loading weights:  56%|#####6    | 58/103 [00:00<00:00, 8285.19it/s, Materializing param=encoder.layer.3.attention.self.key.bias]Loading weights:  57%|#####7    | 59/103 [00:00<00:00, 8428.03it/s, Materializing param=encoder.layer.3.attention.self.key.weight]Loading weights:  57%|#####7    | 59/103 [00:00<00:00, 8428.03it/s, Materializing param=encoder.layer.3.attention.self.key.weight]Loading weights:  58%|#####8    | 60/103 [00:00<00:00, 8570.88it/s, Materializing param=encoder.layer.3.attention.self.query.bias]Loading weights:  58%|#####8    | 60/103 [00:00<00:00, 8570.88it/s, Materializing param=encoder.layer.3.attention.self.query.bias]Loading weights:  59%|#####9    | 61/103 [00:00<00:00, 8713.73it/s, Materializing param=encoder.layer.3.attention.self.query.weight]Loading weights:  59%|#####9    | 61/103 [00:00<00:00, 8713.73it/s, Materializing param=encoder.layer.3.attention.self.query.weight]Loading weights:  60%|######    | 62/103 [00:00<00:00, 8856.58it/s, Materializing param=encoder.layer.3.attention.self.value.bias]  Loading weights:  60%|######    | 62/103 [00:00<00:00, 8856.58it/s, Materializing param=encoder.layer.3.attention.self.value.bias]Loading weights:  61%|######1   | 63/103 [00:00<00:00, 7875.34it/s, Materializing param=encoder.layer.3.attention.self.value.weight]Loading weights:  61%|######1   | 63/103 [00:00<00:00, 7875.34it/s, Materializing param=encoder.layer.3.attention.self.value.weight]Loading weights:  62%|######2   | 64/103 [00:00<00:00, 8000.34it/s, Materializing param=encoder.layer.3.intermediate.dense.bias]    Loading weights:  62%|######2   | 64/103 [00:00<00:00, 8000.34it/s, Materializing param=encoder.layer.3.intermediate.dense.bias]Loading weights:  63%|######3   | 65/103 [00:00<00:00, 8125.35it/s, Materializing param=encoder.layer.3.intermediate.dense.weight]Loading weights:  63%|######3   | 65/103 [00:00<00:00, 8125.35it/s, Materializing param=encoder.layer.3.intermediate.dense.weight]Loading weights:  64%|######4   | 66/103 [00:00<00:00, 8250.35it/s, Materializing param=encoder.layer.3.output.LayerNorm.bias]    Loading weights:  64%|######4   | 66/103 [00:00<00:00, 8250.35it/s, Materializing param=encoder.layer.3.output.LayerNorm.bias]Loading weights:  65%|######5   | 67/103 [00:00<00:00, 8375.36it/s, Materializing param=encoder.layer.3.output.LayerNorm.weight]Loading weights:  65%|######5   | 67/103 [00:00<00:00, 8375.36it/s, Materializing param=encoder.layer.3.output.LayerNorm.weight]Loading weights:  66%|######6   | 68/103 [00:00<00:00, 8500.36it/s, Materializing param=encoder.layer.3.output.dense.bias]      Loading weights:  66%|######6   | 68/103 [00:00<00:00, 8500.36it/s, Materializing param=encoder.layer.3.output.dense.bias]Loading weights:  67%|######6   | 69/103 [00:00<00:00, 7666.21it/s, Materializing param=encoder.layer.3.output.dense.weight]Loading weights:  67%|######6   | 69/103 [00:00<00:00, 7666.21it/s, Materializing param=encoder.layer.3.output.dense.weight]Loading weights:  68%|######7   | 70/103 [00:00<00:00, 7777.31it/s, Materializing param=encoder.layer.4.attention.output.LayerNorm.bias]Loading weights:  68%|######7   | 70/103 [00:00<00:00, 7777.31it/s, Materializing param=encoder.layer.4.attention.output.LayerNorm.bias]Loading weights:  69%|######8   | 71/103 [00:00<00:00, 7888.42it/s, Materializing param=encoder.layer.4.attention.output.LayerNorm.weight]Loading weights:  69%|######8   | 71/103 [00:00<00:00, 7888.42it/s, Materializing param=encoder.layer.4.attention.output.LayerNorm.weight]Loading weights:  70%|######9   | 72/103 [00:00<00:00, 7199.84it/s, Materializing param=encoder.layer.4.attention.output.dense.bias]      Loading weights:  70%|######9   | 72/103 [00:00<00:00, 7199.84it/s, Materializing param=encoder.layer.4.attention.output.dense.bias]Loading weights:  71%|#######   | 73/103 [00:00<00:00, 7299.83it/s, Materializing param=encoder.layer.4.attention.output.dense.weight]Loading weights:  71%|#######   | 73/103 [00:00<00:00, 7299.83it/s, Materializing param=encoder.layer.4.attention.output.dense.weight]Loading weights:  72%|#######1  | 74/103 [00:00<00:00, 7399.83it/s, Materializing param=encoder.layer.4.attention.self.key.bias]      Loading weights:  72%|#######1  | 74/103 [00:00<00:00, 7399.83it/s, Materializing param=encoder.layer.4.attention.self.key.bias]Loading weights:  73%|#######2  | 75/103 [00:00<00:00, 7499.83it/s, Materializing param=encoder.layer.4.attention.self.key.weight]Loading weights:  73%|#######2  | 75/103 [00:00<00:00, 7499.83it/s, Materializing param=encoder.layer.4.attention.self.key.weight]Loading weights:  74%|#######3  | 76/103 [00:00<00:00, 7599.83it/s, Materializing param=encoder.layer.4.attention.self.query.bias]Loading weights:  74%|#######3  | 76/103 [00:00<00:00, 7599.83it/s, Materializing param=encoder.layer.4.attention.self.query.bias]Loading weights:  75%|#######4  | 77/103 [00:00<00:00, 6415.35it/s, Materializing param=encoder.layer.4.attention.self.query.weight]Loading weights:  75%|#######4  | 77/103 [00:00<00:00, 6415.35it/s, Materializing param=encoder.layer.4.attention.self.query.weight]Loading weights:  76%|#######5  | 78/103 [00:00<00:00, 6498.66it/s, Materializing param=encoder.layer.4.attention.self.value.bias]  Loading weights:  76%|#######5  | 78/103 [00:00<00:00, 6498.66it/s, Materializing param=encoder.layer.4.attention.self.value.bias]Loading weights:  77%|#######6  | 79/103 [00:00<00:00, 6581.98it/s, Materializing param=encoder.layer.4.attention.self.value.weight]Loading weights:  77%|#######6  | 79/103 [00:00<00:00, 6581.98it/s, Materializing param=encoder.layer.4.attention.self.value.weight]Loading weights:  78%|#######7  | 80/103 [00:00<00:00, 6665.30it/s, Materializing param=encoder.layer.4.intermediate.dense.bias]    Loading weights:  78%|#######7  | 80/103 [00:00<00:00, 6665.30it/s, Materializing param=encoder.layer.4.intermediate.dense.bias]Loading weights:  79%|#######8  | 81/103 [00:00<00:00, 6748.61it/s, Materializing param=encoder.layer.4.intermediate.dense.weight]Loading weights:  79%|#######8  | 81/103 [00:00<00:00, 6748.61it/s, Materializing param=encoder.layer.4.intermediate.dense.weight]Loading weights:  80%|#######9  | 82/103 [00:00<00:00, 6831.93it/s, Materializing param=encoder.layer.4.output.LayerNorm.bias]    Loading weights:  80%|#######9  | 82/103 [00:00<00:00, 6307.57it/s, Materializing param=encoder.layer.4.output.LayerNorm.bias]Loading weights:  81%|########  | 83/103 [00:00<00:00, 6384.49it/s, Materializing param=encoder.layer.4.output.LayerNorm.weight]Loading weights:  81%|########  | 83/103 [00:00<00:00, 6384.49it/s, Materializing param=encoder.layer.4.output.LayerNorm.weight]Loading weights:  82%|########1 | 84/103 [00:00<00:00, 6461.41it/s, Materializing param=encoder.layer.4.output.dense.bias]      Loading weights:  82%|########1 | 84/103 [00:00<00:00, 6461.41it/s, Materializing param=encoder.layer.4.output.dense.bias]Loading weights:  83%|########2 | 85/103 [00:00<00:00, 6538.34it/s, Materializing param=encoder.layer.4.output.dense.weight]Loading weights:  83%|########2 | 85/103 [00:00<00:00, 6538.34it/s, Materializing param=encoder.layer.4.output.dense.weight]Loading weights:  83%|########3 | 86/103 [00:00<00:00, 6615.26it/s, Materializing param=encoder.layer.5.attention.output.LayerNorm.bias]Loading weights:  83%|########3 | 86/103 [00:00<00:00, 6615.26it/s, Materializing param=encoder.layer.5.attention.output.LayerNorm.bias]Loading weights:  84%|########4 | 87/103 [00:00<00:00, 6692.18it/s, Materializing param=encoder.layer.5.attention.output.LayerNorm.weight]Loading weights:  84%|########4 | 87/103 [00:00<00:00, 6692.18it/s, Materializing param=encoder.layer.5.attention.output.LayerNorm.weight]Loading weights:  85%|########5 | 88/103 [00:00<00:00, 6769.10it/s, Materializing param=encoder.layer.5.attention.output.dense.bias]      Loading weights:  85%|########5 | 88/103 [00:00<00:00, 6769.10it/s, Materializing param=encoder.layer.5.attention.output.dense.bias]Loading weights:  86%|########6 | 89/103 [00:00<00:00, 6846.02it/s, Materializing param=encoder.layer.5.attention.output.dense.weight]Loading weights:  86%|########6 | 89/103 [00:00<00:00, 6846.02it/s, Materializing param=encoder.layer.5.attention.output.dense.weight]Loading weights:  87%|########7 | 90/103 [00:00<00:00, 6922.94it/s, Materializing param=encoder.layer.5.attention.self.key.bias]      Loading weights:  87%|########7 | 90/103 [00:00<00:00, 6922.94it/s, Materializing param=encoder.layer.5.attention.self.key.bias]Loading weights:  88%|########8 | 91/103 [00:00<00:00, 6999.87it/s, Materializing param=encoder.layer.5.attention.self.key.weight]Loading weights:  88%|########8 | 91/103 [00:00<00:00, 6999.87it/s, Materializing param=encoder.layer.5.attention.self.key.weight]Loading weights:  89%|########9 | 92/103 [00:00<00:00, 7076.79it/s, Materializing param=encoder.layer.5.attention.self.query.bias]Loading weights:  89%|########9 | 92/103 [00:00<00:00, 7076.79it/s, Materializing param=encoder.layer.5.attention.self.query.bias]Loading weights:  90%|######### | 93/103 [00:00<00:00, 7153.71it/s, Materializing param=encoder.layer.5.attention.self.query.weight]Loading weights:  90%|######### | 93/103 [00:00<00:00, 7153.71it/s, Materializing param=encoder.layer.5.attention.self.query.weight]Loading weights:  91%|#########1| 94/103 [00:00<00:00, 7230.63it/s, Materializing param=encoder.layer.5.attention.self.value.bias]  Loading weights:  91%|#########1| 94/103 [00:00<00:00, 7230.63it/s, Materializing param=encoder.layer.5.attention.self.value.bias]Loading weights:  92%|#########2| 95/103 [00:00<00:00, 7307.55it/s, Materializing param=encoder.layer.5.attention.self.value.weight]Loading weights:  92%|#########2| 95/103 [00:00<00:00, 7307.55it/s, Materializing param=encoder.layer.5.attention.self.value.weight]Loading weights:  93%|#########3| 96/103 [00:00<00:00, 7384.47it/s, Materializing param=encoder.layer.5.intermediate.dense.bias]    Loading weights:  93%|#########3| 96/103 [00:00<00:00, 7384.47it/s, Materializing param=encoder.layer.5.intermediate.dense.bias]Loading weights:  94%|#########4| 97/103 [00:00<00:00, 7461.40it/s, Materializing param=encoder.layer.5.intermediate.dense.weight]Loading weights:  94%|#########4| 97/103 [00:00<00:00, 6927.66it/s, Materializing param=encoder.layer.5.intermediate.dense.weight]Loading weights:  95%|#########5| 98/103 [00:00<00:00, 6999.08it/s, Materializing param=encoder.layer.5.output.LayerNorm.bias]    Loading weights:  95%|#########5| 98/103 [00:00<00:00, 6999.08it/s, Materializing param=encoder.layer.5.output.LayerNorm.bias]Loading weights:  96%|#########6| 99/103 [00:00<00:00, 7070.50it/s, Materializing param=encoder.layer.5.output.LayerNorm.weight]Loading weights:  96%|#########6| 99/103 [00:00<00:00, 7070.50it/s, Materializing param=encoder.layer.5.output.LayerNorm.weight]Loading weights:  97%|#########7| 100/103 [00:00<00:00, 7141.92it/s, Materializing param=encoder.layer.5.output.dense.bias]     Loading weights:  97%|#########7| 100/103 [00:00<00:00, 7141.92it/s, Materializing param=encoder.layer.5.output.dense.bias]Loading weights:  98%|#########8| 101/103 [00:00<00:00, 7213.33it/s, Materializing param=encoder.layer.5.output.dense.weight]Loading weights:  98%|#########8| 101/103 [00:00<00:00, 7213.33it/s, Materializing param=encoder.layer.5.output.dense.weight]Loading weights:  99%|#########9| 102/103 [00:00<00:00, 7284.75it/s, Materializing param=pooler.dense.bias]                  Loading weights:  99%|#########9| 102/103 [00:00<00:00, 7284.75it/s, Materializing param=pooler.dense.bias]Loading weights: 100%|##########| 103/103 [00:00<00:00, 7356.17it/s, Materializing param=pooler.dense.weight]Loading weights: 100%|##########| 103/103 [00:00<00:00, 7356.17it/s, Materializing param=pooler.dense.weight]Loading weights: 100%|##########| 103/103 [00:00<00:00, 7356.17it/s, Materializing param=pooler.dense.weight]
+[1mBertModel LOAD REPORT[0m from: sentence-transformers/all-MiniLM-L6-v2
+Key                     | Status     |  | 
+------------------------+------------+--+-
+embeddings.position_ids | UNEXPECTED |  | 
+
+[3mNotes:
+- UNEXPECTED[3m	:can be ignored when loading from different task/architecture; not ok if you expect identical arch.[0m
+2026-04-17 14:01:58,388 INFO HTTP Request: HEAD https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/config.json "HTTP/1.1 307 Temporary Redirect"
+2026-04-17 14:01:58,398 INFO HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/sentence-transformers/all-MiniLM-L6-v2/c9745ed1d9f207416be6d2e6f8de32d1f16199bf/config.json "HTTP/1.1 200 OK"
+2026-04-17 14:01:58,435 INFO HTTP Request: HEAD https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/tokenizer_config.json "HTTP/1.1 307 Temporary Redirect"
+2026-04-17 14:01:58,442 INFO HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/sentence-transformers/all-MiniLM-L6-v2/c9745ed1d9f207416be6d2e6f8de32d1f16199bf/tokenizer_config.json "HTTP/1.1 200 OK"
+2026-04-17 14:01:58,474 INFO HTTP Request: GET https://huggingface.co/api/models/sentence-transformers/all-MiniLM-L6-v2/tree/main/additional_chat_templates?recursive=false&expand=false "HTTP/1.1 404 Not Found"
+2026-04-17 14:01:58,501 INFO HTTP Request: GET https://huggingface.co/api/models/sentence-transformers/all-MiniLM-L6-v2/tree/main?recursive=true&expand=false "HTTP/1.1 200 OK"
+2026-04-17 14:01:58,570 INFO HTTP Request: GET https://huggingface.co/api/models/sentence-transformers/all-MiniLM-L6-v2/revision/main "HTTP/1.1 200 OK"
+2026-04-17 14:01:58,599 INFO HTTP Request: GET https://huggingface.co/api/models/sentence-transformers/all-MiniLM-L6-v2 "HTTP/1.1 200 OK"
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00,  7.87it/s]Batches: 100%|##########| 1/1 [00:00<00:00,  7.87it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 200.27it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 199.99it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.08it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 200.04it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.09it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.05it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.54it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.05it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 334.21it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 249.93it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 200.05it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 166.59it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 200.05it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.09it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 153.45it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 166.67it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 142.88it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.05it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 200.06it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.57it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 125.00it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 166.71it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 142.88it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 200.08it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 142.88it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 166.69it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 199.85it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.65it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 181.96it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 166.68it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 125.00it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.92it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 334.34it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.02it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 166.85it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.41it/s]
+2026-04-17 14:07:35,605 INFO retrieve
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 120.36it/s]
+2026-04-17 14:07:40,643 INFO retrieve
+gpt4_2655b836        temporal-reasoning    3    36  0.0571  0.1000 +0.0429   GRAPH
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 116.25it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 221.04it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 283.88it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 246.99it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 165.59it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 132.51it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 194.50it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 221.10it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 283.92it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 116.75it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 165.78it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 180.73it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 221.28it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 249.20it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 181.05it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 132.09it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 181.37it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 181.20it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 180.77it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 141.78it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 180.88it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 153.32it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 152.27it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 221.27it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.12it/s]
+2026-04-17 14:11:11,948 INFO retrieve
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 117.53it/s]
+2026-04-17 14:11:13,787 INFO retrieve
+gpt4_2487a7cb        temporal-reasoning    2    24  0.2500  0.0000 -0.2500  COSINE
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 117.43it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 119.18it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 166.86it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 200.28it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 166.66it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 200.28it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 199.90it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 200.10it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 166.67it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.27it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 166.65it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 200.25it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 166.67it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 142.38it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 166.69it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 166.67it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.00it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 199.98it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.09it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 125.02it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 200.01it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 249.94it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 166.67it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 166.62it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 221.84it/s]
+2026-04-17 14:14:46,276 INFO retrieve
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 181.56it/s]
+2026-04-17 14:14:47,973 INFO retrieve
+gpt4_76048e76        temporal-reasoning    2    24  0.0526  0.0714 +0.0188   GRAPH
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 133.26it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 110.84it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 199.92it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 284.86it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.05it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.03it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 166.69it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 142.86it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 200.08it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.27it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.03it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.05it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.02it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 333.44it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.06it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.03it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 333.44it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.02it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 333.44it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 249.66it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 168.91it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 334.47it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 249.87it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.42it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.00it/s]
+2026-04-17 14:18:33,591 INFO retrieve
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 195.03it/s]
+2026-04-17 14:18:35,262 INFO retrieve
+gpt4_2312f94c        temporal-reasoning    2    24  0.2069  0.2308 +0.0239   GRAPH
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 124.94it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 109.47it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 166.67it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 142.81it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 166.92it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.02it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 333.36it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.00it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 249.97it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 199.58it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 333.36it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 166.67it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 283.23it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 200.00it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 333.36it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 200.00it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 333.33it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 166.72it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.00it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 166.67it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 166.67it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 142.85it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 200.00it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 142.86it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.48it/s]
+2026-04-17 14:22:17,291 INFO retrieve
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 183.99it/s]
+2026-04-17 14:22:18,955 INFO retrieve
+0bb5a684             temporal-reasoning    2    24  0.1818  0.0637 -0.1181  COSINE
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 153.52it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 142.28it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 334.10it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 200.01it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 249.99it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 125.01it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 200.02it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.12it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 249.99it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 166.65it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 333.49it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.00it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 333.46it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 200.01it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 333.38it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 249.97it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 200.01it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 249.66it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 333.41it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 200.04it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 284.86it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.00it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 111.11it/s]
+2026-04-17 14:25:57,012 INFO retrieve
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 117.37it/s]
+2026-04-17 14:25:58,519 INFO retrieve
+08f4fc43             temporal-reasoning    2    22  0.0444  0.0465 +0.0021     TIE
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 181.45it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 199.96it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 284.90it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 200.04it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 200.27it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 166.67it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 166.70it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 200.07it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 199.92it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 199.74it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.00it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 333.41it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 200.03it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 142.87it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 249.96it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.05it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.05it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 166.72it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 166.67it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 249.82it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 166.86it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 166.86it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 166.85it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 142.81it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 333.36it/s]
+2026-04-17 14:29:37,456 INFO retrieve
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 145.26it/s]
+2026-04-17 14:29:38,416 INFO retrieve
+2c63a862             temporal-reasoning    2    24  0.0000  0.0588 +0.0588   GRAPH
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 162.10it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 180.31it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 332.80it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 199.77it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.15it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.30it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 285.35it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.03it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 249.99it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 200.08it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.48it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 166.69it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 200.04it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 142.88it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 200.07it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 166.69it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 166.71it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 166.69it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 142.88it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.44it/s]
+2026-04-17 14:32:22,826 INFO retrieve
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 127.79it/s]
+2026-04-17 14:32:23,353 INFO retrieve
+gpt4_385a5000        temporal-reasoning    2    19  0.0000  0.0000 +0.0000     TIE
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 176.74it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 166.59it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 279.53it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 249.97it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 333.46it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 200.02it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 334.10it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 334.15it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 249.97it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 142.83it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 200.00it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.14it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.05it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 200.00it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.00it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 200.00it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 334.26it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 249.56it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 334.10it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 249.99it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 333.60it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.02it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.02it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 249.99it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 334.29it/s]
+2026-04-17 14:36:01,665 INFO retrieve
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 199.90it/s]
+2026-04-17 14:36:03,461 INFO retrieve
+2a1811e2             temporal-reasoning    2    24  0.0656  0.0500 -0.0156  COSINE
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 221.51it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 153.74it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 146.94it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.29it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.02it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.02it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.03it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 249.99it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.03it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 199.99it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.03it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 200.02it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 333.49it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 249.97it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.02it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 249.82it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.03it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 200.00it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 285.42it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 333.38it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.02it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 142.93it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 333.81it/s]
+2026-04-17 14:39:28,476 INFO retrieve
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 199.89it/s]
+2026-04-17 14:39:29,912 INFO retrieve
+bbf86515             temporal-reasoning    2    22  0.0000  0.0000 +0.0000     TIE
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 117.58it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 118.05it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 166.71it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.63it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.02it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.30it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 334.23it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 249.99it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 333.25it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 199.02it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 249.99it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 334.15it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 249.97it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.66it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 333.36it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.48it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 166.83it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 166.68it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 166.69it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 200.04it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 166.69it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 166.69it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 166.67it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 166.60it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 166.67it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 200.06it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 293.47it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.00it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 334.13it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.45it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 333.38it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.02it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 200.26it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 142.86it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 166.69it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.11it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.00it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.44it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 334.21it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.47it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.00it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 166.84it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 166.58it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 166.71it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 181.60it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 142.85it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 166.67it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 166.70it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 166.69it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.17it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 200.23it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 166.68it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 200.04it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.08it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.02it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 200.34it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 166.66it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 200.06it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 142.86it/s]
+2026-04-17 14:47:42,517 INFO retrieve
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 166.61it/s]
+2026-04-17 14:47:46,512 INFO retrieve
+gpt4_5dcc0aab        temporal-reasoning    5    58  0.5455  0.5455 +0.0000     TIE
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 133.19it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 144.58it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 181.62it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 200.09it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.00it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 200.25it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 200.03it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 166.69it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 200.03it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.11it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.00it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 332.75it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 166.67it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 222.17it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.05it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 124.98it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 200.09it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 200.09it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 334.23it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 166.62it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 166.67it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 166.70it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.08it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.05it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 333.38it/s]
+2026-04-17 14:51:26,352 INFO retrieve
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 181.56it/s]
+2026-04-17 14:51:27,828 INFO retrieve
+gpt4_0b2f1d21        temporal-reasoning    2    24  0.3871  0.3750 -0.0121  COSINE
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 181.34it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 165.92it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 197.24it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 195.57it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 334.21it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 221.55it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 247.22it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 239.59it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 264.31it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 221.25it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 249.84it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 286.30it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 164.62it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 187.87it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 286.44it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 222.00it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 181.47it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 247.22it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 246.58it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 181.52it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 285.54it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 197.72it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 238.12it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 196.79it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.35it/s]
+2026-04-17 14:54:55,243 INFO retrieve
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 195.07it/s]
+2026-04-17 14:54:56,112 INFO retrieve
+f0853d11             temporal-reasoning    2    24  0.0667  0.1111 +0.0444   GRAPH
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 181.41it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 142.82it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 249.66it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 200.03it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 333.44it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 200.11it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.02it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.45it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 333.97it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 200.03it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 200.26it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 200.00it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 334.23it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 249.99it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.33it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 166.57it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 166.69it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 247.19it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.00it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.26it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 333.41it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.18it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 333.30it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 200.00it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 200.01it/s]
+2026-04-17 14:58:27,212 INFO retrieve
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 181.62it/s]
+2026-04-17 14:58:28,936 INFO retrieve
+gpt4_6ed717ea        temporal-reasoning    2    24  0.0556  0.2222 +0.1667   GRAPH
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 181.47it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 166.63it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 332.83it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 200.09it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 249.87it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 249.97it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.00it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.05it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.02it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.02it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 333.41it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 333.68it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.00it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 199.89it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.02it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 200.00it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 333.44it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 199.90it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 334.34it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 153.75it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 200.24it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.30it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 333.41it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 200.10it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 142.84it/s]
+2026-04-17 15:02:08,440 INFO retrieve
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 183.29it/s]
+2026-04-17 15:02:11,332 INFO retrieve
+gpt4_70e84552        temporal-reasoning    2    24  0.1875  0.2400 +0.0525   GRAPH
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 161.08it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 132.12it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 249.57it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.53it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 333.41it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 142.82it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 199.96it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.05it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 166.84it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 142.85it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 166.69it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 142.88it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.15it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 334.07it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.00it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 333.54it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 249.99it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.80it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 333.33it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 142.84it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 258.81it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 166.87it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 166.69it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 166.67it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.12it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.05it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.02it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 249.94it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 333.49it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 238.23it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.09it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 166.65it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.06it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.60it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 200.04it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 200.09it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 334.23it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 200.02it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 333.46it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 205.40it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 178.82it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 200.46it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 200.00it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 166.65it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 249.97it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 200.00it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 222.09it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 251.37it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.00it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 200.01it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.06it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 166.67it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 199.99it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 200.02it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 200.16it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 166.67it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 200.05it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 199.86it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 199.91it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 199.99it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.03it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 199.92it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 199.97it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 133.20it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 166.69it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 333.41it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.00it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 166.69it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.18it/s]
+2026-04-17 15:13:12,684 INFO retrieve
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 153.20it/s]
+2026-04-17 15:13:18,753 INFO retrieve
+a3838d2b             temporal-reasoning    6    68  0.0000  0.0000 +0.0000     TIE
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 165.70it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 142.34it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 221.42it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 152.85it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 221.46it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 199.61it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 221.36it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 124.62it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 181.28it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 152.71it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 285.17it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 124.57it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 283.46it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 153.50it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 198.26it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 221.44it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 284.26it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 104.76it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 221.28it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 198.44it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 221.48it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 199.03it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 332.27it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 221.30it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.47it/s]
+2026-04-17 15:17:16,670 INFO retrieve
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 193.98it/s]
+2026-04-17 15:17:18,347 INFO retrieve
+gpt4_93159ced        temporal-reasoning    2    24  0.1702  0.1905 +0.0203   GRAPH
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 171.44it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 139.92it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 284.19it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 200.04it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 285.27it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.41it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.14it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 200.04it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.11it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 200.01it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 200.22it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 200.02it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.21it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 200.01it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.00it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.48it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 249.99it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.47it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 334.15it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.05it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 333.07it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 249.97it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.05it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 249.41it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 200.00it/s]
+2026-04-17 15:21:40,658 INFO retrieve
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 142.36it/s]
+2026-04-17 15:21:42,300 INFO retrieve
+gpt4_2d58bcd6        temporal-reasoning    2    24  0.2667  0.2667 +0.0000     TIE
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 153.72it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 118.21it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 166.49it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 200.03it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 283.26it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 249.99it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 333.38it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.00it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 332.56it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.02it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 333.36it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 249.97it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 333.12it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 200.29it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 334.13it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 200.41it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.00it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 333.36it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 166.65it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 249.99it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 334.18it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 249.99it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 332.72it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 249.94it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 142.96it/s]
+2026-04-17 15:25:49,190 INFO retrieve
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 181.09it/s]
+2026-04-17 15:25:50,620 INFO retrieve
+gpt4_65aabe59        temporal-reasoning    2    24  0.1667  0.1667 +0.0000     TIE
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 117.45it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 115.07it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 199.89it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 142.87it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 181.57it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 166.68it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 166.68it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 142.85it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.15it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 166.67it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 166.70it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 166.70it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 142.87it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 200.09it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 250.06it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 142.90it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 166.59it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 166.69it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 181.34it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 200.31it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 166.69it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 199.97it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 333.41it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 166.64it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 334.18it/s]
+2026-04-17 15:29:37,581 INFO retrieve
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 161.47it/s]
+2026-04-17 15:29:38,776 INFO retrieve
+982b5123             temporal-reasoning    2    24  0.1333  0.1379 +0.0046     TIE
+
+Graph wins: 8, Cosine wins: 4, Ties: 8
+Total time: 5266s (263.3s/item)
+
+Graph-wins avg: 2.1 sessions, 26 turns
+Cosine-wins avg: 2.0 sessions, 24 turns
+
+Per question type:
+  temporal-reasoning: graph=8, cosine=4, tie=8
+
+Saved to research\audit\results\phase1_3_per_item_analysis.json

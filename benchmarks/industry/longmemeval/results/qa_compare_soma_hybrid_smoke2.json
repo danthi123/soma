@@ -1,0 +1,36 @@
+{
+  "method": "soma_hybrid",
+  "model": "qwen3.5:4b-q8_0",
+  "scores": {
+    "f1": 0.3333,
+    "em": 0.0,
+    "rouge1": 0.3333,
+    "rouge2": 0.3,
+    "rougeL": 0.3333,
+    "per_type": {
+      "single-session-user": {
+        "f1": 0.3333,
+        "em": 0.0,
+        "rouge1": 0.3333,
+        "rouge2": 0.3,
+        "rougeL": 0.3333
+      }
+    },
+    "n_total": 2
+  },
+  "retrieval_recall_at_k": 1.0,
+  "top_k": 5,
+  "avg_retrieval_ms": 25.972000003093854,
+  "avg_llm_ms": 1393.3513500087429,
+  "n_items": 2,
+  "predictions": [
+    {
+      "question_id": "e47becba",
+      "hypothesis": "I don't know"
+    },
+    {
+      "question_id": "118b2229",
+      "hypothesis": "Your daily commute takes 45 minutes each way."
+    }
+  ]
+}

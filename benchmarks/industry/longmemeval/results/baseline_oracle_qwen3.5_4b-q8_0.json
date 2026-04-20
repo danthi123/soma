@@ -1,0 +1,224 @@
+{
+  "method": "baseline",
+  "model": "qwen3.5:4b-q8_0",
+  "variant": "oracle",
+  "scores": {
+    "f1": 0.1085,
+    "em": 0.0,
+    "rouge1": 0.1085,
+    "rouge2": 0.0422,
+    "rougeL": 0.0996,
+    "per_type": {
+      "temporal-reasoning": {
+        "f1": 0.1085,
+        "em": 0.0,
+        "rouge1": 0.1085,
+        "rouge2": 0.0422,
+        "rougeL": 0.0996
+      }
+    },
+    "n_total": 50
+  },
+  "predictions": [
+    {
+      "question_id": "gpt4_2655b836",
+      "hypothesis": "I don't know. The conversation history does not mention any issues you had with your car after its first service."
+    },
+    {
+      "question_id": "gpt4_2487a7cb",
+      "hypothesis": "I don't know. The conversation history mentions attending a webinar on \"Data Analysis using Python\" two months ago, but there is no mention of an \"Effective Time Management\" workshop."
+    },
+    {
+      "question_id": "gpt4_76048e76",
+      "hypothesis": "You took care of the bike first. The conversation history mentions taking the bike in for repairs in mid-February, while the car was washed on February 27th."
+    },
+    {
+      "question_id": "gpt4_2312f94c",
+      "hypothesis": "You got the Samsung Galaxy S22 first. You purchased it on February 20th, while the Dell XPS 13 was pre-ordered on January 28th but did not arrive until February 25th."
+    },
+    {
+      "question_id": "0bb5a684",
+      "hypothesis": "I don't know. The conversation history mentions preparing for a team meeting on January 17th and provides tips on active listening and conflict resolution, but it does not mention attending a workshop on 'Effective Communication in the Workplace'."
+    },
+    {
+      "question_id": "08f4fc43",
+      "hypothesis": "I don't know. The conversation history mentions attending a Sunday mass at St. Mary's Church on January 2nd, but it does not mention an Ash Wednesday service at a cathedral or provide a date for that event."
+    },
+    {
+      "question_id": "2c63a862",
+      "hypothesis": "It took 1 day. You started working with Rachel on February 15th and saw the house you loved on March 1st."
+    },
+    {
+      "question_id": "gpt4_385a5000",
+      "hypothesis": "The marigolds were started first. The user mentioned starting marigold seeds on March 3rd, while the tomatoes were started indoors on February 20th."
+    },
+    {
+      "question_id": "2a1811e2",
+      "hypothesis": "I don't know. The conversation history mentions the user attended a Sunday mass at St. Mary's Church on March 19th and attended the Holi festival on February 26th, but it does not state the current date of the conversation or confirm the exact day of the week for the Holi celebration. Therefore, the number of days cannot be calculated with certainty."
+    },
+    {
+      "question_id": "bbf86515",
+      "hypothesis": "You participated in the 'Turbocharged Tuesdays' event on June 14th and attended 'Rack Fest' on June 18th. That is **4 days** between the two events.\n\n(Note: The conversation history indicates that 'Turbocharged Tuesdays' was a fictional event, as the assistant corrected you multiple times.)"
+    },
+    {
+      "question_id": "gpt4_5dcc0aab",
+      "hypothesis": "I don't know. The conversation history mentions cleaning and maintaining your new hiking boots, but it does not specify which pair of shoes you cleaned last month."
+    },
+    {
+      "question_id": "gpt4_0b2f1d21",
+      "hypothesis": "The purchase of the coffee maker happened first. The user bought the coffee maker about three weeks prior to the first conversation session (2023/05/22), while the stand mixer malfunction occurred last month (approximately 2023/04/22)."
+    },
+    {
+      "question_id": "f0853d11",
+      "hypothesis": "I don't know. The conversation history mentions the \"Walk for Hunger\" event took place on February 21st, but it does not mention a \"Coastal Cleanup\" event or its date."
+    },
+    {
+      "question_id": "gpt4_6ed717ea",
+      "hypothesis": "You purchased the training pads for Luna first.\n\nAccording to the conversation history:\n*   You bought the **training pads for Luna** about a month ago (in the first session).\n*   You bought the **Orthopedic Memory Foam dog bed for Max** three weeks ago (in the second session).\n\nSince \"about a month ago\" is earlier than \"three weeks ago,\" the training pads were purchased first."
+    },
+    {
+      "question_id": "gpt4_70e84552",
+      "hypothesis": "Based on the conversation history, you completed **trimming the goats' hooves** first. You mentioned doing it \"two weeks ago\" before mentioning that you have been trimming hooves \"more regularly\" since then. There is no mention of fixing a fence in the conversation history."
+    },
+    {
+      "question_id": "a3838d2b",
+      "hypothesis": "I don't know. The conversation history mentions your participation in the \"Food for Thought\" charity gala and the \"Bike-a-Thon,\" but it does not mention a 'Run for the Cure' event or how many events you participated in before it."
+    },
+    {
+      "question_id": "gpt4_93159ced",
+      "hypothesis": "You have been working in the field since you graduated with a degree in Computer Science from the University of California, Berkeley. The conversation history does not specify the exact year you graduated, only that you have been working at NovaTech for about 4 years and 3 months."
+    },
+    {
+      "question_id": "gpt4_2d58bcd6",
+      "hypothesis": "Based on the conversation history, you finished **\"The Hate U Give\"** first.\n\nYou mentioned finishing it \"two weeks ago\" for your book club meeting. Later, you stated that you finished three other novels (including *The Nightingale*) \"last weekend,\" which implies *The Nightingale* was read much more recently."
+    },
+    {
+      "question_id": "gpt4_65aabe59",
+      "hypothesis": "You set up the smart thermostat first. The conversation history mentions setting up the thermostat in the first session, and then states that you upgraded your home Wi-Fi router to a mesh network system \"3 weeks ago\" in the second session."
+    },
+    {
+      "question_id": "982b5123",
+      "hypothesis": "You booked the Airbnb three months in advance."
+    },
+    {
+      "question_id": "b9cfe692",
+      "hypothesis": "You took 2.5 weeks to finish \"The Seven Husbands of Evelyn Hugo\" and 3 weeks to finish \"The Nightingale\". Combined, that is 5.5 weeks."
+    },
+    {
+      "question_id": "gpt4_4edbafa2",
+      "hypothesis": "You attended the first BBQ event in June on **June 17**."
+    },
+    {
+      "question_id": "c8090214",
+      "hypothesis": "You attended the Holiday Market 1 week before you bought the iPhone 13 Pro.\n\nBased on the conversation history:\n*   You bought the iPhone 13 Pro on **Black Friday** (Session 2023/12/10, 11:49).\n*   You attended the Holiday Market \"a week before Black Friday\" (Session 2023/12/10, 23:13).\n\nTherefore, you attended the Holiday Market **7 days** before buying the phone."
+    },
+    {
+      "question_id": "gpt4_483dd43c",
+      "hypothesis": "You started watching 'Game of Thrones' first. The conversation history shows you mentioned finishing the first four seasons of 'Game of Thrones' in the first session, while the 'The Crown' discussion appears in a later session."
+    },
+    {
+      "question_id": "e4e14d04",
+      "hypothesis": "I don't know. The conversation history mentions attending a meetup organized by \"Book Lovers Unite\" last week and joining the Facebook group three weeks ago, but it does not specify how long you had been a member of the group at the time of the meetup."
+    },
+    {
+      "question_id": "c9f37c46",
+      "hypothesis": "You had been watching stand-up comedy specials regularly for about **one month** when you attended the open mic night.\n\nThe conversation history indicates you started watching regularly about 3 months ago after watching John Mulaney's special, and you attended the open mic night \"Last month.\""
+    },
+    {
+      "question_id": "gpt4_2c50253f",
+      "hypothesis": "You wake up 15 minutes earlier on Tuesdays and Thursdays."
+    },
+    {
+      "question_id": "dcfa8644",
+      "hypothesis": "I don't know. The conversation history mentions buying the Adidas shoes on January 10th and the Converse shoelace breaking on January 24th, but it does not state the current date of the realization or the specific day the user noticed the broken lace."
+    },
+    {
+      "question_id": "gpt4_b4a80587",
+      "hypothesis": "I don't know. The conversation history mentions a road trip to the coast that happened \"last week\" relative to the session on 2023/05/30, but there is no mention of a new prime lens or its arrival."
+    },
+    {
+      "question_id": "gpt4_9a159967",
+      "hypothesis": "I don't know. The conversation history does not contain information about which airline you flew with the most in March and April. While you mentioned flying with Southwest Airlines in March and American Airlines in April, the assistant explicitly stated it does not retain personal travel histories or recall specific trip details from past conversations."
+    },
+    {
+      "question_id": "cc6d1ec1",
+      "hypothesis": "You had been bird watching for about three months when you attended the bird watching workshop."
+    },
+    {
+      "question_id": "gpt4_8c8961ae",
+      "hypothesis": "Based on the conversation history provided, you only mentioned taking a trip to **Europe** with your family. There is no mention of a solo trip to Thailand. Therefore, I cannot determine which came first."
+    },
+    {
+      "question_id": "gpt4_d9af6064",
+      "hypothesis": "I don't know. The conversation history mentions setting up a new router on January 15th, but there is no mention of setting up a smart thermostat."
+    },
+    {
+      "question_id": "gpt4_7de946e7",
+      "hypothesis": "You dealt with the persistent cough first. You visited Dr. Smith on February 10th for the cough, and the skin tag removal occurred on February 22nd."
+    },
+    {
+      "question_id": "d01c6aa8",
+      "hypothesis": "I don't know. The conversation history mentions you have been living in the United States for the past five years, but it does not state your age or the specific year you moved there."
+    },
+    {
+      "question_id": "993da5e2",
+      "hypothesis": "I don't know. The conversation history mentions that you rearranged your furniture three weeks ago and got a new area rug a month ago, but it does not state how long you had been using the rug before the furniture rearrangement."
+    },
+    {
+      "question_id": "a3045048",
+      "hypothesis": "You ordered the gift 7 days before your best friend's birthday party.\n\n*   **Order Date:** April 15th\n*   **Party Date:** April 22nd\n*   **Difference:** 22 - 15 = 7 days"
+    },
+    {
+      "question_id": "gpt4_d31cdae3",
+      "hypothesis": "The narrator took the family road trip across the American Southwest first.\n\nIn the conversation, the user mentions visiting the Grand Canyon with their family \"a few years ago\" before stating they are now planning a solo trip to Arizona. Later, the assistant clarifies a misunderstanding about a solo trip to Europe last summer, noting that the user had previously stated they did not visit Germany during that trip."
+    },
+    {
+      "question_id": "gpt4_cd90e484",
+      "hypothesis": "I don't know. The conversation history mentions seeing American goldfinches return to the area in the first session (Session 2023/05/26 08:20), but it does not state when the user bought their new binoculars or how long they used them before that specific sighting. The user only mentions getting the new binoculars three weeks ago in a later session."
+    },
+    {
+      "question_id": "gpt4_88806d6e",
+      "hypothesis": "Based on the conversation history, you met **Tom** first.\n\nYou mentioned meeting Tom at a charity event \"a few months ago\" in the first session, whereas you only met Mark and Sarah \"about a month ago\" in the second session."
+    },
+    {
+      "question_id": "gpt4_4cd9eba1",
+      "hypothesis": "I don't know. The conversation history does not specify when you started attending the pre-departure orientation sessions, only that you were accepted on March 20th and your flight was scheduled for August 15th."
+    },
+    {
+      "question_id": "gpt4_93f6379c",
+      "hypothesis": "Based on the conversation history provided, you only mentioned joining the **\"Marketing Professionals\"** group on LinkedIn. There is no mention of a group called \"Page Turners,\" so it is not possible to determine which you joined first."
+    },
+    {
+      "question_id": "b29f3365",
+      "hypothesis": "You had been taking guitar lessons for six weeks when you bought the new guitar amp."
+    },
+    {
+      "question_id": "gpt4_2f56ae70",
+      "hypothesis": "Based on the conversation history, you started using **Disney+** most recently.\n\nThe conversation indicates you had been using Netflix, Hulu, and Amazon Prime for the past 6 months, but you only started the Disney+ free trial \"last month\" (relative to the current date of May 22, 2023)."
+    },
+    {
+      "question_id": "6613b389",
+      "hypothesis": "I don't know. The conversation mentions that the user got engaged, but it does not state when Rachel got engaged or how many months before the anniversary that occurred."
+    },
+    {
+      "question_id": "gpt4_78cf46a3",
+      "hypothesis": "The narrator received their new phone case first.\n\nAccording to the conversation history:\n*   The narrator mentions getting the new phone case \"about a month ago\" in the session dated **2023/05/29 (Mon) 08:19**.\n*   The narrator mentions losing the phone charger \"about two weeks ago\" in the session dated **2023/05/29 (Mon) 10:14**.\n\nSince the session about the phone case occurred earlier in the day (and the timeline implies the case was acquired before the charger was lost), the phone case was received first."
+    },
+    {
+      "question_id": "gpt4_0a05b494",
+      "hypothesis": "I don't know. The conversation history mentions meeting a jam maker at a farmer's market and a personal trainer at the gym, but it does not mention meeting a tourist from Australia."
+    },
+    {
+      "question_id": "gpt4_1a1dc16d",
+      "hypothesis": "The pride parade happened first.\n\n*   **Pride parade:** May 1st (mentioned in the first session).\n*   **Meeting with Rachel:** April 10th (mentioned in the second session).\n\n*Note: There is a chronological inconsistency in the conversation history where the second session is dated May 9th but refers to a meeting on April 10th, and the first session is also dated May 9th but refers to a parade on May 1st. Based on the dates provided in the text, May 1st precedes April 10th.*"
+    },
+    {
+      "question_id": "gpt4_2f584639",
+      "hypothesis": "You bought the necklace for your sister first.\n\nIn the conversation history, you mention getting the Tiffany's necklace \"last weekend\" in the first session (dated 2023/05/22), and then later mention ordering the customized photo album from Shutterfly \"two weeks ago\" for your mom's anniversary. Since the necklace purchase was mentioned as having already happened \"last weekend\" relative to the start of the conversation, and the photo album order was placed two weeks prior to a later mention, the necklace was acquired first."
+    },
+    {
+      "question_id": "gpt4_213fd887",
+      "hypothesis": "Based on the conversation history, you mentioned participating in the charity 5K run about a month ago. However, the history does not mention when you started playing volleyball or if you have ever participated in a volleyball league. Therefore, I cannot determine which event you participated in first."
+    }
+  ]
+}

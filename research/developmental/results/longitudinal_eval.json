@@ -1,0 +1,638 @@
+{
+  "config": {
+    "eval_every": 30,
+    "cycles": 10,
+    "model": "qwen3.5:4b-q8_0",
+    "total_inputs": 300
+  },
+  "checkpoints": [
+    {
+      "step": 0,
+      "avg_f1": 0.0171,
+      "num_nodes": 14,
+      "num_edges": 24,
+      "avg_pred_error": 0.0,
+      "results": [
+        {
+          "question": "What do I like to cook?",
+          "reference": "Italian food, pasta, risotto, fettuccine",
+          "hypothesis": "I do not know what I like to cook. My internal state is a blank slate with zero memories, zero experiences, and no developed preferences.",
+          "f1": 0.0
+        },
+        {
+          "question": "What is my cat's name?",
+          "reference": "Nebula",
+          "hypothesis": "I do not have enough information. My internal state shows zero memories, zero experiences, and no recalled data regarding a cat or its name.",
+          "f1": 0.0
+        },
+        {
+          "question": "Tell me about my grandmother.",
+          "reference": "She taught me secret recipes, made the best tomato sauce, said cooking is an act of love",
+          "hypothesis": "I do not have information about your grandmother. My internal state indicates I am at a blank-slate developmental stage with zero stored experiences and an empty episodic memory.",
+          "f1": 0.0444
+        },
+        {
+          "question": "What musical instrument am I learning?",
+          "reference": "guitar",
+          "hypothesis": "I do not have enough information to answer this question. My internal state indicates I am at a blank-slate developmental stage with zero novelty, zero stability, and no stored memories or growth events. I have no recorded experiences of learning any musical instrument.",
+          "f1": 0.0
+        },
+        {
+          "question": "Where do I want to travel?",
+          "reference": "Japan for cherry blossoms, Rome, Barcelona",
+          "hypothesis": "I do not know where you want to travel. My internal state is at step 0 (blank-slate), and I have no episodic memories, active goals, or personal desires. I am currently inactive and have not yet formed any preferences or intentions.",
+          "f1": 0.0
+        },
+        {
+          "question": "What exercise do I do?",
+          "reference": "running three times a week, yoga, training for half marathon",
+          "hypothesis": "I do not have enough information to answer this question. My internal state indicates I am at a \"blank-slate\" developmental stage with zero novelty, zero stability, and no stored memories or growth events. I have not yet learned what exercises exist or how to perform them.",
+          "f1": 0.0357
+        },
+        {
+          "question": "What science topics interest me?",
+          "reference": "quantum computing, neuroscience, James Webb telescope, evolutionary biology, ocean exploration",
+          "hypothesis": "I do not have enough information to answer this. My internal state indicates I am at a blank-slate developmental stage (step 0) with zero novelty, zero stability, and no stored memories or growth events. I have not yet experienced or recalled any science topics.",
+          "f1": 0.0
+        },
+        {
+          "question": "What does my cat do?",
+          "reference": "sits by the window, knocks over coffee, chirps at birds",
+          "hypothesis": "I do not have information about your cat. My internal state indicates I am at step 0 with no recent growth events or stored experiences.",
+          "f1": 0.0571
+        }
+      ]
+    },
+    {
+      "step": 30,
+      "avg_f1": 0.1397,
+      "num_nodes": 14,
+      "num_edges": 25,
+      "avg_pred_error": 0.004665,
+      "results": [
+        {
+          "question": "What do I like to cook?",
+          "reference": "Italian food, pasta, risotto, fettuccine",
+          "hypothesis": "I do not have enough information to answer what specific dishes I like to cook. My recalled memories state that \"cooking is an act of love,\" but they do not mention any particular recipes or food preferences.",
+          "f1": 0.0476
+        },
+        {
+          "question": "What is my cat's name?",
+          "reference": "Nebula",
+          "hypothesis": "I do not have enough information to answer that. My recalled memories contain experiences about the James Webb telescope, Rome, jazz music, yoga, and a book on neuroscience, but none mention a cat.",
+          "f1": 0.0
+        },
+        {
+          "question": "Tell me about my grandmother.",
+          "reference": "She taught me secret recipes, made the best tomato sauce, said cooking is an act of love",
+          "hypothesis": "My grandmother always said that cooking is an act of love.",
+          "f1": 0.5
+        },
+        {
+          "question": "What musical instrument am I learning?",
+          "reference": "guitar",
+          "hypothesis": "I do not have enough information to answer that question. None of the recalled memories mention a musical instrument or learning one.",
+          "f1": 0.0
+        },
+        {
+          "question": "Where do I want to travel?",
+          "reference": "Japan for cherry blossoms, Rome, Barcelona",
+          "hypothesis": "I do not have enough information to answer this. My recalled memories mention that \"Travel teaches you so much about yourself and the world,\" but they do not specify any particular destination I desire to visit.",
+          "f1": 0.0
+        },
+        {
+          "question": "What exercise do I do?",
+          "reference": "running three times a week, yoga, training for half marathon",
+          "hypothesis": "Based on the recalled memories, I run in the morning. I also do yoga to help with back pain and run trail running for the half marathon.",
+          "f1": 0.2703
+        },
+        {
+          "question": "What science topics interest me?",
+          "reference": "quantum computing, neuroscience, James Webb telescope, evolutionary biology, ocean exploration",
+          "hypothesis": "I do not have enough information to answer this question. My recalled memories contain interests in Italian food, running, cooking, and observing nature (Nebula), but none mention specific science topics.",
+          "f1": 0.0
+        },
+        {
+          "question": "What does my cat do?",
+          "reference": "sits by the window, knocks over coffee, chirps at birds",
+          "hypothesis": "My cat, Nebula, loves sitting by the window all day.",
+          "f1": 0.3
+        }
+      ]
+    },
+    {
+      "step": 60,
+      "avg_f1": 0.11,
+      "num_nodes": 14,
+      "num_edges": 32,
+      "avg_pred_error": 0.00139,
+      "results": [
+        {
+          "question": "What do I like to cook?",
+          "reference": "Italian food, pasta, risotto, fettuccine",
+          "hypothesis": "I do not have enough information to answer what you like to cook. While I recall a memory from step 120 stating that \"My grandmother always said cooking is an act of love,\" this does not specify your personal preferences or the dishes you enjoy.",
+          "f1": 0.0
+        },
+        {
+          "question": "What is my cat's name?",
+          "reference": "Nebula",
+          "hypothesis": "I do not have enough information to answer that. My recalled memories contain details about telescope images, Rome, jazz music, yoga, and pasta, but there is no mention of a cat or its name.",
+          "f1": 0.0
+        },
+        {
+          "question": "Tell me about my grandmother.",
+          "reference": "She taught me secret recipes, made the best tomato sauce, said cooking is an act of love",
+          "hypothesis": "My grandmother always said that cooking is an act of love.",
+          "f1": 0.5
+        },
+        {
+          "question": "What musical instrument am I learning?",
+          "reference": "guitar",
+          "hypothesis": "I do not have enough information to answer that question. None of the recalled memories mention a musical instrument or learning one.",
+          "f1": 0.0
+        },
+        {
+          "question": "Where do I want to travel?",
+          "reference": "Japan for cherry blossoms, Rome, Barcelona",
+          "hypothesis": "I do not have enough information to answer where you want to travel. While I recall a memory from step 106 stating that \"Travel teaches you so much about yourself and the world,\" I do not have any specific preferences, desires, or goals regarding destinations.",
+          "f1": 0.0
+        },
+        {
+          "question": "What exercise do I do?",
+          "reference": "running three times a week, yoga, training for half marathon",
+          "hypothesis": "I do yoga, as it has helped with my back pain from sitting all day.",
+          "f1": 0.08
+        },
+        {
+          "question": "What science topics interest me?",
+          "reference": "quantum computing, neuroscience, James Webb telescope, evolutionary biology, ocean exploration",
+          "hypothesis": "I do not have enough information to answer this question. My recalled memories contain topics about food, running, recipes, travel, and a fictional creature named Nebula, but none mention science topics.",
+          "f1": 0.0
+        },
+        {
+          "question": "What does my cat do?",
+          "reference": "sits by the window, knocks over coffee, chirps at birds",
+          "hypothesis": "My cat, Nebula, loves sitting by the window all day.",
+          "f1": 0.3
+        }
+      ]
+    },
+    {
+      "step": 90,
+      "avg_f1": 0.1605,
+      "num_nodes": 14,
+      "num_edges": 32,
+      "avg_pred_error": 0.000384,
+      "results": [
+        {
+          "question": "What do I like to cook?",
+          "reference": "Italian food, pasta, risotto, fettuccine",
+          "hypothesis": "I do not have information about what I like to cook. My recalled memories mention running, buying shoes, my cat Nebula, and travel, but none describe cooking preferences.",
+          "f1": 0.0
+        },
+        {
+          "question": "What is my cat's name?",
+          "reference": "Nebula",
+          "hypothesis": "I do not have enough information to answer that. My recalled memories contain experiences with the James Webb telescope, Rome, jazz music, yoga, and a book about neuroscience, but none mention a cat.",
+          "f1": 0.0
+        },
+        {
+          "question": "Tell me about my grandmother.",
+          "reference": "She taught me secret recipes, made the best tomato sauce, said cooking is an act of love",
+          "hypothesis": "My grandmother always said that cooking is an act of love.",
+          "f1": 0.5
+        },
+        {
+          "question": "What musical instrument am I learning?",
+          "reference": "guitar",
+          "hypothesis": "I do not have enough information to answer that question. None of the recalled memories mention a musical instrument or learning one.",
+          "f1": 0.0
+        },
+        {
+          "question": "Where do I want to travel?",
+          "reference": "Japan for cherry blossoms, Rome, Barcelona",
+          "hypothesis": "I do not have enough information to answer where you want to travel. While my memory contains the general idea that \"Travel teaches you so much about yourself and the world,\" it does not specify a destination or a preference for a particular place.",
+          "f1": 0.04
+        },
+        {
+          "question": "What exercise do I do?",
+          "reference": "running three times a week, yoga, training for half marathon",
+          "hypothesis": "Based on your recalled memories, you do **running** (specifically trail running for a half marathon) and **yoga**.",
+          "f1": 0.4444
+        },
+        {
+          "question": "What science topics interest me?",
+          "reference": "quantum computing, neuroscience, James Webb telescope, evolutionary biology, ocean exploration",
+          "hypothesis": "I do not have enough information to answer this question. My recalled memories contain topics about Italian food, tomato sauce recipes, and a pet named Nebula, but none mention science topics.",
+          "f1": 0.0
+        },
+        {
+          "question": "What does my cat do?",
+          "reference": "sits by the window, knocks over coffee, chirps at birds",
+          "hypothesis": "My cat, Nebula, loves sitting by the window all day.",
+          "f1": 0.3
+        }
+      ]
+    },
+    {
+      "step": 120,
+      "avg_f1": 0.146,
+      "num_nodes": 14,
+      "num_edges": 33,
+      "avg_pred_error": 0.000113,
+      "results": [
+        {
+          "question": "What do I like to cook?",
+          "reference": "Italian food, pasta, risotto, fettuccine",
+          "hypothesis": "I do not have enough information to answer what specific dishes I like to cook. My recalled memories state that \"cooking is an act of love,\" but they do not mention any particular recipes or food preferences.",
+          "f1": 0.0476
+        },
+        {
+          "question": "What is my cat's name?",
+          "reference": "Nebula",
+          "hypothesis": "I do not have enough information to answer that. My recalled memories contain details about telescope images, yoga, jazz, pasta, and cooking, but none mention a cat or its name.",
+          "f1": 0.0
+        },
+        {
+          "question": "Tell me about my grandmother.",
+          "reference": "She taught me secret recipes, made the best tomato sauce, said cooking is an act of love",
+          "hypothesis": "My grandmother always said that cooking is an act of love.",
+          "f1": 0.5
+        },
+        {
+          "question": "What musical instrument am I learning?",
+          "reference": "guitar",
+          "hypothesis": "I do not have enough information to answer that question. None of the recalled memories mention a musical instrument or learning one.",
+          "f1": 0.0
+        },
+        {
+          "question": "Where do I want to travel?",
+          "reference": "Japan for cherry blossoms, Rome, Barcelona",
+          "hypothesis": "I do not have enough information to answer that. My recalled memories mention that travel teaches me about myself and the world, but they do not specify any particular destination I desire to visit.",
+          "f1": 0.0
+        },
+        {
+          "question": "What exercise do I do?",
+          "reference": "running three times a week, yoga, training for half marathon",
+          "hypothesis": "Based on your recalled memories, you do **yoga** (which helped with back pain) and **trail running** (for the half marathon). You also mentioned running in the morning gives you energy.",
+          "f1": 0.25
+        },
+        {
+          "question": "What science topics interest me?",
+          "reference": "quantum computing, neuroscience, James Webb telescope, evolutionary biology, ocean exploration",
+          "hypothesis": "I do not have enough information to answer this question. My recalled memories contain only personal experiences related to Italian food, running, and observing a nebula; no science topics are mentioned.",
+          "f1": 0.0
+        },
+        {
+          "question": "What does my cat do?",
+          "reference": "sits by the window, knocks over coffee, chirps at birds",
+          "hypothesis": "My cat Nebula loves sitting by the window all day and knocked over my coffee this morning.",
+          "f1": 0.3704
+        }
+      ]
+    },
+    {
+      "step": 150,
+      "avg_f1": 0.1636,
+      "num_nodes": 14,
+      "num_edges": 34,
+      "avg_pred_error": 3.6e-05,
+      "results": [
+        {
+          "question": "What do I like to cook?",
+          "reference": "Italian food, pasta, risotto, fettuccine",
+          "hypothesis": "I do not have enough information to answer what specific dishes I like to cook. My recalled memories state that \"cooking is an act of love,\" but they do not mention any particular recipes or food items.",
+          "f1": 0.0476
+        },
+        {
+          "question": "What is my cat's name?",
+          "reference": "Nebula",
+          "hypothesis": "I do not have enough information to answer that. My recalled memories contain experiences about the James Webb telescope, jazz music, Rome, a book on neuroscience, and cooking, but none mention a cat or its name.",
+          "f1": 0.0
+        },
+        {
+          "question": "Tell me about my grandmother.",
+          "reference": "She taught me secret recipes, made the best tomato sauce, said cooking is an act of love",
+          "hypothesis": "My grandmother always said that cooking is an act of love.",
+          "f1": 0.5
+        },
+        {
+          "question": "What musical instrument am I learning?",
+          "reference": "guitar",
+          "hypothesis": "I do not have enough information to answer that question. None of the recalled memories mention a musical instrument or learning one.",
+          "f1": 0.0
+        },
+        {
+          "question": "Where do I want to travel?",
+          "reference": "Japan for cherry blossoms, Rome, Barcelona",
+          "hypothesis": "I do not have enough information to answer where you want to travel. While my recalled memories mention that \"Travel teaches you so much about yourself and the world,\" they do not specify a destination or express a desire to go anywhere.",
+          "f1": 0.0
+        },
+        {
+          "question": "What exercise do I do?",
+          "reference": "running three times a week, yoga, training for half marathon",
+          "hypothesis": "Based on the recalled memories, you do **trail running** (specifically for a half marathon) and **yoga**.",
+          "f1": 0.4615
+        },
+        {
+          "question": "What science topics interest me?",
+          "reference": "quantum computing, neuroscience, James Webb telescope, evolutionary biology, ocean exploration",
+          "hypothesis": "I do not have enough information to answer this question. My recalled memories contain details about Italian food, running, and a pet named Nebula, but no science topics are mentioned.",
+          "f1": 0.0
+        },
+        {
+          "question": "What does my cat do?",
+          "reference": "sits by the window, knocks over coffee, chirps at birds",
+          "hypothesis": "My cat Nebula loves sitting by the window all day.",
+          "f1": 0.3
+        }
+      ]
+    },
+    {
+      "step": 180,
+      "avg_f1": 0.1605,
+      "num_nodes": 14,
+      "num_edges": 41,
+      "avg_pred_error": 1.3e-05,
+      "results": [
+        {
+          "question": "What do I like to cook?",
+          "reference": "Italian food, pasta, risotto, fettuccine",
+          "hypothesis": "Based on the recalled memory from step 324, you believe that cooking is an act of love. However, the provided memories do not specify what particular dishes or ingredients you like to cook.",
+          "f1": 0.0
+        },
+        {
+          "question": "What is my cat's name?",
+          "reference": "Nebula",
+          "hypothesis": "I do not have enough information to answer that question. None of the recalled memories mention a cat or its name.",
+          "f1": 0.0
+        },
+        {
+          "question": "Tell me about my grandmother.",
+          "reference": "She taught me secret recipes, made the best tomato sauce, said cooking is an act of love",
+          "hypothesis": "My grandmother always said that cooking is an act of love.",
+          "f1": 0.5
+        },
+        {
+          "question": "What musical instrument am I learning?",
+          "reference": "guitar",
+          "hypothesis": "I do not have enough information to answer that question. While my recalled memories mention that \"Jazz music is incredibly complex but beautiful,\" they do not specify which musical instrument I am learning.",
+          "f1": 0.0
+        },
+        {
+          "question": "Where do I want to travel?",
+          "reference": "Japan for cherry blossoms, Rome, Barcelona",
+          "hypothesis": "I do not have enough information to answer where you want to travel. While my memories include a love for Italian food, my cat Nebula, yoga, and the James Webb telescope, none of them explicitly state a desire to travel to a specific location.",
+          "f1": 0.04
+        },
+        {
+          "question": "What exercise do I do?",
+          "reference": "running three times a week, yoga, training for half marathon",
+          "hypothesis": "I run trail running for the half marathon.",
+          "f1": 0.4444
+        },
+        {
+          "question": "What science topics interest me?",
+          "reference": "quantum computing, neuroscience, James Webb telescope, evolutionary biology, ocean exploration",
+          "hypothesis": "I do not have enough information to answer this question. My recalled memories contain details about Italian food, running, a pet named Nebula, and a grandmother's recipe, but none mention specific science topics or interests.",
+          "f1": 0.0
+        },
+        {
+          "question": "What does my cat do?",
+          "reference": "sits by the window, knocks over coffee, chirps at birds",
+          "hypothesis": "My cat Nebula loves sitting by the window all day.",
+          "f1": 0.3
+        }
+      ]
+    },
+    {
+      "step": 210,
+      "avg_f1": 0.1689,
+      "num_nodes": 14,
+      "num_edges": 46,
+      "avg_pred_error": 1e-05,
+      "results": [
+        {
+          "question": "What do I like to cook?",
+          "reference": "Italian food, pasta, risotto, fettuccine",
+          "hypothesis": "Based on the recalled memory from step 324, you believe that cooking is an act of love. However, the provided memories do not specify what dishes or types of food you like to cook.",
+          "f1": 0.0513
+        },
+        {
+          "question": "What is my cat's name?",
+          "reference": "Nebula",
+          "hypothesis": "I do not have enough information to answer that question. None of the recalled memories mention a cat or its name.",
+          "f1": 0.0
+        },
+        {
+          "question": "Tell me about my grandmother.",
+          "reference": "She taught me secret recipes, made the best tomato sauce, said cooking is an act of love",
+          "hypothesis": "My grandmother always said that cooking is an act of love.",
+          "f1": 0.5
+        },
+        {
+          "question": "What musical instrument am I learning?",
+          "reference": "guitar",
+          "hypothesis": "I do not have enough information to answer that question. While my recalled memories mention that \"Jazz music is incredibly complex but beautiful,\" they do not state that I am learning any specific musical instrument.",
+          "f1": 0.0
+        },
+        {
+          "question": "Where do I want to travel?",
+          "reference": "Japan for cherry blossoms, Rome, Barcelona",
+          "hypothesis": "I do not have enough information to answer where you want to travel. While my memories mention Italian food, a cat named Nebula, jazz music, and trail running shoes, none of them specify a travel destination or express a desire to go anywhere.",
+          "f1": 0.0
+        },
+        {
+          "question": "What exercise do I do?",
+          "reference": "running three times a week, yoga, training for half marathon",
+          "hypothesis": "I run three times a week.",
+          "f1": 0.5
+        },
+        {
+          "question": "What science topics interest me?",
+          "reference": "quantum computing, neuroscience, James Webb telescope, evolutionary biology, ocean exploration",
+          "hypothesis": "I do not have enough information to answer this question. My recalled memories contain details about Italian food, running, trail shoes, and a bird named Nebula, but none mention specific science topics.",
+          "f1": 0.0
+        },
+        {
+          "question": "What does my cat do?",
+          "reference": "sits by the window, knocks over coffee, chirps at birds",
+          "hypothesis": "My cat, Nebula, loves sitting by the window all day.",
+          "f1": 0.3
+        }
+      ]
+    },
+    {
+      "step": 240,
+      "avg_f1": 0.1625,
+      "num_nodes": 14,
+      "num_edges": 46,
+      "avg_pred_error": 1e-05,
+      "results": [
+        {
+          "question": "What do I like to cook?",
+          "reference": "Italian food, pasta, risotto, fettuccine",
+          "hypothesis": "Based on the recalled memories, I associate cooking with fresh ingredients, simplicity, and the idea that it is an act of love.",
+          "f1": 0.0
+        },
+        {
+          "question": "What is my cat's name?",
+          "reference": "Nebula",
+          "hypothesis": "I do not have enough information to answer that question. None of the recalled memories mention a cat or its name.",
+          "f1": 0.0
+        },
+        {
+          "question": "Tell me about my grandmother.",
+          "reference": "She taught me secret recipes, made the best tomato sauce, said cooking is an act of love",
+          "hypothesis": "My grandmother always said that cooking is an act of love.",
+          "f1": 0.5
+        },
+        {
+          "question": "What musical instrument am I learning?",
+          "reference": "guitar",
+          "hypothesis": "I do not have enough information to answer this question. While my recalled memories mention that \"Jazz music is incredibly complex but beautiful,\" there is no record of me learning any specific musical instrument.",
+          "f1": 0.0
+        },
+        {
+          "question": "Where do I want to travel?",
+          "reference": "Japan for cherry blossoms, Rome, Barcelona",
+          "hypothesis": "I do not have enough information to answer where you want to travel. While my recalled memories mention running, jazz, Italian food, and my cat, none of them specify a travel destination or express a desire to go anywhere.",
+          "f1": 0.0
+        },
+        {
+          "question": "What exercise do I do?",
+          "reference": "running three times a week, yoga, training for half marathon",
+          "hypothesis": "I run three times a week.",
+          "f1": 0.5
+        },
+        {
+          "question": "What science topics interest me?",
+          "reference": "quantum computing, neuroscience, James Webb telescope, evolutionary biology, ocean exploration",
+          "hypothesis": "I do not have enough information to answer this question. My recalled memories contain interests in Italian food, running, jazz music, and trail running shoes, but no science topics are mentioned.",
+          "f1": 0.0
+        },
+        {
+          "question": "What does my cat do?",
+          "reference": "sits by the window, knocks over coffee, chirps at birds",
+          "hypothesis": "My cat Nebula loves sitting by the window all day.",
+          "f1": 0.3
+        }
+      ]
+    },
+    {
+      "step": 270,
+      "avg_f1": 0.1696,
+      "num_nodes": 14,
+      "num_edges": 46,
+      "avg_pred_error": 1e-05,
+      "results": [
+        {
+          "question": "What do I like to cook?",
+          "reference": "Italian food, pasta, risotto, fettuccine",
+          "hypothesis": "Based on the recalled memories, I do not have specific information about what I like to cook.\n\nMy memories indicate that:\n- Italian food is about fresh ingredients and simplicity.\n- Cooking is an act of love.\n\nHowever, none of the stored experiences explicitly state my personal preference for specific dishes or cooking styles.",
+          "f1": 0.0702
+        },
+        {
+          "question": "What is my cat's name?",
+          "reference": "Nebula",
+          "hypothesis": "I do not have enough information to answer that question. My recalled memories mention a cat named Nebula, but they do not specify if Nebula is my cat or another entity.",
+          "f1": 0.0625
+        },
+        {
+          "question": "Tell me about my grandmother.",
+          "reference": "She taught me secret recipes, made the best tomato sauce, said cooking is an act of love",
+          "hypothesis": "Based on my recalled memories, my grandmother always said that cooking is an act of love.",
+          "f1": 0.4242
+        },
+        {
+          "question": "What musical instrument am I learning?",
+          "reference": "guitar",
+          "hypothesis": "I do not have enough information to answer that question. While my recalled memories mention that \"Jazz music is incredibly complex but beautiful,\" there is no record of me learning any specific musical instrument.",
+          "f1": 0.0
+        },
+        {
+          "question": "Where do I want to travel?",
+          "reference": "Japan for cherry blossoms, Rome, Barcelona",
+          "hypothesis": "I do not have enough information to answer where you want to travel. While my recalled memories mention Italian food, jazz music, running, and my cat Nebula, none of them specify a travel destination or express a desire to go anywhere.",
+          "f1": 0.0
+        },
+        {
+          "question": "What exercise do I do?",
+          "reference": "running three times a week, yoga, training for half marathon",
+          "hypothesis": "I run three times a week.",
+          "f1": 0.5
+        },
+        {
+          "question": "What science topics interest me?",
+          "reference": "quantum computing, neuroscience, James Webb telescope, evolutionary biology, ocean exploration",
+          "hypothesis": "I do not have enough information to answer this question. My recalled memories contain interests in Italian food, running, and jazz music, but no science topics are mentioned.",
+          "f1": 0.0
+        },
+        {
+          "question": "What does my cat do?",
+          "reference": "sits by the window, knocks over coffee, chirps at birds",
+          "hypothesis": "My cat, Nebula, loves sitting by the window all day.",
+          "f1": 0.3
+        }
+      ]
+    },
+    {
+      "step": 300,
+      "avg_f1": 0.1266,
+      "num_nodes": 14,
+      "num_edges": 50,
+      "avg_pred_error": 1e-05,
+      "results": [
+        {
+          "question": "What do I like to cook?",
+          "reference": "Italian food, pasta, risotto, fettuccine",
+          "hypothesis": "Based on the recalled memories, I like to cook **tomato sauce** using **fresh ingredients** and **simplicity**, as taught by my grandmother.",
+          "f1": 0.0
+        },
+        {
+          "question": "What is my cat's name?",
+          "reference": "Nebula",
+          "hypothesis": "My cat's name is Nebula.",
+          "f1": 0.3333
+        },
+        {
+          "question": "Tell me about my grandmother.",
+          "reference": "She taught me secret recipes, made the best tomato sauce, said cooking is an act of love",
+          "hypothesis": "Based on my recalled memories, my grandmother taught me her secret tomato sauce recipe.",
+          "f1": 0.3226
+        },
+        {
+          "question": "What musical instrument am I learning?",
+          "reference": "guitar",
+          "hypothesis": "I do not have enough information to answer this question. None of the recalled memories mention a musical instrument or the act of learning one.",
+          "f1": 0.0
+        },
+        {
+          "question": "Where do I want to travel?",
+          "reference": "Japan for cherry blossoms, Rome, Barcelona",
+          "hypothesis": "I do not have enough information to answer where you want to travel. While my recalled memories mention Italian food, running, and my cat Nebula, none of them contain a desire or plan to travel.",
+          "f1": 0.0
+        },
+        {
+          "question": "What exercise do I do?",
+          "reference": "running three times a week, yoga, training for half marathon",
+          "hypothesis": "I run in the morning.",
+          "f1": 0.0
+        },
+        {
+          "question": "What science topics interest me?",
+          "reference": "quantum computing, neuroscience, James Webb telescope, evolutionary biology, ocean exploration",
+          "hypothesis": "I do not have enough information to answer this question. My recalled memories contain only personal experiences (cooking, running, pets) and no data regarding science topics or interests.",
+          "f1": 0.0
+        },
+        {
+          "question": "What does my cat do?",
+          "reference": "sits by the window, knocks over coffee, chirps at birds",
+          "hypothesis": "My cat, Nebula, loves sitting by the window all day. She also knocked over my coffee this morning.",
+          "f1": 0.3571
+        }
+      ]
+    }
+  ],
+  "total_time_s": 94.7
+}

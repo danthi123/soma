@@ -503,6 +503,27 @@ def main() -> None:
         default=3,
         help="projection_distillation_winners for soma-spatial",
     )
+    p.add_argument(
+        "--rerank-weight",
+        type=float,
+        default=0.3,
+        help=(
+            "SOMA retrieve_hybrid rerank_weight applied to ALL soma-* variants "
+            "(soma-random / soma-distilled / soma-spatial). 0.0 = pure embedding "
+            "cosine, no graph re-rank — useful for isolating whether the graph "
+            "rerank helps or hurts."
+        ),
+    )
+    p.add_argument(
+        "--gate-threshold",
+        type=float,
+        default=0.05,
+        help=(
+            "SOMA retrieve_hybrid confidence gate. Higher = stricter "
+            "(rerank fires on fewer queries). Set very high (e.g. 10.0) "
+            "to effectively disable rerank without zeroing the weight."
+        ),
+    )
     args = p.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -545,7 +566,10 @@ def main() -> None:
             print(f"  SKIP: {e}")
 
     if not args.skip_random:
-        print("\n=== soma-random (frozen projections) ===")
+        print(
+            f"\n=== soma-random (frozen projections, rerank_w={args.rerank_weight}, "
+            f"gate={args.gate_threshold}) ==="
+        )
         r = run_soma_predictive(
             f"soma-random{args.variant_suffix}",
             samples, turns_by_sample, queries_by_sample, teacher, args.target_dim,
@@ -554,13 +578,15 @@ def main() -> None:
             distillation_weight=0.0,
             synap_locality=args.locality,
             device=device,
+            rerank_weight=args.rerank_weight,
+            gate_threshold=args.gate_threshold,
         )
         results.append(r)
         print(f"  R@1={r.recall_at_k[1]:.3f} R@5={r.recall_at_k[5]:.3f} R@10={r.recall_at_k[10]:.3f} retrieve={r.retrieve_avg_ms:.1f}ms")
 
     print(
         f"\n=== soma-distilled (learnable + mxbai distill, alpha={args.alpha}, "
-        f"locality={args.locality}, dim={args.target_dim}) ==="
+        f"locality={args.locality}, rerank_w={args.rerank_weight}, dim={args.target_dim}) ==="
     )
     r = run_soma_predictive(
         f"soma-distilled{args.variant_suffix}",
@@ -570,6 +596,8 @@ def main() -> None:
         distillation_weight=args.alpha,
         synap_locality=args.locality,
         device=device,
+        rerank_weight=args.rerank_weight,
+        gate_threshold=args.gate_threshold,
     )
     results.append(r)
     print(f"  R@1={r.recall_at_k[1]:.3f} R@5={r.recall_at_k[5]:.3f} R@10={r.recall_at_k[10]:.3f} retrieve={r.retrieve_avg_ms:.1f}ms")
@@ -590,6 +618,8 @@ def main() -> None:
             position_mode="learnable",
             position_coupling_weight=args.spatial_beta,
             projection_distillation_winners=args.spatial_winners,
+            rerank_weight=args.rerank_weight,
+            gate_threshold=args.gate_threshold,
         )
         results.append(r)
         print(f"  R@1={r.recall_at_k[1]:.3f} R@5={r.recall_at_k[5]:.3f} R@10={r.recall_at_k[10]:.3f} retrieve={r.retrieve_avg_ms:.1f}ms")

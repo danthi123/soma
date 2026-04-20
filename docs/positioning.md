@@ -147,7 +147,33 @@ substrate for learning to come**. On the benchmarks committed under
   says "I don't know"). The ranking mechanism is stable across verbose
   and strict prompting. Single-session-user is a **clean sweep**:
   SOMA wins 22 items, chroma wins 0, 48 tied on 70 items of that type.
-  See `research/developmental/results/longmemeval_causation_findings.md`.
+  Direct truncation evidence: chroma's IDK rate climbs monotonically
+  with gold rank on the full 500-item rank probe (rank 1 → 17%, rank
+  3 → 100%). See
+  `research/developmental/results/longmemeval_causation_findings.md`.
+
+  **Replicated at scale on qwen3.5:9b**: same 500 items with strict
+  prompting on the larger model give +22.0% F1 / +19.4% EM
+  (vs +22.8%/+23.5% on 4b) — identical within noise. Decomposition
+  stable at 37/63 recall/ranking (vs 34/66 on 4b). The SOMA lift is
+  a retrieval-mechanical property, not LLM-specific. See
+  `longmemeval_qa_compare_qwen9b_strict_findings.md`.
+
+  **LLM-judge confirms the story**: independent semantic-equivalence
+  scoring on the same qwen4b strict predictions gives +22.2%
+  judge-accuracy lift, almost identical to the +22.8% F1 lift. Per-
+  type reshuffling is the sharpest addition:
+  - temporal-reasoning: F1 said +23%, judge says **+48%** (F1 was
+    under-rewarding formatting variance like "two months ago" vs "2
+    months prior").
+  - single-session-preference: F1 said +2% (tied, benchmark-mismatch),
+    judge says **+20%** (SOMA's specific-fact answers are correct
+    against paraphrased-preference gold).
+  - multi-session: F1 said +36%, judge says +4% (F1 was over-rewarding
+    overlap on partial-wrong syntheses; this type is LLM-limited, not
+    retrieval-limited).
+  See `longmemeval_judge_findings.md` and
+  `longmemeval_temporal_deep_dive.md`.
 - **Matches Chroma on recall, ~2.4× faster on retrieve** — on full
   LoCoMo (5,882 turns, 1,982 queries) at target_dim=128 with
   mxbai-embed-large, pure-cosine SOMA ties Chroma on R@5 (0.350 vs

@@ -265,47 +265,90 @@ def _pack_context(
     return "\n\n".join(lines)
 
 
+SYSTEM_PROMPT_VERBOSE = (
+    "You are an AI assistant that recalls information from past conversations. "
+    "Answer the question using ONLY the evidence provided. Be concise and direct. "
+    "If the evidence does not contain the answer, say 'I don't know'."
+)
+
+SYSTEM_PROMPT_STRICT = (
+    "Answer with ONLY the specific fact in 1-5 words. "
+    "No explanation, no preamble (e.g. 'Based on...', 'According to...'). "
+    "Extract the single value that answers the question. "
+    "If the evidence does not contain the answer, reply exactly 'I don't know'. "
+    "Examples:\n"
+    "  Question: What's my favorite brand?  Answer: Nike\n"
+    "  Question: How many pages are left?  Answer: 190\n"
+    "  Question: Where did I travel?  Answer: Hawaii"
+)
+
+
 def _call_llm(
     context: str,
     question: str,
     question_date: str,
     *,
+    provider: str,
     api_base: str,
     model: str,
+    strict_prompt: bool = False,
 ) -> str:
-    system_prompt = (
-        "You are an AI assistant that recalls information from past conversations. "
-        "Answer the question using ONLY the evidence provided. Be concise and direct. "
-        "If the evidence does not contain the answer, say 'I don't know'."
-    )
+    """Call a local Ollama or Anthropic Claude LLM.
+
+    provider: "ollama" (local) or "anthropic" (cloud).
+    strict_prompt: use SYSTEM_PROMPT_STRICT for short, extractive answers.
+        Recommended for Claude + F1 scoring (avoids verbosity penalty).
+    """
+    system_prompt = SYSTEM_PROMPT_STRICT if strict_prompt else SYSTEM_PROMPT_VERBOSE
     user_msg = ""
     if context.strip():
         user_msg += f"Relevant conversation history:\n{context}\n\n"
     user_msg += f"Current date: {question_date}\n"
     user_msg += f"Question: {question}\nAnswer:"
 
-    payload: dict[str, Any] = {
-        "model": model,
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_msg},
-        ],
-        "stream": False,
-        "think": False,
-        "options": {"num_predict": 512, "temperature": 0.0},
-    }
-    try:
-        resp = requests.post(
-            f"{api_base}/api/chat",
-            json=payload,
-            timeout=180,
-        )
-        resp.raise_for_status()
-        data = resp.json()
-        return data["message"]["content"].strip()
-    except (requests.RequestException, KeyError, IndexError) as exc:
-        logger.error("LLM call failed: %s", exc)
-        return ""
+    if provider == "ollama":
+        payload: dict[str, Any] = {
+            "model": model,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_msg},
+            ],
+            "stream": False,
+            "think": False,
+            "options": {"num_predict": 512, "temperature": 0.0},
+        }
+        try:
+            resp = requests.post(
+                f"{api_base}/api/chat",
+                json=payload,
+                timeout=180,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            return data["message"]["content"].strip()
+        except (requests.RequestException, KeyError, IndexError) as exc:
+            logger.error("Ollama call failed: %s", exc)
+            return ""
+
+    if provider == "anthropic":
+        try:
+            from anthropic import Anthropic
+            # API key read from ANTHROPIC_API_KEY env var
+            client = Anthropic()
+            resp = client.messages.create(
+                model=model,
+                max_tokens=512,
+                system=system_prompt,
+                messages=[{"role": "user", "content": user_msg}],
+                temperature=0.0,
+            )
+            # content is list of TextBlock objects
+            return resp.content[0].text.strip()
+        except Exception as exc:
+            logger.error("Anthropic call failed: %s", exc)
+            return ""
+
+    raise ValueError(f"unknown provider: {provider}")
 
 
 # ---------------------------------------------------------------------------
@@ -321,10 +364,12 @@ def _evaluate_mode(
     dim: int,
     embed_fn: Any,
     reranker: CrossEncoderReranker,
+    provider: str,
     api_base: str,
     model: str,
     max_context_tokens: int,
     top_k: int,
+    strict_prompt: bool = False,
     resume_path: Path | None = None,
 ) -> dict[str, Any]:
     predictions: list[dict[str, str]] = []
@@ -394,7 +439,8 @@ def _evaluate_mode(
         t0 = time.perf_counter()
         answer = _call_llm(
             context, item.question, item.question_date,
-            api_base=api_base, model=model,
+            provider=provider, api_base=api_base, model=model,
+            strict_prompt=strict_prompt,
         )
         llm_latencies.append((time.perf_counter() - t0) * 1000)
 
@@ -460,6 +506,12 @@ def main() -> None:
                    choices=["cpu", "cuda"],
                    help="Device for sbert embedder. CPU avoids VRAM "
                         "contention with ollama LLMs on a shared GPU.")
+    p.add_argument("--provider", default="ollama",
+                   choices=["ollama", "anthropic"],
+                   help="LLM provider. Anthropic needs ANTHROPIC_API_KEY env var.")
+    p.add_argument("--strict-prompt", action="store_true",
+                   help="Use strict 'answer in 1-5 words' system prompt. "
+                        "Recommended for larger LLMs to avoid F1 verbosity penalty.")
     args = p.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
@@ -487,9 +539,11 @@ def main() -> None:
             mode, items,
             sbert_model=sbert_model, dim=dim, embed_fn=embed_fn,
             reranker=reranker,
+            provider=args.provider,
             api_base=args.api_base, model=args.model,
             max_context_tokens=args.max_context_tokens,
             top_k=args.top_k,
+            strict_prompt=args.strict_prompt,
             resume_path=jsonl_path,
         )
         out_path = RESULTS_DIR / f"qa_compare_{mode}{args.out_suffix}.json"

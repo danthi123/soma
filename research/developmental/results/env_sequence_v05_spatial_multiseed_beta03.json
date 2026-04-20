@@ -1,0 +1,166 @@
+{
+  "schedule": [
+    "mlp_2x16",
+    "mlp_2x32",
+    "mlp_3x16",
+    "mlp_3x32",
+    "mlp_2x64",
+    "mlp_3x64",
+    "mlp_4x32",
+    "mlp_4x64"
+  ],
+  "seeds": [
+    0,
+    1,
+    42
+  ],
+  "variants": [
+    "synap_only_local",
+    "synap_only_local_spatial"
+  ],
+  "position_coupling_weight": 0.3,
+  "gates": {
+    "gate1_all_finite": true,
+    "gate2_mse_ratio_le_1_5": false,
+    "gate2_per_seed_ratios": [
+      1.1610633554208,
+      1.0290306818279107,
+      1.5681423777786028
+    ],
+    "gate3_position_ks_ge_0_1": true,
+    "gate3_per_seed_ks": [
+      0.24999999999999994,
+      0.1785714285714286,
+      0.14285714285714285
+    ],
+    "overall": false
+  },
+  "runs": {
+    "0": {
+      "synap_only_local": {
+        "mse_mean": 0.0023576434439683,
+        "synap_events": 32,
+        "wall_time": 176.93540649994975,
+        "finite_projections": true,
+        "finite_positions": true,
+        "regime_means": {
+          "0": 0.009233471276331926,
+          "1": 0.0010064323056212742,
+          "2": 0.00023651021060686617,
+          "3": 0.0005157533000783587,
+          "4": 0.0010967346066536265,
+          "5": 0.0015848579363228054,
+          "6": 0.0011606270794982266,
+          "7": 0.0007509756443933224
+        },
+        "position_ks_distance": 0.0,
+        "n_initial_pairs": 28,
+        "n_final_pairs": 28
+      },
+      "synap_only_local_spatial": {
+        "mse_mean": 0.0027373734079396855,
+        "synap_events": 53,
+        "wall_time": 215.66857090004487,
+        "finite_projections": true,
+        "finite_positions": true,
+        "regime_means": {
+          "0": 0.01118122208408339,
+          "1": 0.0010933956584813131,
+          "2": 0.00046551847513910617,
+          "3": 0.00014876649780944717,
+          "4": 0.001414344304394035,
+          "5": 0.0031089042829262324,
+          "6": 0.0008129559351255011,
+          "7": 0.0006266726427350107
+        },
+        "position_ks_distance": 0.24999999999999994,
+        "n_initial_pairs": 28,
+        "n_final_pairs": 28
+      }
+    },
+    "1": {
+      "synap_only_local": {
+        "mse_mean": 0.0022622269254125057,
+        "synap_events": 64,
+        "wall_time": 208.54641539999284,
+        "finite_projections": true,
+        "finite_positions": true,
+        "regime_means": {
+          "0": 0.007863569575219526,
+          "1": 0.0007180095181320212,
+          "2": 0.0004895458343071368,
+          "3": 0.0002477999973234546,
+          "4": 0.0003167534978547337,
+          "5": 0.002823466430854751,
+          "6": 0.0006398134675146139,
+          "7": 0.00011886012414702565
+        },
+        "position_ks_distance": 0.0,
+        "n_initial_pairs": 28,
+        "n_final_pairs": 28
+      },
+      "synap_only_local_spatial": {
+        "mse_mean": 0.0023279009155066886,
+        "synap_events": 91,
+        "wall_time": 283.50752540002577,
+        "finite_projections": true,
+        "finite_positions": true,
+        "regime_means": {
+          "0": 0.007777344080080327,
+          "1": 0.0008292556090964354,
+          "2": 0.00034544641801403486,
+          "3": 0.000414731419441523,
+          "4": 0.0005380541588237975,
+          "5": 0.0030285807758627923,
+          "6": 0.0010028368642088026,
+          "7": 0.0007102424291193606
+        },
+        "position_ks_distance": 0.1785714285714286,
+        "n_initial_pairs": 28,
+        "n_final_pairs": 28
+      }
+    },
+    "42": {
+      "synap_only_local": {
+        "mse_mean": 0.0017944524180566078,
+        "synap_events": 52,
+        "wall_time": 203.0033715000027,
+        "finite_projections": true,
+        "finite_positions": true,
+        "regime_means": {
+          "0": 0.005588297114356241,
+          "1": 0.00025626976292187465,
+          "2": 0.0002066634853326832,
+          "3": 0.00028496804146016074,
+          "4": 0.0005081901559969992,
+          "5": 0.000723075315618189,
+          "6": 0.0012873806224160944,
+          "7": 0.00046369501345217847
+        },
+        "position_ks_distance": 0.0,
+        "n_initial_pairs": 28,
+        "n_final_pairs": 28
+      },
+      "synap_only_local_spatial": {
+        "mse_mean": 0.0028139568816618523,
+        "synap_events": 75,
+        "wall_time": 231.74298829998588,
+        "finite_projections": true,
+        "finite_positions": true,
+        "regime_means": {
+          "0": 0.013022169881596003,
+          "1": 0.0009681003404330113,
+          "2": 8.993275819193513e-05,
+          "3": 0.00035056464433182557,
+          "4": 0.0004738635463945684,
+          "5": 0.001121182626739028,
+          "6": 0.0011250267852301477,
+          "7": 0.00024153964101092162
+        },
+        "position_ks_distance": 0.14285714285714285,
+        "n_initial_pairs": 28,
+        "n_final_pairs": 28
+      }
+    }
+  }
+}

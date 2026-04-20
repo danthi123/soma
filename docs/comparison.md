@@ -139,6 +139,31 @@ when budget can't hold the full haystack. See
 `research/developmental/results/longmemeval_qa_compare_findings.md`
 for the full per-type breakdown.
 
+#### Where the +23% F1 lift actually comes from
+
+Decomposing the lift by retrieval-partition cell (did each system
+retrieve the gold session in top-5?):
+
+| Cell | N | sum(SOMA F1 − chroma F1) | contribution |
+| --- | ---: | ---: | ---: |
+| only SOMA retrieves | 30 | +11.5 | **34% (recall)** |
+| both retrieve gold | 460 | +22.6 | **66% (ranking)** |
+| only chroma retrieves | 6 | +0.1 | 0% |
+| neither retrieves | 4 | 0 | 0% |
+
+Two distinct mechanisms drive SOMA's lift:
+- **34% from recall** — BM25 rescues keyword queries cosine misses
+  (e.g. "how many Mbps?", "what brand?", "how many minutes?").
+- **66% from ranking** — even when chroma's top-5 contains the gold
+  session, its pure-cosine scoring often places the gold at rank 4-5
+  behind less-useful semantic matches. SOMA's hybrid pushes gold to
+  rank 1-2, where the LLM can actually extract the fact. On 460
+  same-retrieval items, chroma says "I don't know" and SOMA extracts
+  the answer in 54 cases vs the reverse in 24.
+
+See `research/developmental/results/longmemeval_causation_findings.md`
+for the full per-type / per-cell breakdown.
+
 ## Honest comparison vs Mem0 / Letta / Zep
 
 We haven't yet run head-to-head benchmarks against Mem0 / Letta / Zep

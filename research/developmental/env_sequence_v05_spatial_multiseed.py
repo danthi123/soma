@@ -252,7 +252,7 @@ def main() -> None:
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Device: {device}")
-    print(f"position_coupling_weight (β): {args.beta}")
+    print(f"position_coupling_weight (beta): {args.beta}")
     DIM = 16
     SEEDS = [0, 1, 42]
     variants = ["synap_only_local", "synap_only_local_spatial"]
@@ -371,7 +371,7 @@ def main() -> None:
     overall = gate1_pass and gate2_pass and gate3_pass
     print(f"\n  OVERALL: {'PASS — proceed to Phase 3' if overall else 'FAIL — investigate'}")
 
-    # Save raw data — `--tag` keeps β ablations from clobbering the main run
+    # Save raw data: --tag keeps beta ablations from clobbering the main run
     suffix = f"_{args.tag}" if args.tag else ""
     out_path = Path(
         f"research/developmental/results/env_sequence_v05_spatial_multiseed{suffix}.json"

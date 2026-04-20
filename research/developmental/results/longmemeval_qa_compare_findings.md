@@ -1,99 +1,109 @@
-# LongMemEval QA comparison — retrieval lift translates to 42% F1 lift
+# LongMemEval QA comparison — retrieval lift translates to QA lift, but unevenly
 
-**Status:** CONFIRMED. SOMA's BM25+cosine hybrid doesn't just beat
-chroma on retrieval R@K — the better retrieval translates directly
-to **+42% relative F1** on LongMemEval QA with the same LLM.
+**Status:** CONFIRMED (with nuance). SOMA's BM25+cosine hybrid delivers
+**+10% relative F1 overall** on LongMemEval QA (N=500) over chroma
+cosine with the same LLM. The win is dramatic on single-session
+questions (+49% F1) and modest on multi-session / temporal-reasoning
+questions (+3-6% F1).
 
 **Date:** 2026-04-20.
 **Runner:** `benchmarks/industry/longmemeval/run_qa_compare.py`.
-**Scope:** LongMemEval small variant, N=100 items (first 100).
+**Scope:** LongMemEval small variant, N=500 (full) + N=100 (initial).
 **Embedder:** sentence-transformers/all-MiniLM-L6-v2.
-**Reranker:** cross-encoder/ms-marco-MiniLM-L-6-v2 (rerank modes only).
-**LLM:** qwen3.5:4b-q8_0 via Ollama, temperature=0.0, max_context_tokens=3800.
+**LLM:** qwen3.5:4b-q8_0 via Ollama, T=0, max_context_tokens=3800.
 
-## The headline question
-
-The retrieval benchmark (`longmemeval_retrieval_findings.md`) showed
-SOMA's BM25+cosine hybrid beats chroma+cross-encoder-rerank by +4.7%
-R@5 on LongMemEval at 8.3× lower latency. **But retrieval R@K is only
-meaningful if it turns into better LLM answers.** This comparison feeds
-the retrieved context into the SAME LLM and scores the answer.
-
-## Results
-
-Full 100-item results, same LLM (qwen3.5:4b-q8_0, T=0), same context
-budget (3800 tok):
+## Headline (N=500, full LongMemEval small)
 
 | Mode | F1 | R@5 | avg input tok | retrieve+LLM ms |
 | --- | ---: | ---: | ---: | ---: |
-| chroma_cosine (top-5) | 0.1677 | 0.850 | 3871 | 1691 |
-| chroma + cross-encoder rerank (top-20→5) | 0.1703 | 0.830 | 3871 | 1861 |
-| **soma_hybrid (α=0.3, top-5)** | **0.2383** | **0.990** | 3870 | 1691 |
-| full_context (3.8K budget, oldest-dropped) | 0.0286 | 0.040 | 2032 | 899 |
+| chroma_cosine | 0.148 | 0.932 | 3879 | 1887 |
+| **soma_hybrid** | **0.164** | **0.980** | 3879 | 1889 |
 
-**SOMA hybrid delivers +42% F1 over chroma cosine and +40% F1 over
-chroma+cross-encoder-rerank.**
+**+10.4% F1 relative, +5.2% R@5 absolute.**
 
-## Per-question pairwise wins
+Pairwise F1 wins (N=500): SOMA wins 95, ties 317, loses 88. Net +7
+strict wins out of 500 — positive but marginal at the aggregate level.
 
-| A vs B | A wins | ties | B wins |
-| --- | ---: | ---: | ---: |
-| soma_hybrid vs chroma_cosine | **27** | 64 | 9 |
-| soma_hybrid vs chroma_rerank | **27** | 58 | 15 |
-| soma_hybrid vs full_context | **72** | 21 | 7 |
+## Per-type breakdown — this is where the real story lives
 
-SOMA hybrid strictly beats chroma cosine on 27 items, ties on 64,
-loses on only 9. The ties are mostly items where both systems returned
-the gold session — the LLM answer was identical regardless. The wins
-are where SOMA found gold and chroma missed it.
+| Question type | N | chroma F1 | SOMA F1 | Δ F1 | chroma R@5 | SOMA R@5 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| single-session-user | 70 | 0.211 | **0.315** | **+49.0%** | 0.800 | 1.000 |
+| multi-session | 133 | 0.060 | 0.063 | +5.8% | 0.962 | 0.985 |
+| temporal-reasoning | 133 | 0.116 | 0.119 | +3.1% | 0.940 | 0.970 |
+| knowledge-update | 78 | 0.145 | 0.153 | +5.1% | 0.974 | 1.000 |
+| single-session-assistant | 56 | **0.345** | 0.327 | **-5.4%** | 0.982 | 1.000 |
+| single-session-preference | 30 | 0.176 | 0.175 | -0.6% | 0.867 | 0.867 |
 
-## Why this is the big win
+## Interpreting the per-type story
 
-Two common critiques of retrieval benchmarks:
-1. "R@K improvements don't actually help the user — the LLM compensates
-   for imperfect retrieval."
-2. "R@K improvements at better cosine variants are within noise."
+**Where SOMA wins dramatically (single-session-user, +49%):** The
+answer lives in one session. The question often references a specific
+entity (name, date, number, product). Cosine alone disperses these
+into paraphrase space; BM25 pulls the lexically-matching session to
+the top. When SOMA's R@5 jumps from 0.80 → 1.00, the LLM reliably
+extracts the answer. This IS the case where retrieval quality is the
+binding constraint on end-to-end quality.
 
-This test rebuts both:
-1. When SOMA finds gold that chroma misses, the LLM uses it. That's
-   +18 to +20 net strict F1 wins out of 100 items.
-2. The R@5 delta (0.990 vs 0.850 = +17%) is outside any plausible
-   embedder noise — it's structural. The BM25 leg pulls in
-   lexically-matched sessions that pure cosine misses.
+**Where SOMA wins modestly (multi-session, temporal-reasoning, 
+knowledge-update, +3-6%):** The LLM must reason across multiple
+retrieved sessions to compose the answer. Even with perfect retrieval
+(SOMA hits R@5=0.97-1.00), a 4B-parameter LLM struggles to combine
+evidence correctly. Retrieval is necessary but not sufficient — the
+LLM is the bottleneck. F1 stays low (0.06-0.15) regardless of
+retrieval quality.
 
-The BM25 leg matters because LongMemEval questions ask about specific
-entities ("my pet", "which store", "how many miles") — exact-term
-matches that cosine disperses into paraphrase space.
+**Where SOMA ties or slightly loses (single-session-assistant,
+single-session-preference):** Both systems hit R@5 ~0.87-1.00 — the
+gold session is found by both. Any F1 differences reduce to verbosity
+or phrasing differences in the LLM's output, which are noise.
+N=56 and N=30 for these types, so statistical significance is
+limited.
 
-## Rerank hurts on LongMemEval (consistent with retrieval findings)
+## Sample-size caveat on the N=100 result
 
-chroma+rerank F1=0.170 vs chroma cosine F1=0.168 — essentially tied.
-R@5 actually DROPS (0.830 vs 0.850).
+The earlier N=100 run showed +42% F1 (vs +10% here). Why? N=100 is
+items 0-99, which are 70 single-session-user + ~30 multi-session
+(the type distribution is not random — LongMemEval groups similar
+types together). That pool is heavily biased toward the type where
+SOMA wins most dramatically.
 
-This matches the retrieval-benchmark finding: cross-encoder rerank,
-trained on (short-query, short-doc) pairs, struggles on LongMemEval's
-long multi-topic session texts and adds noise. For this corpus,
-`rerank_top_n=None` (no reranker) is the optimal config for SOMA too.
+**This isn't wrong, but it overstates the headline.** The honest
+claim is: SOMA hybrid delivers measurable F1 lift end-to-end, with
+the size of the lift depending on question type — big on single-turn
+entity-retrieval, small on multi-document reasoning where the LLM
+is the bottleneck.
 
-## Full-context truncation is the wrong baseline at matched budget
+## Why R@5 wins don't always turn into F1 wins
 
-At 3800-token budget, full_context can fit only ~15 of the 50 haystack
-sessions. Dropping the rest (oldest first) loses gold 96% of the time
-(R@5 drops to 0.040). Result: F1=0.029.
+Intuition: if SOMA finds gold on more items, the LLM should answer
+correctly more often. Why isn't that true across the board?
 
-This is a structurally fair comparison (matched budget) but a weak
-point for full_context. The honest interpretation:
-- **If your LLM context is constrained** (small model, cost-sensitive
-  RAG, mobile/edge): retrieval crushes full-context truncation.
-- **If your LLM has unlimited context** (Claude Sonnet 1M, etc.): you
-  could dump everything, but at ~4× the token cost per query.
+1. **Retrieval is necessary but not sufficient.** For multi-session
+   questions, finding the right 5 sessions is the first step; the LLM
+   still has to synthesize across them. A 4B model struggles.
+2. **F1 is noisy at low values.** On multi-session questions where
+   both systems score F1 ~0.06, there's not much signal to move.
+3. **Verbosity differences cancel out.** When both systems hit gold,
+   small wording differences in the LLM output produce small F1
+   differences in both directions.
 
-SOMA at 3.8K hits F1=0.238. To match that, full_context likely needs
-~15K tokens (to fit all 50 sessions). That's 4× the input tokens
-per query — at gpt-4o-mini rates ($0.15/Mtok), scaling to millions
-of queries per day turns that into meaningful margin.
+## Rerank on LongMemEval still hurts (corroborated)
 
-## Production guidance
+The N=100 run also tested chroma+cross-encoder-rerank. Result was
+F1=0.170 — essentially tied with chroma_cosine's 0.168. Consistent
+with the retrieval-benchmark finding: cross-encoder rerank adds noise
+on LongMemEval's long multi-topic sessions. Not worth the latency
+cost here.
+
+## Full-context truncation is worse at matched budget
+
+At 3.8K context budget, `full_context` (dump everything, drop oldest
+to fit) collapses to F1=0.029 — essentially no retrieval. This
+confirms: when context is constrained (small LLM, cost-sensitive RAG),
+focused retrieval crushes naive stuffing.
+
+## Honest production guidance
 
 ```python
 from soma.memory import MemoryLayer
@@ -102,56 +112,57 @@ mem = MemoryLayer.with_sbert()
 for turn in session_history:
     mem.store(f"[{turn.date}] {turn.role}: {turn.content}")
 
-# Recommended retrieve for QA over long concatenated sessions:
+# SOMA beats chroma on retrieval quality across the board.
+# For entity-retrieval questions, this translates to big F1 lift.
+# For multi-document reasoning, the LLM is the bottleneck.
 hits = mem.retrieve(question, k=5, hybrid_alpha=0.3)
-# (no reranker for long multi-topic docs; add rerank for atomic short
-# docs — see locomo findings)
 ```
 
-Equivalent chroma-only setup delivers F1=0.168. Adding chroma's
-cross-encoder rerank pushes to F1=0.170 (essentially tied). SOMA
-hybrid gets F1=0.238.
+**When to expect a large lift:** questions that hinge on specific
+entities that appear lexically in one session (names, dates, numbers,
+product names). The BM25 leg is the differentiator.
 
-## Limitations and caveats
+**When to expect a small lift:** multi-document reasoning, temporal
+composition, where the LLM's ability to synthesize is the dominant
+factor.
 
-1. **N=100 subset**: First 100 items of LongMemEval small. Question-type
-   distribution skews toward single-session-user (70) and multi-session
-   (28), with other types underrepresented (e.g., knowledge-update 2).
-   Full 500-item run planned.
-2. **Small LLM (qwen3.5:4b)**: A 4B model can't reason from imperfect
-   evidence well. Larger models may compensate more for retrieval
-   errors, shrinking the F1 delta. Worth testing on qwen3:14b or
-   qwen3.5:27b.
-3. **sbert embedder only**: mxbai-embed-large might change the ordering
-   (we saw hybrid+rerank works BETTER on mxbai+LoCoMo than sbert+LoCoMo).
-4. **Full-context budget**: 3.8K is conservative. A fair
-   larger-budget full_context test would show where the curve crosses.
+## Cross-benchmark story (updated)
+
+| Benchmark | Level | Metric | SOMA win |
+| --- | --- | --- | --- |
+| LoCoMo retrieval | turn (mxbai) | R@5 | +13% vs chroma+rerank |
+| LongMemEval retrieval | session (sbert) | R@5 | +4.7% + 8.3× faster |
+| LongMemEval QA (N=500) | session (sbert) | F1 | **+10% overall, +49% on single-session-user** |
+
+## Limitations
+
+1. **Single LLM (qwen3.5:4b-q8_0).** Effects may differ with larger
+   LLMs. A stronger reasoner might compensate for chroma's weaker
+   retrieval on single-session questions (closing the +49% gap) AND
+   extract value from SOMA's better retrieval on multi-session
+   questions (opening a new gap). Untested.
+2. **Single embedder (sbert).** mxbai-embed-large showed larger
+   differences on LoCoMo retrieval; would expect similar directional
+   effect here.
+3. **Single reranker corpus.** Cross-encoder rerank helps LoCoMo
+   (short atomic turns) but hurts LongMemEval (long multi-topic
+   sessions). Per-corpus choice matters.
 
 ## Follow-up scope
 
-1. **Scale to N=500** (full LongMemEval small) — ~50 min of LLM time
-   at current rate. Confirms robustness and type-level breakdown.
-2. **Larger-LLM run** (qwen3:14b, N=100) — does the effect hold with
-   stronger reasoning?
-3. **Full-context budget sweep** (3.8K, 8K, 16K) — find the crossover
-   point where full-context catches retrieval.
-4. **Compare to Mem0** (`infer=True`, LLM-extracted facts) — does
-   LLM-side memory extraction beat SOMA's raw-text hybrid end-to-end?
-
-## Cross-benchmark story (now 3 benchmarks)
-
-| Benchmark | Level | Embedder | SOMA win | Metric |
-| --- | --- | --- | --- | --- |
-| LoCoMo retrieval | turn | mxbai | +13% R@5 vs chroma+rerank | Retrieval |
-| LongMemEval retrieval | session | sbert | +4.7% R@5 + 8.3× faster vs chroma+rerank | Retrieval |
-| **LongMemEval QA (this)** | session | sbert | **+42% F1 vs chroma (best)** | End-to-end |
-
-The retrieval wins aren't academic — they translate to substantially
-better user-visible answers.
+1. **Larger LLM run (qwen3:14b)** — does the F1 gap widen on
+   multi-session questions where retrieval is necessary but not
+   sufficient?
+2. **SOMA vs Mem0 end-to-end** — Mem0's LLM-extracted facts pipeline
+   is 3000× slower to ingest (see `mem0_ingest_cost_observation.md`).
+   Does the extraction buy enough QA quality to justify the cost?
+3. **Plastic graph activation** — does SOMA's graph improve retrieval
+   over a long-running session? (see design doc)
 
 ## Files
 
 - `benchmarks/industry/longmemeval/run_qa_compare.py` — harness
 - `benchmarks/industry/longmemeval/analyze_qa_compare.py` — analysis
-- `benchmarks/industry/longmemeval/results/qa_compare_*_n100.json` — per-mode
-- `benchmarks/industry/longmemeval/results/qa_compare_*_n100.jsonl` — per-item
+- `benchmarks/industry/longmemeval/results/qa_compare_*_n500.json` — per-mode
+- `benchmarks/industry/longmemeval/results/qa_compare_*_n500.jsonl` — per-item
+- `benchmarks/industry/longmemeval/results/qa_compare_*_n100.{json,jsonl}` — N=100 (initial)

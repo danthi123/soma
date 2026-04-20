@@ -169,6 +169,29 @@ truncation is the outcome. A full rank-distribution comparison
 between chroma and SOMA will quantify this precisely (probe run at
 190/500 when halted for other work; resumable).
 
+**Direct corroboration from joining the partial rank probe with the
+QA answers** (chroma, N=190 shared items): the LLM's "I don't know"
+rate rises monotonically with gold_rank:
+
+| gold_rank | N | IDK rate |
+| --- | ---: | ---: |
+| 0 (gold not retrieved) | 21 | **90.5%** |
+| 1 | 134 | **19.4%** |
+| 2 | 18 | 55.6% |
+| 3 | 6 | 100.0% |
+| 4 | 7 | 85.7% |
+| 5 | 4 | 75.0% |
+
+Rank 1 → 19% IDK, rank 3 → 100% IDK. This is the truncation
+mechanism working in real time: when chroma's cosine scoring places
+the gold session at rank 3+, the 3.8K-budget packer drops it from
+context, and the LLM correctly answers "I don't know" to a question
+whose evidence is no longer there.
+
+SOMA's hybrid scoring pushes many of those rank 3-5 items to rank
+1-2, where the gold fits and the LLM extracts from it. That's
+Mechanism 2 quantitatively.
+
 ## "I don't know" asymmetry — direct evidence for the ranking mechanism
 
 If Mechanism 2 is real — i.e. SOMA's hybrid puts gold at rank 1-2 and

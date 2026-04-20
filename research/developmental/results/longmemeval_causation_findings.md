@@ -129,6 +129,34 @@ The `single-session-preference` ties (N=30) are the documented
 benchmark-mismatch case — gold is itself a paraphrased preference
 sentence; both systems score F1 ~0.03.
 
+## "I don't know" asymmetry — direct evidence for the ranking mechanism
+
+If Mechanism 2 is real — i.e. SOMA's hybrid puts gold at rank 1-2 and
+chroma's cosine leaves it at rank 4-5 — we'd expect chroma's LLM to
+say "I don't know" more often **even on items where both retrieve the
+gold session**, because at rank 4-5 the gold is buried behind
+less-useful context that primes the LLM toward "not in context".
+
+That's exactly what we see:
+
+| cell (chroma_hit, soma_hit) | N | chroma IDK | soma IDK |
+| --- | ---: | ---: | ---: |
+| (1,1) both retrieve gold | 460 | **117 (25.4%)** | **72 (15.7%)** |
+| (0,1) only SOMA retrieves | 30 | 28 (93.3%) | 11 (36.7%) |
+| (1,0) only chroma retrieves | 6 | 3 (50.0%) | 6 (100.0%) |
+| (0,0) neither retrieves | 4 | 4 (100.0%) | 2 (50.0%) |
+| **global** | 500 | **152 (30.4%)** | **91 (18.2%)** |
+
+In the (1,1) cell chroma says "I don't know" **62% more often than
+SOMA** despite both systems having the gold session in top-5. The
+only difference is how hybrid scoring orders the top-5 — BM25's
+keyword-match signal pushes the gold session higher, cosine's
+semantic-similarity signal sometimes buries it.
+
+The (0,0) cell shows SOMA hallucinates on 2/4 no-gold items (half as
+often as chroma's 4/4), but this is a 4-item sample and not a reliable
+finding on its own.
+
 ## Is the decomposition prompt/model specific?
 
 Ran the same partition analysis on three runs:

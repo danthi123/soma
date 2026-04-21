@@ -9,7 +9,37 @@ New sections land at the top; released versions carry an ISO-8601 date.
 
 ## [Unreleased]
 
-_Nothing yet — in-flight work lands here before the next tag._
+Cosmetic / infra followups queued for the next release cycle
+(not urgent, no user-facing impact):
+
+- **Bump GitHub Actions to Node.js 24** — `actions/checkout@v4`,
+  `actions/setup-python@v5`, `actions/upload-artifact@v4` all
+  emit deprecation warnings on every run. GitHub flips the
+  default to Node 24 on 2026-06-02 and removes Node 20 on
+  2026-09-16. Bump the pins whenever the upstream versions
+  that target Node 24 are available, or set
+  `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24=true` in the workflow
+  envs to opt in early.
+- **Create GitHub Release objects for tagged versions** — right
+  now `v0.2.0rc2` and `v0.2.0rc3` exist as git tags but not as
+  GitHub Release entries. For rc3 (the only live non-yanked
+  release): https://github.com/danthi123/soma/releases/new →
+  pick the tag → paste the `[0.2.0rc3]` CHANGELOG section →
+  mark as pre-release. Purely cosmetic, gives a stable release
+  URL to link from docs.
+- **Repo-wide `ruff format` reformat + re-enable format-check in
+  CI** — `.github/workflows/lint.yml` currently only runs
+  `ruff check`, not `ruff format --check`, because the tree has
+  ~107 format-divergent files that predate this CI setup. Land
+  a single repo-wide reformat commit, then flip the CI to
+  include the format check. Trackable via `git diff --shortstat`
+  between `ruff format --check` output and main.
+- **Audit other unguarded third-party imports in `src/`** —
+  during the 0.2.0rc3 audit I scanned for unconditional
+  top-level imports of non-declared packages; only `pydantic`
+  showed up (covered transitively by `[serve]`). Re-run the
+  scan before each release to catch any that drift in between;
+  the one-liner lives in this session's conversation.
 
 ## [0.2.0rc3] — 2026-04-20
 

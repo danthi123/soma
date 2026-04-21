@@ -1,5 +1,5 @@
 {
-  "name": "@soma-ai/client",
+  "name": "soma-memory",
   "version": "0.1.0",
   "description": "TypeScript client for SOMA — local-first agent memory layer.",
   "license": "MIT",

@@ -141,11 +141,11 @@ Endpoints: `/health`, `/version`, `/status`, `/store`, `/store_batch`, `/retriev
 ### TypeScript client
 
 ```bash
-npm install @soma-ai/client
+npm install soma-memory
 ```
 
 ```ts
-import { createClient } from "@soma-ai/client";
+import { createClient } from "soma-memory";
 const soma = createClient({ baseUrl: "http://localhost:8420", token: process.env.SOMA_TOKEN });
 await soma.POST("/store", { body: { text: "Paris is the capital of France." } });
 const { data } = await soma.POST("/retrieve", { body: { query: "capital?", k: 3 } });

@@ -2,17 +2,24 @@
 
 from __future__ import annotations
 
-import numpy as np
 import pytest
-import torch
-import torch.nn as nn
-from torch.optim import SGD
-from torch.utils.data import DataLoader, TensorDataset
 
-from research.cl import harness
-from research.cl.baselines.naive import mnist_factory
-from research.cl.datasets import permuted_mnist
-from research.cl.harness import _evaluate, _train_one_epoch, _unpack_batch
+# ``research.cl.datasets`` pulls in ``torchvision`` for permuted-MNIST.
+# torchvision is in the ``[multimodal]`` extra, not the default CI install,
+# so skip this whole module cleanly when it isn't available rather than
+# failing at collection time.
+pytest.importorskip("torchvision")
+
+import numpy as np  # noqa: E402
+import torch  # noqa: E402
+import torch.nn as nn  # noqa: E402
+from torch.optim import SGD  # noqa: E402
+from torch.utils.data import DataLoader, TensorDataset  # noqa: E402
+
+from research.cl import harness  # noqa: E402
+from research.cl.baselines.naive import mnist_factory  # noqa: E402
+from research.cl.datasets import permuted_mnist  # noqa: E402
+from research.cl.harness import _evaluate, _train_one_epoch, _unpack_batch  # noqa: E402
 
 # ------------------------------------------------------------------
 # Original smoke tests

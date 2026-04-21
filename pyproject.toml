@@ -35,6 +35,11 @@ dependencies = [
     "tokenizers>=0.15.0",
     "PyYAML>=6.0",
     "portalocker>=2.8",
+    # ``requests`` is used unconditionally by
+    # ``soma.developmental.ablation`` and ``soma.developmental.interaction``
+    # (HTTP round-trip against an LLM backend). It's a small,
+    # widely-installed dep — cheaper to declare than to lazy-import.
+    "requests>=2.28",
 ]
 
 [project.urls]

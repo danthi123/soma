@@ -3,7 +3,14 @@
 from __future__ import annotations
 
 import pytest
-import torch
+
+# ``research.cl.datasets`` pulls in ``torchvision`` for permuted-MNIST +
+# split-CIFAR. torchvision is in the ``[multimodal]`` extra, not the
+# default CI install — skip the whole module cleanly when it isn't
+# available rather than erroring at fixture-setup time.
+pytest.importorskip("torchvision")
+
+import torch  # noqa: E402
 
 
 @pytest.fixture(scope="module")

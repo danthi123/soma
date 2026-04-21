@@ -11,6 +11,56 @@ New sections land at the top; released versions carry an ISO-8601 date.
 
 _Nothing yet — in-flight work lands here before the next tag._
 
+## [0.2.0rc3] — 2026-04-20
+
+Dependency fix over 0.2.0rc2 plus a sweep of CI-only test-suite
+corrections. The wheel-affecting delta is a single line
+(`requests>=2.28` added to core deps); everything else is
+test-harness hygiene that landed along the same path.
+
+### Fixed — wheel impact
+
+- **`requests>=2.28` added to core `[project.dependencies]`.**
+  `src/soma/developmental/ablation.py` and
+  `src/soma/developmental/interaction.py` unconditionally
+  `import requests` at module load (both modules POST to an
+  LLM backend over HTTP). In 0.2.0rc2, `requests` wasn't a
+  declared dep, so a fresh `pip install soma-memory==0.2.0rc2`
+  followed by `import soma.developmental.ablation` raised
+  `ModuleNotFoundError: No module named 'requests'`. Niche
+  module, narrow user impact, but honest-labeling the dep is
+  the right fix. Also fixes four benchmark-test collection
+  errors in CI that transitively needed `requests`.
+
+### Fixed — tests only (no wheel impact)
+
+The first real GitHub Actions run on `main` surfaced four
+additional test-harness issues, all pre-existing, all caused
+by CI running on a cleaner Ubuntu environment than had been
+exercising the tree until now.
+
+- **`pytest.importorskip("torchvision")`** added to the top of
+  `tests/test_research/test_cl_harness.py` and
+  `tests/test_research/test_cl_datasets.py`. Both modules
+  import `research.cl.datasets`, which pulls in `torchvision`
+  for permuted-MNIST and split-CIFAR. torchvision is in the
+  `[multimodal]` extra, not the default CI install.
+- **`tests/test_deploy/test_cli_resolution.py::test_resolve_device_explicit_cpu`**
+  and `::test_resolve_dtype_override_fp32_on_cuda` now also
+  monkeypatch `torch.cuda.get_device_properties` in addition to
+  `is_available`. The auto-tier branch of `resolve_device_dtype_tier`
+  calls `detect_cuda_vram()` which goes through to the real CUDA
+  driver via `get_device_properties` — monkeypatching only
+  `is_available` leaves that call unmocked. The fix supplies a
+  tiny fake `{total_memory: 24 GB}` object so the resolver's
+  auto-tier path completes on a GPU-less CI runner.
+- **`tests/test_storage/test_protocol.py::test_all_methods_declared`**
+  now uses a hasattr fallback to `typing._get_protocol_attrs`
+  when `ObjectStore.__protocol_attrs__` isn't available.
+  `__protocol_attrs__` is Python-3.12+; on 3.11 (one of our CI
+  matrix versions) the attribute doesn't exist and the direct
+  access raised `AttributeError`.
+
 ## [0.2.0rc2] — 2026-04-20
 
 Documentation and metadata fixes over 0.2.0rc1. No behavioural or

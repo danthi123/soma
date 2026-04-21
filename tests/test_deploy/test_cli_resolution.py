@@ -131,6 +131,16 @@ def test_resolve_device_auto_no_cuda(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_resolve_device_explicit_cpu(monkeypatch: pytest.MonkeyPatch) -> None:
     """--device cpu keeps working even when CUDA is available."""
     monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+    # The default ``--tier auto`` path calls ``detect_cuda_vram()`` which
+    # hits ``torch.cuda.get_device_properties`` — that goes through to the
+    # real driver even when ``is_available`` is monkeypatched, so the test
+    # needs to stub it too. Returning a fake "24 GB" lets the tier resolver
+    # complete without touching the GPU.
+    monkeypatch.setattr(
+        torch.cuda,
+        "get_device_properties",
+        lambda _idx: type("FakeProps", (), {"total_memory": 24 * 1024**3})(),
+    )
     args = _build_test_parser().parse_args(["--device", "cpu"])
     device, dtype, _llm_name, _tier = resolve_device_dtype_tier(args)
     assert device.type == "cpu"
@@ -141,6 +151,14 @@ def test_resolve_device_explicit_cpu(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_resolve_dtype_override_fp32_on_cuda(monkeypatch: pytest.MonkeyPatch) -> None:
     """Operator forces fp32 on GPU for debugging: dtype overrides auto-fp16."""
     monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+    # Same reason as ``test_resolve_device_explicit_cpu``: the resolver's
+    # auto-tier branch wants ``get_device_properties`` to answer, even
+    # though this test only cares about device+dtype resolution.
+    monkeypatch.setattr(
+        torch.cuda,
+        "get_device_properties",
+        lambda _idx: type("FakeProps", (), {"total_memory": 24 * 1024**3})(),
+    )
     args = _build_test_parser().parse_args(["--device", "cuda", "--dtype", "fp32"])
     device, dtype, _llm_name, _tier = resolve_device_dtype_tier(args)
     assert device.type == "cuda"

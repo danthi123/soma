@@ -36,6 +36,13 @@ def test_all_methods_declared() -> None:
         "delete",
         "exists",
     }
-    declared = set(ObjectStore.__protocol_attrs__)  # type: ignore[attr-defined]
+    # ``__protocol_attrs__`` is Python-3.12+. On 3.11, fall back to the
+    # private ``typing._get_protocol_attrs`` helper that has existed since
+    # 3.8 and returns the same set.
+    if hasattr(ObjectStore, "__protocol_attrs__"):
+        declared = set(ObjectStore.__protocol_attrs__)  # type: ignore[attr-defined]
+    else:
+        from typing import _get_protocol_attrs  # type: ignore[attr-defined]
+        declared = set(_get_protocol_attrs(ObjectStore))
     missing = required - declared
     assert not missing, f"ObjectStore is missing Protocol methods: {missing}"

@@ -1,6 +1,6 @@
 # SOMA
 
-**Local-first agent-memory layer.** A drop-in replacement for `vector-store + RAG` where the store is a plastic graph that grows and prunes with use. Store text, retrieve by meaning, reconcile conversational facts, and let the structure reshape itself over time. Everything local, everything on your disk, LLM-agnostic.
+**Local-first agent-memory layer with hybrid retrieval (BM25 + cosine).** Drop-in for `vector-store + RAG`, benchmarked to beat vector DBs on QA accuracy. Store text, retrieve by meaning *and* keywords, reconcile conversational facts into durable memory. Portable as a single directory. LLM-agnostic.
 
 > **M1 — Hybrid retrieval validated** (2026-04-20): **+22.8 % F1** and **+15.6 % rank-1** over a Chroma-cosine baseline on **LongMemEval N=500**, same embedder, same LLM, matched context budgets. Triple-cross-validated (direct Token-F1 +22.8 %, qwen-as-judge +22.2 %, Claude-as-judge +23.7 %) and reproducible across six axes — cross-LLM, cross-embedder, cross-benchmark, cross-judge, α-sweep. Milestone doc: [`docs/milestones/2026-04-20-hybrid-retrieval-validated.md`](docs/milestones/2026-04-20-hybrid-retrieval-validated.md). Evidence: [`research/developmental/results/longmemeval_full_evidence_roundup.md`](research/developmental/results/longmemeval_full_evidence_roundup.md).
 

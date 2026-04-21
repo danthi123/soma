@@ -99,14 +99,22 @@ regions with `fly scale count 2 --region iad,fra`.
 
 ## 4. Kubernetes (Helm)
 
-SOMA ships a first-class Helm chart at `deploy/helm/soma`, distributed
-via OCI on `ghcr.io` + GitHub Pages. One install gets you a
-StatefulSet, a PVC, a generated API-key Secret, and optional Ingress /
-HTTPRoute / ServiceMonitor.
+SOMA ships a first-class Helm chart at `deploy/helm/soma`. One install
+gets you a StatefulSet, a PVC, a generated API-key Secret, and optional
+Ingress / HTTPRoute / ServiceMonitor.
+
+> **Registry status (2026-04-20):** the OCI registry
+> (`oci://ghcr.io/soma-ai/charts/soma`) referenced below is
+> **aspirational** — install from the in-tree chart until it is
+> published. See [`docs/deployment-k8s.md`](deployment-k8s.md) for
+> the full registry-status callout and the local-install recipe.
 
 ```bash
-# Helm 3.14+ — OCI is native, no experimental flag needed.
-helm install soma oci://ghcr.io/soma-ai/charts/soma --version 0.1.0
+# From a clone of the repo:
+helm install soma deploy/helm/soma
+
+# (Future state, once registry is published — Helm 3.14+, OCI native:)
+# helm install soma oci://ghcr.io/soma-ai/charts/soma --version 0.1.0
 
 # Verify:
 kubectl get statefulset,svc,secret -l app.kubernetes.io/name=soma
@@ -133,7 +141,7 @@ reference — copy the repo to the box and bring it up:
 ```bash
 # On a fresh Ubuntu droplet:
 curl -fsSL https://get.docker.com | sh
-git clone https://github.com/soma-ai/SOMA.git && cd SOMA
+git clone https://github.com/danthi123/soma.git && cd soma
 export SOMA_API_KEY=$(openssl rand -hex 32)
 echo "SOMA_API_KEY=$SOMA_API_KEY" > .env
 docker compose up -d

@@ -41,6 +41,86 @@ Cosmetic / infra followups queued for the next release cycle
   scan before each release to catch any that drift in between;
   the one-liner lives in this session's conversation.
 
+## [0.2.0rc4] — 2026-04-20
+
+Documentation accuracy pass. No code changes, no wheel-surface
+changes — same tests, same imports, same API. Re-cut because a
+full audit of the README + every `docs/*.md` + the PyPI project
+description surfaced one serious framing overclaim and a spread
+of stale numbers / stale references that would mislead a reader
+landing on the PyPI page or following a doc link.
+
+### Fixed — PyPI-visible framing (the reason for rc4)
+
+- **Tagline / `[project].description` overclaim.** The README's
+  opening line and `pyproject.toml`'s `description` field both
+  billed SOMA as *"a drop-in replacement for `vector-store + RAG`
+  where the store is a plastic graph that grows and prunes with
+  use."* That contradicts `docs/positioning.md`, which is the
+  authoritative source: the plastic-graph substrate ships but does
+  not (currently) move retrieval scores on real memory workloads,
+  and is explicitly *ruled out* as the product differentiator in
+  the 2026-04-15 pivot. The actual shipped win is **hybrid
+  retrieval (BM25 + cosine, α=0.30)** validated on LongMemEval
+  N=500 (+22.8 % F1, +15.6 % rank-1 — M1 milestone). Rewritten to
+  lead with that headline in both README.md and the PyPI project
+  description:
+
+  > **Local-first agent-memory layer with hybrid retrieval (BM25 +
+  > cosine).** Drop-in for `vector-store + RAG`, benchmarked to
+  > beat vector DBs on QA accuracy. Store text, retrieve by meaning
+  > *and* keywords, reconcile conversational facts into durable
+  > memory. Portable as a single directory. LLM-agnostic.
+
+  The plasticity substrate is still mentioned honestly in the
+  README's comparison table (with the existing `*` footnote
+  pointing at the research agenda that would activate it), just no
+  longer in the billboard headline.
+
+### Fixed — stale numbers in user-facing docs
+
+- **`docs/comparison.md` + `docs/recall-improvements.md`** referred
+  to LoCoMo as "1,986 questions with gold-evidence annotations".
+  The actual scored set is 1,982 (evidence-annotated subset of the
+  1,986-QA raw dataset); every benchmark report under
+  `benchmarks/reports/` already uses 1,982. Fixed both
+  user-facing docs to match.
+- **`docs/quickstart.md` 'More recipes' pointer** said
+  "`cookbook.md` has 18" — the cookbook has grown to 26 recipes
+  (through #26, with §18.1/§18.2 sub-sections under
+  ConversationalMemory). Updated to 26 and extended the
+  highlighted-recipe list to mention cloud bundles (S3/GCS),
+  typed schemas, and context packing.
+
+### Fixed — stale npm package identity in TypeScript client docs
+
+- **`docs/clients.md` + `clients/typescript/README.md` +
+  `clients/typescript/src/index.ts` + `.../retry.ts` +
+  `.../tests/smoke.test.ts`** all referred to the client as
+  `@soma-ai/client`. The shipped `clients/typescript/package.json`
+  uses the unscoped `soma-memory` name (matching the PyPI
+  distribution for cross-language consistency), so `npm install
+  @soma-ai/client` in the docs would 404. Updated every mention
+  to `soma-memory`. The README snippet (which already said
+  `npm install soma-memory`) now matches the client-side docs.
+
+### Fixed — aspirational Helm registry URLs
+
+- **`docs/deployment-k8s.md` + `docs/deployment-cloud.md`** lead
+  with `helm install soma oci://ghcr.io/soma-ai/charts/soma` and
+  `helm repo add soma https://soma-ai.github.io/soma-helm`. Neither
+  target exists — the `soma-ai` GitHub org was never claimed and
+  the Gitea release workflow at `.gitea/workflows/helm-release.yml`
+  has not been run against a real registry. Added a prominent
+  "Registry status" callout to both docs explaining that the OCI
+  registry is aspirational, and pointing the primary install
+  command at the in-tree chart (`helm install soma deploy/helm/soma`
+  from a clone of the repo). Every values reference, secret
+  pattern, and troubleshooting section continues to apply
+  unchanged — only the chart *source* differs. Also fixed the
+  `git clone https://github.com/soma-ai/SOMA.git` line in the
+  DigitalOcean/VPS recipe to use the correct `danthi123/soma`.
+
 ## [0.2.0rc3] — 2026-04-20
 
 Dependency fix over 0.2.0rc2 plus a sweep of CI-only test-suite

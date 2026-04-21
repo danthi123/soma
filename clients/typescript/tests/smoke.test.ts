@@ -74,7 +74,7 @@ afterEach(() => {
 });
 afterAll(() => server.close());
 
-describe("@soma-ai/client runtime", () => {
+describe("soma-memory runtime", () => {
   it("store then retrieve round-trip returns the same text", async () => {
     const soma = createClient({ baseUrl: BASE, token: "t1" });
     const store = await soma.POST("/store", {

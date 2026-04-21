@@ -1,5 +1,5 @@
 /**
- * @soma-ai/client — TypeScript client for SOMA.
+ * soma-memory — TypeScript client for SOMA.
  *
  * Thin wrapper around `openapi-fetch` with typed paths generated from
  * the live SOMA `/openapi.json` spec. Works in Node 18+, browsers,

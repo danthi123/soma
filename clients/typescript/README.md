@@ -1,7 +1,7 @@
-# @soma-ai/client
+# soma-memory (TypeScript client)
 
-TypeScript client for [SOMA](https://github.com/soma-ai/SOMA) — a
-local-first, learning agent-memory layer.
+TypeScript client for [SOMA](https://github.com/danthi123/soma) — a
+local-first agent-memory layer with hybrid retrieval.
 
 Thin wrapper over [`openapi-fetch`](https://openapi-ts.dev/openapi-fetch/)
 with types generated from the live SOMA `/openapi.json`. Works in
@@ -10,13 +10,13 @@ with types generated from the live SOMA `/openapi.json`. Works in
 ## Install
 
 ```bash
-npm install @soma-ai/client
+npm install soma-memory
 ```
 
 ## Quick start
 
 ```ts
-import { createClient } from "@soma-ai/client";
+import { createClient } from "soma-memory";
 
 const soma = createClient({
   baseUrl: "http://localhost:8420",
@@ -99,14 +99,11 @@ the spec and fail if the committed copy has drifted.
 
 ## Publishing
 
-CI publishes `@soma-ai/client` on `v*` tag push via
-`.github/workflows/client-ts.yml`. See `docs/clients.md` for the npm
-scope claim + release checklist.
-
-**npm scope note:** `@soma-ai` must be claimed manually by an operator
-once via `npm org create soma-ai` before the first tag push. If the
-scope is taken, fall back to `@soma-memory` or `@soma-ml` (update
-`package.json#name` + README + docs together).
+CI publishes `soma-memory` on `v*` tag push via
+`.github/workflows/client-ts.yml`. See `docs/clients.md` for the
+release checklist. The npm package name matches the PyPI distribution
+name (`soma-memory`) for cross-language consistency; no scope claim is
+required since the unscoped `soma-memory` name is available on npm.
 
 ## License
 

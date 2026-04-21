@@ -6,22 +6,22 @@ generated from the server's own `/openapi.json` so downstream
 TypeScript / JavaScript agents get full autocomplete on every
 request body, response shape, and error branch.
 
-## `@soma-ai/client` (TypeScript)
+## `soma-memory` (TypeScript)
 
-**Scope:** `@soma-ai/client` on npm. Works in Node 18+, browsers,
-Deno, Bun, and Cloudflare Workers (`openapi-fetch` uses the platform
-`fetch`).
+**Package:** `soma-memory` on npm (unscoped, matches the PyPI
+distribution name). Works in Node 18+, browsers, Deno, Bun, and
+Cloudflare Workers (`openapi-fetch` uses the platform `fetch`).
 
 ### Install
 
 ```bash
-npm install @soma-ai/client
+npm install soma-memory
 ```
 
 ### Usage
 
 ```ts
-import { createClient } from "@soma-ai/client";
+import { createClient } from "soma-memory";
 
 const soma = createClient({
   baseUrl: "http://localhost:8420",
@@ -97,7 +97,7 @@ production origins with `SOMA_CORS_ORIGINS=https://app.example.com`
 
 ### How the client is built
 
-`@soma-ai/client` is a thin wrapper over
+`soma-memory` is a thin wrapper over
 [`openapi-fetch`](https://openapi-ts.dev/openapi-fetch/). Types are
 generated from `clients/typescript/openapi.json` — a snapshot of the
 live SOMA server's `/openapi.json` taken with `SOMA_EMBED_MODEL=stub`
@@ -109,14 +109,11 @@ live SOMA server's `/openapi.json` taken with `SOMA_EMBED_MODEL=stub`
 
 CI publishes on `v*` tag push. One-time operator setup:
 
-1. Claim the npm scope: `npm org create soma-ai` (requires
-   `npm login` with the `soma-ai` GitHub org owner's account).
-2. If the scope is already taken, fall back to `@soma-memory` or
-   `@soma-ml` — update `clients/typescript/package.json#name` + this
-   doc + the README snippet together; no other call sites change.
-3. Add `NPM_TOKEN` to the repo's GitHub Actions secrets (scope-level
-   publish token from npm).
-4. Tag and push: `git tag v0.1.0 && git push --tags`.
+1. The unscoped `soma-memory` name is already in use on npm (matches
+   the PyPI distribution). No scope claim required.
+2. Add `NPM_TOKEN` to the repo's GitHub Actions secrets (a publish
+   token from the npm account that owns `soma-memory`).
+3. Tag and push: `git tag v0.1.0 && git push --tags`.
 
 The first tag push triggers `.github/workflows/client-ts.yml` which
 regenerates types, runs the full test suite, and publishes with

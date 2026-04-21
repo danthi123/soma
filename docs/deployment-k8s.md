@@ -3,11 +3,30 @@
 > For a higher-level tour of every shipped deploy path (Docker / Fly /
 > Railway / Render), see [`docs/deployment-cloud.md`](deployment-cloud.md).
 
-SOMA ships a first-class Helm chart at `deploy/helm/soma`, distributed
-via **OCI** on `ghcr.io` (primary) and a **classic Helm repo** on
-GitHub Pages (secondary). One `helm install` gets you a StatefulSet,
-a PVC, a generated API-key Secret, and optional Ingress / HTTPRoute /
-ServiceMonitor — all opt-in and all gated by the schema.
+> **Registry status (2026-04-20):** The in-tree chart at
+> `deploy/helm/soma/` is the source of truth. The OCI registry
+> (`oci://ghcr.io/soma-ai/charts/soma`) and classic Helm repo
+> (`https://soma-ai.github.io/soma-helm`) referenced throughout this
+> doc are **not yet published** — the `soma-ai` GitHub org doesn't
+> exist, and the release workflow in `.gitea/workflows/helm-release.yml`
+> has not been run against a real registry. **Until the registry is
+> published, install from the in-tree chart:**
+>
+> ```bash
+> git clone https://github.com/danthi123/soma.git && cd soma
+> helm install soma deploy/helm/soma
+> ```
+>
+> Every values reference, secret pattern, persistence note, and
+> troubleshooting section below applies to the local-chart install
+> unchanged — only the chart *source* differs.
+
+SOMA ships a first-class Helm chart at `deploy/helm/soma`. The
+long-term distribution plan is **OCI** on `ghcr.io` (primary) and a
+**classic Helm repo** on GitHub Pages (secondary). One `helm install`
+gets you a StatefulSet, a PVC, a generated API-key Secret, and
+optional Ingress / HTTPRoute / ServiceMonitor — all opt-in and all
+gated by the schema.
 
 ## Prereqs
 

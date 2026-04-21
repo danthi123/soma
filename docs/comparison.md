@@ -88,7 +88,7 @@ mechanics differ.
 
 ### Quality (real conversational data)
 
-LoCoMo (Maharana 2024 — 10 long convs, 5,882 turns, 1,986 questions
+LoCoMo (Maharana 2024 — 10 long convs, 5,882 turns, 1,982 questions
 with gold-evidence annotations):
 
 | System | R@1 | R@5 | R@10 | Retrieve ms |

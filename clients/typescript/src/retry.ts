@@ -5,7 +5,7 @@
  * function with the same signature that transparently retries
  * transient failures. Typical usage:
  *
- *     import { createClient, withRetry } from "@soma-ai/client";
+ *     import { createClient, withRetry } from "soma-memory";
  *
  *     const soma = createClient({
  *       baseUrl: "http://localhost:8420",

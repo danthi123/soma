@@ -227,9 +227,10 @@ Every PromQL query maps 1:1 to a metric documented in
 
 ## Where to go next
 
-- **More recipes** — [`cookbook.md`](cookbook.md) has 18, including
-  hybrid retrieval, cross-encoder rerank, streaming JSONL ingest, and
-  Chroma migration.
+- **More recipes** — [`cookbook.md`](cookbook.md) has 26, including
+  hybrid retrieval, cross-encoder rerank, streaming JSONL ingest,
+  Chroma migration, cloud bundles (S3/GCS), typed schemas, and
+  context packing for LLM prompts.
 - **Different LLM** — [`llm-backends.md`](llm-backends.md) covers
   Ollama, OpenAI, Anthropic, vLLM / LM Studio, local HuggingFace.
 - **Alternative storage** — [`backends.md`](backends.md) for the

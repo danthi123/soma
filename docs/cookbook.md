@@ -33,7 +33,7 @@ CLI — it does heading-aware chunking with overlap.)
 ```python
 from soma.memory import MemoryLayer
 
-mem = MemoryLayer.with_sbert()  # or .load("brain/") to resume
+mem = MemoryLayer.with_sbert()  # or .load_with_sbert("brain/") to resume
 
 # Each turn, store both sides so future turns can recall them.
 def turn(user_msg: str, llm) -> str:
@@ -307,7 +307,9 @@ from soma.memory import MemoryLayer
 
 # durability="sync" (default): fsync after every store — zero loss on
 # kernel panic, ~1 ms/op overhead. Good for "I pressed Ctrl-C" safety.
-mem = MemoryLayer.with_sbert()  # pass bundle_path="brain/" for persistence
+mem = MemoryLayer.with_sbert()
+# persist later via mem.save("brain/") — for an auto-persisting layer,
+# use MemoryLayer(embed_fn=..., embed_dim=..., bundle_path="brain/") instead.
 
 # "batch": fsync every 32 ops — 10-20x throughput at the cost of losing
 # up to the last batch on crash. Good for bulk ingest.
@@ -342,7 +344,7 @@ latency) and Zep's "invalidate, don't delete" SUPERSEDE semantics.
 from soma.llm    import backend_from_env
 from soma.memory import ConversationalMemory, MemoryLayer
 
-mem = MemoryLayer.with_sbert()   # or .load("brain/")
+mem = MemoryLayer.with_sbert()   # or .load_with_sbert("brain/")
 llm = backend_from_env()         # picks Ollama / OpenAI / Anthropic / HF
 cm  = ConversationalMemory(memory=mem, llm=llm, session_id="alex")
 

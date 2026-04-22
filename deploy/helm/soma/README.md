@@ -1,17 +1,22 @@
 # SOMA Helm Chart
 
-Local-first agent memory layer — plastic-graph replacement for
-vector-DB + RAG — packaged for Kubernetes.
+Local-first agent memory layer with hybrid BM25 + cosine retrieval —
+a drop-in for vector-store + RAG — packaged for Kubernetes.
 
 ## TL;DR
 
-```bash
-# OCI (Helm 3.14+; primary channel):
-helm install soma oci://ghcr.io/soma-ai/charts/soma --version 0.1.0
+> **Registry status:** the OCI / classic-repo channels below are
+> **not yet published**. Install from the in-tree chart until they
+> are. Full context in [`../../../docs/deployment-k8s.md`](../../../docs/deployment-k8s.md).
 
-# Classic repo (secondary channel):
-helm repo add soma https://soma-ai.github.io/soma-helm
-helm install soma soma/soma
+```bash
+# From a clone of the repo (current path):
+helm install soma deploy/helm/soma
+
+# (Future state — once registry is published, Helm 3.14+:)
+# helm install soma oci://ghcr.io/soma-ai/charts/soma --version 0.1.0
+# helm repo add soma https://soma-ai.github.io/soma-helm
+# helm install soma soma/soma
 ```
 
 Minimum cluster: Kubernetes 1.28+ with a default StorageClass and
@@ -38,7 +43,7 @@ at least 2 GiB RAM available on one schedulable node.
 ### Fresh install with generated API key
 
 ```bash
-helm install soma oci://ghcr.io/soma-ai/charts/soma --version 0.1.0
+helm install soma deploy/helm/soma
 
 # Pull the key back out:
 kubectl get secret soma-api \
@@ -51,7 +56,7 @@ kubectl get secret soma-api \
 kubectl create secret generic my-soma-key \
   --from-literal=SOMA_API_KEY=$(openssl rand -hex 32)
 
-helm install soma oci://ghcr.io/soma-ai/charts/soma --version 0.1.0 \
+helm install soma deploy/helm/soma \
   --set api.existingSecret=my-soma-key
 ```
 
@@ -108,7 +113,7 @@ metrics:
 | Key | Default | Notes |
 | --- | --- | --- |
 | `replicaCount` | `1` | LOCKED at 1. Schema `maximum: 1`. |
-| `image.repository` | `ghcr.io/soma-ai/soma` | |
+| `image.repository` | `ghcr.io/soma-ai/soma` | **Not published** — build from the in-tree Dockerfile, push to your registry, override with `--set image.repository=<your-registry>/soma`. |
 | `image.tag` | `""` (falls back to chart appVersion) | |
 | `service.port` | `8420` | |
 | `persistence.size` | `10Gi` | PVC via `volumeClaimTemplates`. |
@@ -128,7 +133,7 @@ Full values: see `values.yaml`. Schema: `values.schema.json`.
 ## Upgrade
 
 ```bash
-helm upgrade soma oci://ghcr.io/soma-ai/charts/soma --version 0.1.1
+helm upgrade soma deploy/helm/soma
 ```
 
 `helm upgrade` is safe by default:

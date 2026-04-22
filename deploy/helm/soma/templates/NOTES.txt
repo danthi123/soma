@@ -53,4 +53,4 @@ Reminder: replicaCount is LOCKED at 1 until Phase 6 (external
 VectorBackend). Scale horizontally through bundle sharding today;
 HPA/autoscaling comes post-Phase-6.
 
-Runbook: https://github.com/soma-ai/SOMA/blob/main/docs/deployment-k8s.md
+Runbook: https://github.com/danthi123/soma/blob/main/docs/deployment-k8s.md

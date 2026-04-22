@@ -40,10 +40,16 @@ gated by the schema.
   ServiceMonitor / PodMonitor. Optional: Gateway API v1 CRDs for the
   HTTPRoute path.
 
-## Quickstart — OCI one-liner
+## Quickstart — install from the in-tree chart
+
+The OCI registry `oci://ghcr.io/soma-ai/charts/soma` and the classic
+repo `https://soma-ai.github.io/soma-helm` are **not yet published**
+(see the registry-status callout at the top of this doc). The
+installable path today is the chart committed at `deploy/helm/soma/`:
 
 ```bash
-helm install soma oci://ghcr.io/soma-ai/charts/soma --version 0.1.0
+git clone https://github.com/danthi123/soma.git && cd soma
+helm install soma deploy/helm/soma
 ```
 
 Verify:
@@ -54,7 +60,9 @@ kubectl port-forward svc/soma 8420:8420
 curl http://localhost:8420/health   # → {"status": "ok", ...}
 ```
 
-Pull the auto-generated API key:
+Pull the auto-generated API key (the chart wires `SOMA_API_KEY`
+only today — JWT support for the chart is planned; see
+[`docs/auth.md`](auth.md) for the deprecation context):
 
 ```bash
 export SOMA_API_KEY=$(kubectl get secret soma-api \
@@ -69,16 +77,17 @@ curl -H "Authorization: Bearer $SOMA_API_KEY" \
 Fresh-install latency on a pre-baked image: **~10 s** to Ready. Cold
 pull on a 2 GB node: **~60 s** (covered by the 150 s `startupProbe`).
 
-## Classic repo path (GitHub Pages)
+## Future state — OCI one-liner
+
+Once the chart is published, the install will simplify to:
 
 ```bash
-helm repo add soma https://soma-ai.github.io/soma-helm
-helm repo update
-helm install soma soma/soma --version 0.1.0
+helm install soma oci://ghcr.io/soma-ai/charts/soma --version 0.1.0
 ```
 
-Same chart, same versions. Pick whichever channel your fleet
-standardizes on.
+Everything below (values reference, secret patterns, persistence,
+observability, troubleshooting) applies to either install path
+unchanged — only the chart *source* differs.
 
 ## Values reference (condensed)
 
@@ -88,7 +97,7 @@ Schema: [`deploy/helm/soma/values.schema.json`](../deploy/helm/soma/values.schem
 | Key | Default | Notes |
 | --- | --- | --- |
 | `replicaCount` | `1` | **LOCKED.** Schema `maximum: 1`. Unlocks when Phase 6 ships external `VectorBackend`. |
-| `image.repository` | `ghcr.io/soma-ai/soma` | |
+| `image.repository` | `ghcr.io/soma-ai/soma` | **Not published** — override with `--set image.repository=<your-registry>/soma` and push your own build from the in-tree Dockerfile. |
 | `image.tag` | `""` (falls back to chart `appVersion`) | Pin for reproducible installs. |
 | `service.port` | `8420` | Matches the Dockerfile `EXPOSE`. |
 | `persistence.size` | `10Gi` | PVC via `volumeClaimTemplates`. |
@@ -108,7 +117,7 @@ Schema: [`deploy/helm/soma/values.schema.json`](../deploy/helm/soma/values.schem
 ### Auto-generate (default)
 
 ```bash
-helm install soma oci://ghcr.io/soma-ai/charts/soma
+helm install soma deploy/helm/soma
 ```
 
 The chart mints a 32-byte random key on first install. On every
@@ -123,7 +132,7 @@ reinstalling reuses the same key by design.
 kubectl create secret generic my-soma-key \
   --from-literal=SOMA_API_KEY=$(openssl rand -hex 32)
 
-helm install soma oci://ghcr.io/soma-ai/charts/soma \
+helm install soma deploy/helm/soma \
   --set api.existingSecret=my-soma-key
 ```
 
@@ -138,7 +147,7 @@ Secret got there.
 ### Disable auth
 
 ```bash
-helm install soma oci://ghcr.io/soma-ai/charts/soma \
+helm install soma deploy/helm/soma \
   --set api.enabled=false
 ```
 
@@ -198,7 +207,7 @@ extraEnv:
 ## Upgrading
 
 ```bash
-helm upgrade soma oci://ghcr.io/soma-ai/charts/soma --version 0.1.1
+helm upgrade soma deploy/helm/soma
 ```
 
 What's preserved:

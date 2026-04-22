@@ -11,6 +11,12 @@
 replicaCount: 1
 
 image:
+  # NOTE: the image at `ghcr.io/soma-ai/soma` has not been published.
+  # For local or self-hosted k8s, build your own image from the
+  # in-tree Dockerfile (`docker build -t <your-registry>/soma:<tag> .`),
+  # push to a registry your cluster can pull from, and override this
+  # value via `--set image.repository=<your-registry>/soma`. Publishing
+  # to a public registry is tracked as a separate release task.
   repository: ghcr.io/soma-ai/soma
   # -- Overrides the image tag whose default is the chart appVersion.
   tag: ""

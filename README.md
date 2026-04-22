@@ -212,6 +212,38 @@ mypy src/soma/
 - **[Demos](docs/demos.md)** — every shipped demo, when to run it.
 - [Positioning](docs/positioning.md) · [Pivot + roadmap](docs/plans/2026-04-15-memory-layer-pivot.md) · [Whitepaper](docs/whitepaper.md) · [Paper draft](benchmarks/reports/paper-draft.md)
 
+Full hierarchy: [`docs/README.md`](docs/README.md).
+
+## Status & known limitations
+
+**Release status:** `Development Status :: 4 - Beta` ([`pyproject.toml`](pyproject.toml)). Latest on PyPI: [`soma-memory==0.2.0rc4`](https://pypi.org/project/soma-memory/) (2026-04-20).
+
+**Production-ready surface:**
+
+- `MemoryLayer` API: `store` / `retrieve` / `save` / `load` / hybrid BM25+cosine / cross-encoder rerank / context packing / GDPR forget.
+- REST API under `soma serve` ([full route reference](docs/rest-api.md)).
+- Per-bundle JWT auth with HS256 / RS256 + file-backed or Redis revocation blocklist.
+- Vector backends: InProc (default), LanceDB, Qdrant, Chroma, pgvector *(pgvector is newer — see Experimental below)*.
+- Bundle storage: local filesystem, S3, GCS (and S3-compat: MinIO, Cloudflare R2, DigitalOcean Spaces).
+- Typed schemas (31 built-in, extensible) + context packer for LLM prompts.
+
+**Known limitations today:**
+
+- **Single-writer WAL.** Multi-process on one bundle works (peer-reload every 30 s); the Helm chart locks `replicaCount: 1`. Horizontal scale lands when the external-backend path replaces the in-process WAL as source of truth.
+- **Helm chart auth is `SOMA_API_KEY` only.** The server supports both JWT and the legacy key; the chart template hasn't been updated for JWT yet. Raw-Deployment k8s users can wire `SOMA_JWT_SECRET` today — see [`docs/auth.md`](docs/auth.md) + [`docs/deployment-k8s.md`](docs/deployment-k8s.md) for the current chart scope.
+- **Helm chart OCI registry is not yet published.** Install from the in-tree chart: `helm install soma deploy/helm/soma`. Future-state OCI one-liner documented in [`docs/deployment-k8s.md`](docs/deployment-k8s.md).
+- **`ghcr.io/soma-ai/soma` container image is not published.** Operators who use the Helm chart need to build + push their own image from the in-tree Dockerfile and override `image.repository`. The Dockerfile itself is production-ready.
+- **No distributed multi-node vector scale.** For >10M vectors, use `QdrantBackend(mode="http")`; SOMA orchestrates and Qdrant scales horizontally.
+- **No hosted / managed offering.** SOMA is self-host only — see [`docs/plans/2026-04-15-memory-layer-pivot.md`](docs/plans/2026-04-15-memory-layer-pivot.md) for rationale.
+
+**Research substrate** (not part of the shipped product — see [Scope](#scope) above): the plastic-graph / growth / pruning pipeline runs end-to-end but does not currently lift retrieval on any tested corpus. Three closed-out experiments documented in the [M1 milestone "What's ruled out"](docs/milestones/2026-04-20-hybrid-retrieval-validated.md#whats-ruled-out-honest-state). Path A / Path B design docs lay out the next experiments.
+
+**Experimental / newer surface** (shipped but less battle-tested at scale):
+
+- `ConversationalMemory` async extraction mode (`extraction_mode="async"`).
+- In-process rate limiter (`SOMA_RATE_LIMIT_RPS`) — for dev / homelab, not a WAF.
+- `PgvectorBackend` — passes the in-tree testcontainers suite against `pgvector/pgvector:pg16`, but hasn't seen production traffic yet.
+
 ## License
 
 MIT

@@ -287,12 +287,9 @@ def _cmd_serve(args: argparse.Namespace) -> int:
 
 
 def _cmd_version(_: argparse.Namespace) -> int:
-    try:
-        from importlib.metadata import version
+    from soma import __version__
 
-        print(version("soma"))
-    except Exception:
-        print("unknown")
+    print(__version__)
     return 0
 
 

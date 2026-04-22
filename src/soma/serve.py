@@ -78,6 +78,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field
 
+from soma import __version__
 from soma import metrics as _metrics
 from soma.auth import Perm, Principal, parse_ttl_spec, refresh_token, verify_token
 from soma.auth_revocation import blocklist_from_env
@@ -220,7 +221,7 @@ def _enforce_rate_limit(request: Request, principal: Principal) -> None:
 app = FastAPI(
     title="SOMA Memory Layer",
     description="Local-first agent memory that learns.",
-    version="0.1.0",
+    version=__version__,
 )
 
 # CORS middleware mounted before any routes so browser clients (the
@@ -875,12 +876,7 @@ def health() -> HealthResponse:
     tags=["system"],
 )
 def version_endpoint() -> VersionResponse:
-    try:
-        from importlib.metadata import version as _v
-
-        return VersionResponse(version=_v("soma"))
-    except Exception:
-        return VersionResponse(version="unknown")
+    return VersionResponse(version=__version__)
 
 
 # ------------------------------------------------------------------

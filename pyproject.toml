@@ -243,7 +243,7 @@ bench = [
     # (sentence-transformers), plus chromadb as a direct competitor
     # in run_scale_vs_chroma + run_backend_matrix. Keeps CI install
     # lines short: `pip install -e ".[bench]"`.
-    "soma[dev,metrics,ann,sbert]",
+    "soma-memory[dev,metrics,ann,sbert]",
     "chromadb>=0.5",
 ]
 

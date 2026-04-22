@@ -89,7 +89,7 @@ Run any of them with `python examples/<name>.py` after `pip install -e ".[sbert]
 | Conversational extract + reconcile (built-in)  | no     | yes        | no       | **yes**  |
 | Multi-user scoping on a shared bundle          | no     | partial    | no       | **yes**  |
 | Plug-and-play LLM backends                     | no     | partial    | no       | **yes** (5 shipped) |
-| Plastic graph substrate                        | no     | no         | no       | **yes**\* |
+| Plastic graph substrate (research only — see [Scope](#scope)) | no | no | no | **yes** |
 | Single-directory brain portability             | partial| no         | no       | **yes**  |
 | Multi-tenant REST (`bundles/{name}`)           | no     | yes        | yes      | **yes**  |
 | Per-bundle JWT auth + revocation blocklist     | no     | partial    | yes      | **yes**  |
@@ -100,9 +100,17 @@ Run any of them with `python examples/<name>.py` after `pip install -e ".[sbert]
 | GDPR-grade forgetting with audit trail         | no     | no         | no       | **yes** (`POST /forget` + `docs/gdpr.md`) |
 | Typed schemas (31 built-in, extensible)        | no     | no         | no       | **yes** (8 domains, context packer) |
 
-\* substrate ships; current memory workload doesn't trigger growth/pruning thresholds — see `benchmarks/reports/paper-draft.md` §5 for the research agenda to activate it.
-
 Full comparison + migration notes: [`docs/comparison.md`](docs/comparison.md).
+
+## Scope
+
+SOMA ships two things in the same repo; the product and the research substrate are separable.
+
+**The product (what `pip install soma-memory` gets you):** a local-first agent-memory layer with hybrid BM25 + cosine retrieval, multi-tenant REST, per-bundle JWT auth, pluggable vector backends (InProc / Qdrant / LanceDB / Chroma / pgvector), and crash-safe WAL. This lives under `src/soma/memory/`, `src/soma/llm/`, `src/soma/cli.py`, `src/soma/serve.py`, and `src/soma/integrations/`. Every benchmark number on this page measures this surface.
+
+**The research substrate (ships with the same package, but is not part of the memory-layer API):** a plastic-graph / growth / pruning / consolidation pipeline under `src/soma/core/`, `src/soma/growth/`, `src/soma/metacognition/`, `src/soma/consolidation/`, `src/soma/io/`, `src/soma/deploy/`. It runs end-to-end, but three serious attempts to route its learning signal into retrieval (plastic-graph activation, Direction 4a LLM-distilled projections, Direction 4b spatial distillation) are null on real corpora — see [M1 milestone "What's ruled out"](docs/milestones/2026-04-20-hybrid-retrieval-validated.md#whats-ruled-out-honest-state). We keep it in-tree as the measurement substrate for Path A / Path B research ([`docs/plans/2026-04-20-path-a-biophysical-representation-layer-design.md`](docs/plans/2026-04-20-path-a-biophysical-representation-layer-design.md), [`docs/plans/2026-04-20-path-b-bio-validated-primitives-design.md`](docs/plans/2026-04-20-path-b-bio-validated-primitives-design.md)), not because it currently improves the product.
+
+If you're evaluating SOMA as a vector-DB / RAG replacement, the product is what matters. If you're interested in the research agenda, [`docs/milestones/2026-04-20-hybrid-retrieval-validated.md`](docs/milestones/2026-04-20-hybrid-retrieval-validated.md) is the starting point and [`docs/plans/`](docs/plans/) has the full trail. Contributor-facing split: [`CONTRIBUTING.md`](CONTRIBUTING.md) §Scope.
 
 **Benchmark (same sbert embedder, measured vs Chroma, reports in `benchmarks/reports/`):**
 

@@ -74,7 +74,7 @@ Self-contained scripts under [`examples/`](examples/) that exercise the core API
 - [`03_multi_tenant_bundle.py`](examples/03_multi_tenant_bundle.py) — one process, many isolated per-tenant bundles, with a cross-tenant-leak check.
 - [`cloud_s3_demo.py`](examples/cloud_s3_demo.py) — round-trip a bundle through `s3://` object storage.
 
-Run any of them with `python examples/<name>.py` after `pip install -e ".[sbert]"`.
+Run any of them from a clone with `python examples/<name>.py` after `pip install -e ".[sbert]"`.
 
 ## How it compares
 

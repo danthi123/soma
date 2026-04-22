@@ -11,8 +11,11 @@ has it. This doc is for the first agent you actually deploy.
 ## 1. Install with the extras you'll need
 
 ```bash
-pip install -e ".[sbert,serve,metrics]"
+pip install "soma-memory[sbert,serve,metrics]"
 ```
+
+> **Developing on SOMA?** From a clone, use the editable variant:
+> `pip install -e ".[sbert,serve,metrics]"`.
 
 - `sbert` — `sentence-transformers` for quality retrieval.
 - `serve` — `fastapi`, `uvicorn`, `pyjwt[crypto]` for the REST server.

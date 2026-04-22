@@ -9,41 +9,44 @@
 ## Install
 
 ```bash
-# Minimal (torch + tokenizers only):
-pip install -e .
-
-# Quality retrieval (sentence-transformers):
-pip install -e ".[sbert]"
+# Default (quality retrieval — what the Quick start below uses):
+pip install "soma-memory[sbert]"
 
 # REST API server + JWT auth:
-pip install -e ".[serve]"
+pip install "soma-memory[serve]"
 
 # FAISS ANN (>10K entries):
-pip install -e ".[ann]"
+pip install "soma-memory[ann]"
 
 # Prometheus /metrics + OpenTelemetry tracing:
-pip install -e ".[metrics]"
-pip install -e ".[otel]"
+pip install "soma-memory[metrics]"
+pip install "soma-memory[otel]"
 
 # Alternative vector backends:
-pip install -e ".[qdrant]"    # Qdrant (local file or HTTP)
-pip install -e ".[lancedb]"   # embedded arrow-native (10M+ scale)
-pip install -e ".[chroma]"    # drop-in for existing Chroma users
-pip install -e ".[pgvector]"  # Postgres + pgvector
+pip install "soma-memory[qdrant]"    # Qdrant (local file or HTTP)
+pip install "soma-memory[lancedb]"   # embedded arrow-native (10M+ scale)
+pip install "soma-memory[chroma]"    # drop-in for existing Chroma users
+pip install "soma-memory[pgvector]"  # Postgres + pgvector
 
 # Cloud object-store bundles:
-pip install -e ".[s3]"        # s3:// URLs on save/load
-pip install -e ".[gcs]"       # gs:// URLs on save/load
+pip install "soma-memory[s3]"        # s3:// URLs on save/load
+pip install "soma-memory[gcs]"       # gs:// URLs on save/load
 
 # Framework adapters:
-pip install -e ".[langchain]"
-pip install -e ".[llamaindex]"
+pip install "soma-memory[langchain]"
+pip install "soma-memory[llamaindex]"
 
 # Everything runtime-useful:
-pip install -e ".[sbert,ann,serve,metrics,otel,qdrant,lancedb,chroma,pgvector,s3,gcs,langchain,llamaindex]"
+pip install "soma-memory[sbert,ann,serve,metrics,otel,qdrant,lancedb,chroma,pgvector,s3,gcs,langchain,llamaindex]"
+
+# Absolute minimum (no sbert — you must pass your own embed_fn):
+pip install "soma-memory"
 ```
 
-> Installing from PyPI? Replace `pip install -e "."` with `pip install "soma-memory"` (and the same for every `[extra]` variant above — the distribution name is `soma-memory`, the import name stays `soma`).
+> **Developing on SOMA?** Clone the repo and use the editable variant
+> with the same set of `[extras]`: `pip install -e ".[sbert]"`,
+> `pip install -e ".[sbert,serve,metrics]"`, etc. See
+> [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 ## Quick start
 

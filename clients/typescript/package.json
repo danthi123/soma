@@ -1,6 +1,6 @@
 {
   "name": "soma-memory",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "TypeScript client for SOMA — local-first agent memory layer.",
   "license": "MIT",
   "homepage": "https://github.com/danthi123/soma",

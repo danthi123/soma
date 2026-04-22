@@ -10,11 +10,14 @@ disk**. 1 GB RAM will OOM on the first `/retrieve` once the sbert model
 already contains `all-MiniLM-L6-v2`, so cold-start is ~8 s rather than
 the ~60 s a bare image pays while it pulls the snapshot from HF Hub.
 
-All endpoints are documented in `src/soma/serve.py`; health is
-`GET /health`, version is `GET /version`, storage is `POST /store` /
-`POST /store_batch`, retrieval is `POST /retrieve`. Authentication is
-off by default — set `SOMA_API_KEY` to require
-`Authorization: Bearer <key>` on every non-liveness call.
+All endpoints are documented in [`docs/rest-api.md`](rest-api.md)
+(reference) and `src/soma/serve.py` (source). Authentication is off
+by default; **the recommended production setup is JWT** — generate a
+shared secret with `soma auth rotate-secret`, issue per-bundle tokens
+with `soma auth issue`. See [`docs/auth.md`](auth.md) for the full
+flow. `SOMA_API_KEY` is still accepted as a deprecated admin escape
+hatch (responses carry `X-SOMA-Deprecated: use JWT`) so existing
+deploys keep working.
 
 ---
 
@@ -25,8 +28,10 @@ builder, sets health-check + restart policy, and Railway auto-provisions
 a public URL on first deploy.
 
 **One-click**: click the Deploy on Railway button in the README. This
-forks the repo template into your workspace, seeds `SOMA_API_KEY` as a
-generated secret, and kicks off a build.
+forks the repo template into your workspace, prompts you for
+`SOMA_JWT_SECRET`, and kicks off a build. Generate the secret locally
+with `soma auth rotate-secret` (from a clone) or any 32-byte random
+string.
 
 **CLI** (once the project is linked):
 
@@ -34,7 +39,15 @@ generated secret, and kicks off a build.
 npm i -g @railway/cli
 railway login
 railway link                # or `railway init` for a fresh project
-railway variables set SOMA_API_KEY=$(openssl rand -hex 32)
+
+# JWT (recommended):
+railway variables set SOMA_JWT_SECRET=$(openssl rand -hex 32)
+# Mint per-caller tokens from a clone after deploy:
+# soma auth issue --sub alex --bundle alex:read,write --expires 30d
+
+# Legacy (deprecated — kept for existing deploys):
+# railway variables set SOMA_API_KEY=$(openssl rand -hex 32)
+
 railway variables set SOMA_EMBED_MODEL=all-MiniLM-L6-v2
 railway up                  # builds from Dockerfile, deploys
 railway open                # open the generated *.up.railway.app URL
@@ -49,9 +62,12 @@ persistence, attach a volume from the Railway dashboard and mount it at
 ## 2. Render
 
 Render reads `render.yaml` as a Blueprint — one file describes the
-service, its secrets, and a disk. `SOMA_API_KEY` uses
-`generateValue: true` so Render mints a random secret for you on first
-apply.
+service, its secrets, and a disk. `SOMA_JWT_SECRET` uses
+`generateValue: true` so Render mints a random 32-byte secret on first
+apply; mint per-caller tokens afterward from a local clone with
+`soma auth issue`. `SOMA_API_KEY` (legacy) is still accepted by the
+server if you prefer the single-shared-key shape — edit the
+Blueprint's env var name.
 
 **One-click**: click the Deploy to Render button in the README. Render
 detects the Blueprint, previews the plan, and deploys on approval.
@@ -84,7 +100,15 @@ brew install flyctl          # or `curl -L https://fly.io/install.sh | sh`
 fly auth login
 fly launch --copy-config --no-deploy        # imports fly.toml
 fly volumes create soma_data --size 1 --region iad
-fly secrets set SOMA_API_KEY=$(openssl rand -hex 32)
+
+# JWT (recommended):
+fly secrets set SOMA_JWT_SECRET=$(openssl rand -hex 32)
+# Mint per-caller tokens from a clone after deploy:
+# soma auth issue --sub alex --bundle alex:read,write --expires 30d
+
+# Legacy (deprecated — kept for existing deploys):
+# fly secrets set SOMA_API_KEY=$(openssl rand -hex 32)
+
 fly deploy
 fly status                   # show machine + health-check state
 fly logs                     # tail application logs
@@ -102,6 +126,14 @@ regions with `fly scale count 2 --region iad,fra`.
 SOMA ships a first-class Helm chart at `deploy/helm/soma`. One install
 gets you a StatefulSet, a PVC, a generated API-key Secret, and optional
 Ingress / HTTPRoute / ServiceMonitor.
+
+> **Auth status on the Helm chart:** the chart currently wires
+> `SOMA_API_KEY` (legacy) only. JWT support for the chart is planned
+> but not yet shipped. Cluster-internal traffic + `NetworkPolicy` is
+> usually enough; if you need per-caller JWT perms today, run SOMA as
+> a raw Deployment with `SOMA_JWT_SECRET` in env instead of the
+> chart. The legacy key path is still supported by the server
+> (`src/soma/serve.py`).
 
 > **Registry status (2026-04-20):** the OCI registry
 > (`oci://ghcr.io/soma-ai/charts/soma`) referenced below is
@@ -121,7 +153,7 @@ kubectl get statefulset,svc,secret -l app.kubernetes.io/name=soma
 kubectl port-forward svc/soma 8420:8420
 curl http://localhost:8420/health
 
-# Pull the auto-generated API key:
+# Pull the auto-generated API key (chart wires SOMA_API_KEY today):
 export SOMA_API_KEY=$(kubectl get secret soma-api \
   -o jsonpath='{.data.SOMA_API_KEY}' | base64 -d)
 ```
@@ -142,8 +174,17 @@ reference — copy the repo to the box and bring it up:
 # On a fresh Ubuntu droplet:
 curl -fsSL https://get.docker.com | sh
 git clone https://github.com/danthi123/soma.git && cd soma
-export SOMA_API_KEY=$(openssl rand -hex 32)
-echo "SOMA_API_KEY=$SOMA_API_KEY" > .env
+
+# JWT (recommended):
+export SOMA_JWT_SECRET=$(openssl rand -hex 32)
+echo "SOMA_JWT_SECRET=$SOMA_JWT_SECRET" > .env
+# Mint per-caller tokens once the server is up:
+# soma auth issue --sub alex --bundle alex:read,write --expires 30d
+
+# Legacy (deprecated — kept for existing deploys):
+# export SOMA_API_KEY=$(openssl rand -hex 32)
+# echo "SOMA_API_KEY=$SOMA_API_KEY" > .env
+
 docker compose up -d
 docker compose logs -f soma-memory       # watch boot
 curl http://localhost:8420/health        # liveness
@@ -180,7 +221,9 @@ compose verify `docker volume inspect soma-data` shows a non-empty
 mounted volume (e.g., a typo'd `/data/memory` on Render where the
 mount is `/app/data`), every redeploy starts from an empty bundle.
 
-**`401 Unauthorized` from every endpoint.** `SOMA_API_KEY` is set.
-Either unset it (public deploy) or send `Authorization: Bearer <key>`
-on every request. `/health` and `/version` remain unauthenticated by
-design so platform probes keep working.
+**`401 Unauthorized` from every endpoint.** `SOMA_JWT_SECRET` (or
+legacy `SOMA_API_KEY`) is set and your request is missing or has a
+wrong `Authorization: Bearer <token>` header. Mint a fresh token with
+`soma auth issue` (JWT) or check the value of `SOMA_API_KEY` in the
+server env (legacy). `/health` and `/version` remain public by design
+so platform probes keep working.

@@ -170,7 +170,7 @@ soma auth    revoke --token $LEAKED --reason "leaked on slack"
 
 ## Cloud deploy
 
-[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/new/template?template=https://github.com/danthi123/soma&envs=SOMA_API_KEY)
+[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/new/template?template=https://github.com/danthi123/soma&envs=SOMA_JWT_SECRET)
 [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/danthi123/soma)
 
 Fly.io: `fly launch --from https://github.com/danthi123/soma --copy-config`. Kubernetes (Helm 3.14+): a Helm chart ships under `deploy/helm/` — `helm install soma deploy/helm/soma` — runbook in [`docs/deployment-k8s.md`](docs/deployment-k8s.md). Per-platform notes: [`docs/deployment-cloud.md`](docs/deployment-cloud.md). Minimum tier: 2 GB RAM.

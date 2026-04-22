@@ -5,7 +5,10 @@ services:
     plan: standard
     healthCheckPath: /health
     envVars:
-      - key: SOMA_API_KEY
+      # JWT (recommended). Render mints a random 32-byte secret on
+      # first apply. Mint per-caller tokens with `soma auth issue`
+      # from a clone of the repo after the deploy is live.
+      - key: SOMA_JWT_SECRET
         generateValue: true
       - key: SOMA_EMBED_MODEL
         value: all-MiniLM-L6-v2

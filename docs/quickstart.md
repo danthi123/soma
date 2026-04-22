@@ -84,6 +84,7 @@ de-duplicates them, and supersedes older claims when they conflict. This
 is the Mem0/Zep-style pipeline — see [`cookbook.md`](cookbook.md) §18
 for the design notes.
 
+<!-- doctest: skip -->
 ```python
 from soma.llm    import backend_from_env
 from soma.memory import ConversationalMemory, MemoryLayer
@@ -102,6 +103,7 @@ If your chat LLM is a small (3B-ish) local model that struggles to emit
 strict JSON, pin a stronger one for the structured steps without
 upgrading the whole chat path:
 
+<!-- doctest: skip -->
 ```python
 from soma.llm import OllamaBackend
 
@@ -116,6 +118,7 @@ One bundle, many end-users. Pass `user_id=` and every write stamps
 `metadata.user_id`; retrieval, clear, and supersede auto-scope to that
 user without a new endpoint.
 
+<!-- doctest: skip -->
 ```python
 cm_alice = ConversationalMemory(memory=mem, llm=llm, session_id="s1", user_id="alice")
 cm_bob   = ConversationalMemory(memory=mem, llm=llm, session_id="s1", user_id="bob")

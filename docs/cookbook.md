@@ -5,6 +5,7 @@ need. All recipes use only the public API; copy them and adapt.
 
 ## 1. Ingest a wiki and chat
 
+<!-- doctest: skip -->
 ```python
 from pathlib import Path
 from soma.llm    import OllamaBackend, RAGSession
@@ -52,6 +53,8 @@ mem.save("brain/")  # at end of session
 ## 3. Per-user memory (multi-tenancy by metadata)
 
 ```python
+from soma.memory import MemoryLayer
+
 mem = MemoryLayer.with_sbert()  # one shared store
 
 mem.store("Alex prefers vegetarian recipes",  metadata={"user_id": "alex"})
@@ -69,6 +72,7 @@ hits = mem.retrieve(
 
 If you'd rather isolate physically, use one bundle per user:
 
+<!-- doctest: skip -->
 ```python
 alex_mem  = MemoryLayer.load("brains/alex/")
 bobbi_mem = MemoryLayer.load("brains/bobbi/")
@@ -76,6 +80,7 @@ bobbi_mem = MemoryLayer.load("brains/bobbi/")
 
 ## 4. Soft-forget by metadata (GDPR / right-to-be-forgotten)
 
+<!-- doctest: skip -->
 ```python
 to_forget = [
     h.node_id for h in mem.get_recent(len(mem))  # full scan
@@ -88,6 +93,7 @@ mem.save("brain/")
 
 ## 5. Importance-weighted store (mark some entries critical)
 
+<!-- doctest: skip -->
 ```python
 # Pre-store, weight by source confidence (only metadata; retrieval
 # still ranks by cosine — use this on the read side):
@@ -128,6 +134,7 @@ def vector_plus_recent(query: str, k: int = 5, recency_weight: float = 0.3):
 
 ## 7. Streaming ingest from JSONL
 
+<!-- doctest: skip -->
 ```python
 import json
 from soma.memory import MemoryLayer
@@ -144,6 +151,7 @@ mem.save("brain/")
 
 ## 8. Use any OpenAI-compatible local server (vLLM / LM Studio / llama.cpp)
 
+<!-- doctest: skip -->
 ```python
 from soma.llm import OpenAICompatibleBackend, RAGSession
 
@@ -156,6 +164,7 @@ chat = RAGSession(memory=mem, llm=backend)
 
 ## 9. Custom prompt template
 
+<!-- doctest: skip -->
 ```python
 from soma.llm import RAGSession
 
@@ -205,6 +214,7 @@ When queries hinge on specific terminology (proper names, domain
 jargon, numeric IDs) that sbert's sub-word tokenizer smears into a
 broader semantic neighbourhood, add BM25 alongside cosine:
 
+<!-- doctest: skip -->
 ```python
 # alpha=0 → pure BM25; alpha=1 → pure cosine; 0.3–0.5 is typical.
 hits = mem.retrieve("reading list for Kubernetes RBAC", k=5, hybrid_alpha=0.3)
@@ -219,6 +229,7 @@ Let the LLM rewrite each question into N variants + sub-questions,
 retrieve per variant, merge with Reciprocal Rank Fusion. Cheap +3-8
 pp Recall@5 on under-specified queries:
 
+<!-- doctest: skip -->
 ```python
 from soma.llm import QueryExpander, RAGSession, backend_from_env
 
@@ -237,6 +248,7 @@ Over-fetch cosine candidates, re-rank them with a small
 cross-encoder (~5–10 ms/candidate on CPU). Usually +5–15% Recall@5
 on real queries:
 
+<!-- doctest: skip -->
 ```python
 from soma.memory.rerank import CrossEncoderReranker
 
@@ -302,6 +314,7 @@ python scripts/demo_memory_inspect.py dump --bundle brain/ > snapshot.jsonl
 
 ## 17. Durability — crash-safe persistence (WAL)
 
+<!-- doctest: skip -->
 ```python
 from soma.memory import MemoryLayer
 
@@ -340,6 +353,7 @@ extraction and reconciliation, borrowing Mem0's two-phase pipeline
 (arXiv 2504.19413; +26% LoCoMo QA accuracy over raw RAG at 91% lower
 latency) and Zep's "invalidate, don't delete" SUPERSEDE semantics.
 
+<!-- doctest: skip -->
 ```python
 from soma.llm    import backend_from_env
 from soma.memory import ConversationalMemory, MemoryLayer
@@ -408,6 +422,7 @@ thread (`ThreadPoolExecutor(max_workers=1)`, so within-session
 extraction order is preserved). Call `flush()` — or use the
 context-manager protocol — before reading extracted facts.
 
+<!-- doctest: skip -->
 ```python
 with ConversationalMemory(
     memory=mem, llm=llm, session_id="alex",
@@ -436,6 +451,7 @@ to `ConversationalMemory` and every stored turn / fact / summary is
 tagged with `metadata.user_id`; `retrieve()`, `clear_session()`, and
 `supersede()` auto-scope to that user.
 
+<!-- doctest: skip -->
 ```python
 cm_alice = ConversationalMemory(
     memory=mem, llm=llm, session_id="chat-1", user_id="alice",
@@ -618,6 +634,7 @@ Point `MemoryLayer.save` / `load` at a URL and the bundle lives in
 object storage instead of local disk. Unlocks Cloud Run / AWS Lambda
 / Fly Machines / any platform where local disk is ephemeral.
 
+<!-- doctest: skip --> <!-- illustrative: needs live bucket + AWS/GCP creds -->
 ```python
 from soma.memory import MemoryLayer
 
@@ -634,6 +651,7 @@ restored = MemoryLayer.load("s3://my-bucket/soma/bundle")
 
 S3 endpoint override (MinIO, Cloudflare R2, DigitalOcean Spaces):
 
+<!-- doctest: skip -->
 ```python
 from soma.storage import S3ObjectStore
 store = S3ObjectStore(
@@ -651,6 +669,7 @@ Full deploy recipes (Dockerfile, IAM, env vars) in [`docs/cloud.md`](cloud.md).
 Beyond `clear_session`: cascade-delete raw turns + derived facts +
 summaries (regenerated from surviving turns when possible, else dropped).
 
+<!-- doctest: skip -->
 ```python
 from soma.memory.conversational import ConversationalMemory
 from soma.forget_audit import ForgetAuditSink
@@ -766,6 +785,7 @@ class Deploy:
         ttl_seconds = 86400 * 7  # expire after 1 week
 ```
 
+<!-- doctest: skip -->
 ```python
 # myagent/main.py
 import myagent.schemas  # auto-registers Deploy

@@ -207,6 +207,7 @@ Chroma-style dict into LanceDB's SQL-like predicate string via
 `lancedb_filter.to_lancedb_where`. Supported operators mirror
 `_COMPARE_OPS`:
 
+<!-- doctest: skip -->
 ```python
 mem.retrieve("quantum", k=5, where={"tag": "physics"})
 mem.retrieve("2023", k=5, where={"year": {"$gte": 2020}})
@@ -274,6 +275,7 @@ its own side; vectors stay in Chroma.
 For non-default setups (custom auth, tenancy/database, remote HTTP
 mode), pass a pre-built client instead of a path:
 
+<!-- doctest: skip --> <!-- illustrative: needs reachable Chroma HTTP server -->
 ```python
 import chromadb
 
@@ -296,6 +298,7 @@ Pinned minimum: `chromadb>=0.5`. Earlier versions had a different
 
 Install: `pip install soma-memory[pgvector]`.
 
+<!-- doctest: skip -->
 ```python
 from sentence_transformers import SentenceTransformer
 import torch
@@ -370,6 +373,7 @@ for the gating pattern.
 
 Install: `pip install soma-memory[qdrant]`.
 
+<!-- doctest: skip -->
 ```python
 from sentence_transformers import SentenceTransformer
 import torch
@@ -406,6 +410,7 @@ across a cluster.
 
 ### Local-file mode (≤20K cap)
 
+<!-- doctest: skip -->
 ```python
 backend = QdrantBackend(mode="local", dim=384, path="./qdrant_data")
 ```
@@ -418,6 +423,7 @@ matches benchmarks on consumer hardware (RTX 3090, 32 GB RAM).
 
 ### In-memory mode (tests, demos)
 
+<!-- doctest: skip -->
 ```python
 backend = QdrantBackend(mode="memory", dim=384)
 ```
@@ -432,6 +438,7 @@ demos (no network). Not for production — restart = empty store.
 Chroma-style dict into Qdrant's native `Filter` model. Supported
 operators mirror `_COMPARE_OPS`:
 
+<!-- doctest: skip -->
 ```python
 mem.retrieve("quantum", k=5, where={"tag": "physics"})
 mem.retrieve("2023", k=5, where={"year": {"$gte": 2020}})

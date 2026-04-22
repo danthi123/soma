@@ -41,6 +41,84 @@ Cosmetic / infra followups queued for the next release cycle
   scan before each release to catch any that drift in between;
   the one-liner lives in this session's conversation.
 
+## [0.2.0rc5] — 2026-04-22
+
+Docs-only release to propagate the editorial refactor landed
+after rc4 onto the PyPI landing page. **No wheel-surface
+changes** — the sdist and wheel are byte-identical to rc4's
+except for the version string and the regenerated `README.md`
+that PyPI renders as the project's long description.
+
+The editorial refactor (commits `09b0d64` → `984f51f`) addressed
+nine items from an external docs review:
+
+- **Auth story unified.** `docs/deployment-cloud.md` Railway /
+  Render / Fly / DigitalOcean recipes now lead with
+  `SOMA_JWT_SECRET` + `soma auth issue`. Legacy `SOMA_API_KEY`
+  stays as a commented-out fallback because the server still
+  supports it. The K8s section keeps `SOMA_API_KEY` with a
+  callout explaining the Helm chart hasn't been updated for
+  JWT yet.
+- **README install trap fixed.** First labelled install is now
+  the one the Quick-start example actually uses
+  (`pip install "soma-memory[sbert]"`). Every variant in the
+  install block switched from the editable form
+  (`pip install -e ".[...]"`, which requires a clone) to the
+  PyPI form (`pip install "soma-memory[...]"`, which works for
+  every reader). Editable install moved into a "Developing on
+  SOMA?" callout pointing at `CONTRIBUTING.md`.
+  `docs/quickstart.md` got the same pivot.
+- **K8s docs restructured.** "## Quickstart — OCI one-liner"
+  renamed and rewritten to lead with
+  `helm install soma deploy/helm/soma` (the in-tree chart).
+  Future OCI one-liner moved below under "Future state". The
+  redundant "Classic repo path (GitHub Pages)" section deleted.
+  The three secondary `helm install soma oci://…` invocations
+  in the Secret Management + Disable auth subsections and the
+  `helm upgrade` command all swapped to the local-path variant.
+- **Helm chart metadata cleaned.** `deploy/helm/soma/Chart.yaml`
+  home / sources URLs swapped from the nonexistent
+  `soma-ai/SOMA` org to `danthi123/soma`. The `icon:` line
+  pointing at a 404 dropped. `deploy/helm/soma/values.yaml`
+  gained a NOTE comment above `image.repository` explaining the
+  default `ghcr.io/soma-ai/soma` image has not been published.
+  `deploy/helm/soma/README.md` tagline + TL;DR + per-recipe
+  install commands all aligned to the new framing.
+  `deploy/helm/soma/templates/NOTES.txt` runbook URL fixed
+  (was `soma-ai/SOMA`, now `danthi123/soma`).
+- **New top-level `docs/README.md`.** Six-section index that
+  tells users what's canonical (start-here / install / reference
+  / deploy / deep technical / research-and-plans). Previously
+  `docs/` was a flat directory of 100 files with no signal.
+- **New `docs/rest-api.md`.** Every route in `src/soma/serve.py`
+  with its auth permission (read / write / admin) and a summary
+  of the request/response shape. OpenAPI spec still authoritative
+  for field-level detail; the markdown reference is the
+  entrypoint for operators who don't want to curl
+  `/openapi.json`.
+- **README scope split elevated.** New `## Scope` H2 on the
+  README with the product-vs-substrate framing that previously
+  only appeared in `CONTRIBUTING.md`. Comparison-table row for
+  "Plastic graph substrate" reworded from the `*`-footnote
+  pattern to an inline "research only — see Scope" cross-link.
+- **README status + limitations.** New `## Status & known
+  limitations` section covering the `Development Status :: 4 -
+  Beta` classifier, production-ready vs experimental surface,
+  and the concrete limitations today (single-writer WAL,
+  `SOMA_API_KEY`-only Helm chart, unpublished Helm OCI registry
+  + unpublished container image, no distributed multi-node
+  vector scale, no hosted offering).
+- **Six-axes claim reconciled.** The M1 milestone lists six
+  validation axes (two cross-LLM rows); README line 5 listed
+  only five. Parenthetical added: `cross-LLM (qwen9b + Claude)`.
+- **Railway deploy button URL and `render.yaml`** seed
+  `SOMA_JWT_SECRET` instead of `SOMA_API_KEY` for new users
+  clicking through the one-click deploy buttons.
+
+No test changes. No import-time behaviour changes. `pip install
+soma-memory==0.2.0rc5` resolves the same code as
+`soma-memory==0.2.0rc4`; the difference is what PyPI renders.
+
 ## [0.2.0rc4] — 2026-04-20
 
 Documentation accuracy pass. No code changes, no wheel-surface

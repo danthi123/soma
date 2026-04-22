@@ -132,8 +132,14 @@ keep loading without migration.
 Install: `pip install soma-memory[lancedb]`.
 
 ```python
+from sentence_transformers import SentenceTransformer
+import torch
 from soma.memory.api import MemoryLayer
 from soma.memory.backends.lancedb import LanceDBBackend
+
+_model = SentenceTransformer("all-MiniLM-L6-v2")
+def _embed(text: str) -> torch.Tensor:
+    return torch.tensor(_model.encode(text, convert_to_numpy=True))
 
 backend = LanceDBBackend(
     path="./lancedb_data",
@@ -141,7 +147,11 @@ backend = LanceDBBackend(
     table_name="prod_agent",
     index_type="ivf_pq",  # flat | ivf_pq | hnsw
 )
-mem = MemoryLayer.with_sbert(backend=backend)
+mem = MemoryLayer(
+    embed_fn=_embed,
+    embed_dim=_model.get_sentence_embedding_dimension(),
+    backend=backend,
+)
 ```
 
 **The pitch: local-first scale past Qdrant-local's 20K cap, no
@@ -233,15 +243,25 @@ matching the filter come back.
 Install: `pip install soma-memory[chroma]`.
 
 ```python
+from sentence_transformers import SentenceTransformer
+import torch
 from soma.memory.api import MemoryLayer
 from soma.memory.backends.chroma import ChromaBackend
+
+_model = SentenceTransformer("all-MiniLM-L6-v2")
+def _embed(text: str) -> torch.Tensor:
+    return torch.tensor(_model.encode(text, convert_to_numpy=True))
 
 backend = ChromaBackend(
     path="./chroma_data",     # chromadb.PersistentClient directory
     collection_name="my_agent",
     dim=384,
 )
-mem = MemoryLayer.with_sbert(backend=backend)
+mem = MemoryLayer(
+    embed_fn=_embed,
+    embed_dim=_model.get_sentence_embedding_dimension(),
+    backend=backend,
+)
 ```
 
 **The pitch: drop-in replacement for an existing Chroma store.** A
@@ -277,15 +297,25 @@ Pinned minimum: `chromadb>=0.5`. Earlier versions had a different
 Install: `pip install soma-memory[pgvector]`.
 
 ```python
+from sentence_transformers import SentenceTransformer
+import torch
 from soma.memory.api import MemoryLayer
 from soma.memory.backends.pgvector import PgvectorBackend
+
+_model = SentenceTransformer("all-MiniLM-L6-v2")
+def _embed(text: str) -> torch.Tensor:
+    return torch.tensor(_model.encode(text, convert_to_numpy=True))
 
 backend = PgvectorBackend(
     dsn="postgresql://user:pass@db.internal:5432/agent",
     dim=384,
     table_name="soma_vectors",  # per-tenant tables work fine
 )
-mem = MemoryLayer.with_sbert(backend=backend)
+mem = MemoryLayer(
+    embed_fn=_embed,
+    embed_dim=_model.get_sentence_embedding_dimension(),
+    backend=backend,
+)
 ```
 
 **The pitch: reuse the Postgres you already run.** A large fraction
@@ -341,8 +371,14 @@ for the gating pattern.
 Install: `pip install soma-memory[qdrant]`.
 
 ```python
+from sentence_transformers import SentenceTransformer
+import torch
 from soma.memory.api import MemoryLayer
 from soma.memory.backends.qdrant import QdrantBackend
+
+_model = SentenceTransformer("all-MiniLM-L6-v2")
+def _embed(text: str) -> torch.Tensor:
+    return torch.tensor(_model.encode(text, convert_to_numpy=True))
 
 # HTTP mode — the scale story
 backend = QdrantBackend(
@@ -351,7 +387,11 @@ backend = QdrantBackend(
     url="http://qdrant.internal:6333",
     collection="prod_agent",
 )
-mem = MemoryLayer.with_sbert(backend=backend)
+mem = MemoryLayer(
+    embed_fn=_embed,
+    embed_dim=_model.get_sentence_embedding_dimension(),
+    backend=backend,
+)
 ```
 
 ### HTTP mode (recommended for production)

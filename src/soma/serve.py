@@ -64,6 +64,7 @@ Endpoints:
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import threading
@@ -555,16 +556,39 @@ def _get_mem(name: str | None = None) -> MemoryLayer:
             mem.reload_if_stale()  # pick up peer-worker WAL appends
             return mem
         path = _path_for(name)
-        # A loadable bundle is either a saved snapshot (memory_index.json)
-        # or a WAL-only bundle (fresh store that crashed before save()).
         has_snapshot = path.exists() and (path / "memory_index.json").exists()
         has_wal = path.exists() and (path / "memory_ops.wal.jsonl").exists()
         if has_snapshot or has_wal:
-            mem = MemoryLayer.load(path, embed_fn=_embed_fn())
+            # Prefer the bundle's persisted sbert_model_name over the server's
+            # current SOMA_EMBED_MODEL. Mismatch (e.g. bundle saved with
+            # mpnet-base-v2, server booted with MiniLM) produces silent
+            # retrieval garbage or a dim-mismatch crash. `load_with_sbert`
+            # reads `memory_index.json` to rebuild the right embedder. Only
+            # fall back to the plain env-driven path for bundles created by
+            # the TextEncoder path (no sbert name persisted).
+            persisted = _persisted_sbert_name(path) if has_snapshot else None
+            if persisted:
+                mem = MemoryLayer.load_with_sbert(path)
+            else:
+                mem = MemoryLayer.load(path, embed_fn=_embed_fn())
         else:
             mem = MemoryLayer.with_sbert(EMBED_MODEL)
         _mem_cache[key] = mem
         return mem
+
+
+def _persisted_sbert_name(path: Path) -> str | None:
+    """Peek at memory_index.json to see if the bundle recorded an sbert model
+    name. Returns None if the file is missing, malformed, or lacks the key."""
+    idx_path = path / "memory_index.json"
+    if not idx_path.exists():
+        return None
+    try:
+        idx = json.loads(idx_path.read_text())
+    except (OSError, json.JSONDecodeError):
+        return None
+    name = idx.get("sbert_model_name")
+    return name if isinstance(name, str) and name else None
 
 
 def _get_conversational_memory(

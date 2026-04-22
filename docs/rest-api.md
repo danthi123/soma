@@ -65,6 +65,7 @@ matches the OpenAPI `operationId` for generated clients.
 | Method | Path | Perm | Purpose |
 | --- | --- | --- | --- |
 | `POST` | `/auth/refresh` | valid JWT | Mint a refreshed token preserving `soma` claims. Body carries the old JWT; response carries the new one. See `docs/auth.md` "Refresh" section. |
+| `POST` | `/auth/revoke` | `admin` | Add a JWT's `jti` to the blocklist (same primitive as `soma auth revoke`). Body: either `token` or `jti`+`exp`. See `docs/auth.md` "Revocation" section. |
 
 ### Default bundle (single-tenant at `$SOMA_BUNDLE_PATH`)
 

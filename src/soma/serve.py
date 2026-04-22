@@ -1006,6 +1006,123 @@ def auth_refresh(request: Request) -> RefreshResponse:
 
 
 # ------------------------------------------------------------------
+# POST /auth/revoke — HTTP surface over the BlocklistBackend primitive
+# ------------------------------------------------------------------
+class AuthRevokeRequest(BaseModel):
+    """Body for ``POST /auth/revoke``. Supply exactly one of ``token``
+    or ``jti``+``exp``.
+
+    - ``token``: revoke by presenting the full JWT. Server decodes and
+      pulls ``jti``/``exp``. Callers don't need to parse.
+    - ``jti``+``exp``: revoke by identifier. Useful when the original
+      token has already been rotated out of the caller's possession
+      (e.g., the jti was lifted from an access log).
+    """
+
+    token: str | None = Field(None, description="Full JWT to revoke")
+    jti: str | None = Field(
+        None, description="Token id (if revoking without the token)"
+    )
+    exp: int | None = Field(
+        None, description="Token expiry unix timestamp — required with jti"
+    )
+    reason: str | None = Field(None, description="Free-form audit note")
+
+
+class AuthRevokeResponse(BaseModel):
+    """Response body for ``POST /auth/revoke``."""
+
+    revoked: str = Field(..., description="The jti that was added to the blocklist")
+    exp: int = Field(..., description="Blocklist entry TTL anchor (unix ts)")
+    reason: str = Field(..., description="Echoed reason or a generated default")
+
+
+@app.post(
+    "/auth/revoke",
+    response_model=AuthRevokeResponse,
+    operation_id="auth_revoke",
+    tags=["auth"],
+    responses=ERROR_RESPONSES,
+    summary="Revoke a JWT (add its jti to the blocklist)",
+    dependencies=[Depends(require_auth(None, "admin"))],
+)
+def auth_revoke(body: AuthRevokeRequest) -> AuthRevokeResponse:
+    """Revoke a token. Either pass the full ``token`` to revoke it by
+    content, or pass ``jti``+``exp`` to revoke by identifier.
+
+    The blocklist entry's TTL is set to the token's ``exp`` so expired
+    entries self-evict — no manual GC required for the common case.
+    Same primitive as ``soma auth revoke`` (the CLI flow) — the two
+    surfaces write identical ``RevocationRecord``s into
+    ``SOMA_JWT_BLOCKLIST_PATH`` (or Redis).
+
+    Requires ``admin`` scope on any bundle in the caller's claim; 401
+    without a valid bearer, 403 with a valid non-admin bearer, 400
+    when neither ``token`` nor ``jti``+``exp`` is supplied.
+    """
+    import time as _time
+
+    from soma.auth_revocation import RevocationRecord, _NullBlocklist
+
+    # If no blocklist is configured (SOMA_JWT_BLOCKLIST_PATH unset and no
+    # Redis), a revoke call is a silent no-op — the record is accepted,
+    # thrown on the floor, and every subsequent verify_token skips the
+    # revocation gate anyway. Fail loudly so operators can't mistake
+    # "route returned 200" for "token is actually revoked".
+    if isinstance(_blocklist, _NullBlocklist):
+        raise HTTPException(
+            status_code=501,
+            detail=(
+                "Token revocation is disabled: no blocklist configured. "
+                "Set SOMA_JWT_BLOCKLIST_PATH=<path> or configure Redis and "
+                "restart. See docs/auth.md 'Revocation' for setup."
+            ),
+        )
+
+    if body.token is not None:
+        try:
+            unsafe = jwt.decode(
+                body.token,
+                options={"verify_signature": False, "verify_exp": False},
+            )
+        except jwt.InvalidTokenError as err:
+            raise HTTPException(
+                status_code=400, detail=f"invalid token: {err}"
+            ) from err
+        jti = unsafe.get("jti")
+        exp = unsafe.get("exp")
+        if not isinstance(jti, str):
+            raise HTTPException(
+                status_code=400,
+                detail="token missing jti claim; nothing to revoke",
+            )
+        if not isinstance(exp, int):
+            raise HTTPException(
+                status_code=400,
+                detail="token missing exp claim; cannot compute TTL",
+            )
+    elif body.jti is not None and body.exp is not None:
+        jti = body.jti
+        exp = int(body.exp)
+    else:
+        raise HTTPException(
+            status_code=400,
+            detail="pass exactly one of (token) or (jti+exp)",
+        )
+
+    reason = body.reason or "revoked via POST /auth/revoke"
+    _blocklist.add(
+        RevocationRecord(
+            jti=jti,
+            revoked_at=int(_time.time()),
+            reason=reason,
+            exp=exp,
+        )
+    )
+    return AuthRevokeResponse(revoked=jti, exp=exp, reason=reason)
+
+
+# ------------------------------------------------------------------
 # Default-bundle endpoints (backward-compatible single-tenant API)
 # ------------------------------------------------------------------
 @app.get(

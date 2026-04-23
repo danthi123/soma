@@ -9,8 +9,8 @@ real AWS credentials and no network. Point it at real S3 by deleting
 the ``mock_aws`` block and exporting ``AWS_ACCESS_KEY_ID`` +
 ``AWS_SECRET_ACCESS_KEY`` + ``AWS_DEFAULT_REGION`` instead.
 
-Requires: ``pip install "soma[s3,s3-test]"`` (moto is in the test
-extra; in production you only need the ``s3`` extra).
+Requires: ``pip install "soma-memory[s3,s3-test]"`` (moto is in the
+test extra; in production you only need the ``s3`` extra).
 
 Run:
 

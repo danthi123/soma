@@ -26,7 +26,7 @@
       }
     ]
   },
-  "description": "USE-method dashboard over the memory-layer substrate: WAL throughput, consolidation cost, bundle size and retrieve-latency distribution. The consolidation-duration panel accepts either soma_consolidate_seconds (shipped in Phase 3) or soma_compaction_seconds (Phase 8); whichever metric is present renders, the other contributes an empty series.",
+  "description": "USE-method dashboard over the memory-layer substrate: WAL throughput, consolidation cost, bundle size and retrieve-latency distribution. The consolidation-duration panel accepts either soma_consolidate_seconds (older builds) or soma_compaction_seconds (current); whichever metric is present renders, the other contributes an empty series.",
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 1,
@@ -77,7 +77,7 @@
       "type": "timeseries",
       "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
       "gridPos": {"x": 12, "y": 0, "w": 12, "h": 8},
-      "description": "p95 of per-consolidate wall-clock time. References both soma_consolidate_seconds (Phase 3) and soma_compaction_seconds (Phase 8) so the panel keeps working regardless of which metric the running build exposes. Either series simply renders empty if absent.",
+      "description": "p95 of per-consolidate wall-clock time. References both soma_consolidate_seconds (older builds) and soma_compaction_seconds (current) so the panel keeps working regardless of which metric the running build exposes. Either series simply renders empty if absent.",
       "fieldConfig": {
         "defaults": {
           "unit": "s",
@@ -104,7 +104,7 @@
           "refId": "B",
           "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
           "expr": "histogram_quantile(0.95, sum by (le) (rate(soma_compaction_seconds_bucket{instance=~\"$instance\"}[5m])))",
-          "legendFormat": "compaction p95 (phase 8)"
+          "legendFormat": "compaction p95"
         },
         {
           "refId": "C",

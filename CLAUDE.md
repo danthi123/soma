@@ -25,16 +25,45 @@ A brain-inspired developmental AI system built on PyTorch. NOT a language model 
 
 ```
 src/soma/
-├── core/          # Node, Edge, Graph, execution engine, config
-├── memory/        # WorkingMemory, EpisodicMemory (parametric = graph weights)
-├── growth/        # Synaptogenesis, neurogenesis, pruning, myelination, critical periods
-├── metacognition/ # CuriosityModule, HomeostaticRegulator, DevelopmentSchedule
-├── io/            # TextEncoder/Decoder, ImageEncoder, AudioEncoder, dataset feeders
-├── consolidation/ # Consolidation cycle (artificial sleep), replay
-tests/             # pytest, mirrors src/ structure
-configs/           # YAML configs (default.yaml)
-scripts/           # Training, visualization, analysis scripts
-docs/              # Whitepaper, design docs
+# --- Memory-layer product (what `pip install soma-memory` delivers) ---
+├── memory/          # MemoryLayer (public API), ConversationalMemory,
+│                    # backends/ (InProc + Qdrant + LanceDB + Chroma + pgvector)
+├── serve.py         # FastAPI app: /store /retrieve /forget /auth/* /snapshot ...
+├── cli.py           # `soma` entry point (version / index / chat / stats /
+│                    # search / serve / auth)
+├── _cli_commands/   # Packaged helpers for CLI subcommands (private API)
+├── auth.py          # JWT issue / verify (HS256 + RS256)
+├── auth_revocation.py  # BlocklistBackend: null / file / Redis
+├── llm/             # Pluggable LLM backends (Ollama / OpenAI / Anthropic / vLLM / HF)
+├── integrations/    # LangChain + LlamaIndex adapters
+├── storage/         # ObjectStore protocol (LocalFS / S3 / GCS)
+├── schemas/         # Typed-schema system (31 built-in)
+├── metrics.py       # Prometheus counters/gauges/histograms
+├── rate_limit.py    # Per-bundle token-bucket limiter
+├── forget_audit.py  # GDPR forget audit trail
+├── bundle.py        # Bundle-metadata loader
+├── log.py           # JSON logging config
+# --- Research substrate (brain-inspired dev AI; not on the product path) ---
+├── core/            # Node, Edge, Graph, execution engine, config
+├── growth/          # Synaptogenesis, neurogenesis, pruning, myelination
+├── metacognition/   # Curiosity, HomeostaticRegulator, DevelopmentSchedule
+├── io/              # TextEncoder/Decoder, ImageEncoder, AudioEncoder
+├── consolidation/   # Consolidation cycle (artificial sleep), replay
+├── developmental/   # Developmental trackers, PE, interactions
+├── environments/    # Training environments
+├── session/         # ChatSession (for substrate interactive mode)
+├── training/        # Training loops + trainers
+├── research/        # Research experiment harnesses
+├── deploy/          # Chat-head factory + inference helpers
+├── ui/              # Dear PyGUI dashboards
+└── system.py        # Legacy `SOMA` top-level system (substrate brain)
+tests/               # pytest, mirrors src/ structure
+configs/             # YAML configs (default.yaml)
+scripts/             # Training, visualization, analysis scripts (dev-time);
+                     # thin wrappers over src/soma/_cli_commands/ for demo_*
+docs/                # Whitepaper, positioning, cookbook, quickstart, rest-api
+deploy/              # Helm chart, Grafana dashboards, docker-compose
+clients/typescript/  # @pypi-named TS client (schema.d.ts regen'd from live app)
 ```
 
 ## Development Stages (Implementation Order)

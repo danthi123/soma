@@ -14,7 +14,7 @@ a drop-in for vector-store + RAG — packaged for Kubernetes.
 helm install soma deploy/helm/soma
 
 # (Future state — once registry is published, Helm 3.14+:)
-# helm install soma oci://ghcr.io/soma-ai/charts/soma --version 0.1.0
+# helm install soma oci://ghcr.io/soma-ai/charts/soma --version 0.2.0
 # helm repo add soma https://soma-ai.github.io/soma-helm
 # helm install soma soma/soma
 ```
@@ -24,10 +24,13 @@ at least 2 GiB RAM available on one schedulable node.
 
 ## Architecture
 
-- **StatefulSet (`replicaCount: 1`, LOCKED).** WAL is single-writer
-  until Phase 6 ships the external vector backend. Two pods would
-  corrupt the paired `memory_ops.wal.jsonl` + `memory_embeddings.wal.bin`
-  sidecars. `values.schema.json` pins `maximum: 1` and the chart
+- **StatefulSet (`replicaCount: 1`, LOCKED).** The default InProc
+  backend's WAL is single-writer; two pods would corrupt the paired
+  `memory_ops.wal.jsonl` + `memory_embeddings.wal.bin` sidecars.
+  Horizontal scale is available today via the external vector-backend
+  adapters (Qdrant / LanceDB / Chroma / pgvector) — the StatefulSet
+  pod still owns WAL and metadata, vectors live in the external
+  backend. `values.schema.json` pins `maximum: 1` and the chart
   re-asserts the invariant via `{{ fail }}` at render.
 - **Headless + ClusterIP Services.** Headless service backs stable
   pod DNS; ClusterIP on port 8420 is what everyone else targets.

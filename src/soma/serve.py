@@ -694,18 +694,21 @@ class ForgetRequest(BaseModel):
 
     Two shapes, dispatched at the handler:
 
-    - **Legacy** (Phase 4, unchanged): ``{"node_id": "<id>"}`` removes
-      exactly that entry via :meth:`MemoryLayer.forget`.
-    - **Conversational** (Phase 37): any of ``text_matches``,
-      ``subject``, or ``user_id`` routes through
-      :meth:`ConversationalMemory.forget`, returning the richer
-      :class:`ForgetResult` / :class:`ForgetPreview` shape. Mixing
-      ``node_id`` with criteria is not supported — the handler picks
-      the legacy branch when ``node_id`` is present.
+    - **By node id** — ``{"node_id": "<id>"}`` removes exactly that
+      entry via :meth:`MemoryLayer.forget`. Always live on the REST
+      surface.
+    - **By criteria** — any of ``text_matches``, ``subject``, or
+      ``user_id`` routes through :meth:`ConversationalMemory.forget`,
+      returning the richer :class:`ForgetResult` / :class:`ForgetPreview`
+      shape. Requires a ``ConversationalMemory`` to be wired via
+      :func:`_get_conversational_memory` (returns 501 otherwise).
+      Mixing ``node_id`` with criteria is not supported — the handler
+      picks the node-id branch when ``node_id`` is present.
 
-    ``summary_strategy`` is the Phase 37 Task 3 opt-in: ``"drop"``
-    deletes every summary in the preview set even when survivors
-    exist (skipping the regeneration LLM call entirely).
+    ``summary_strategy`` controls the summary cascade on criteria-based
+    forgetting: ``"drop"`` deletes every summary in the preview set
+    even when survivors exist (skipping the regeneration LLM call
+    entirely); the default ``"regen"`` rewrites affected summaries.
     """
 
     node_id: str | None = Field(
@@ -726,14 +729,14 @@ class ForgetRequest(BaseModel):
         default=None,
         description=(
             "Equality match on each fact's ``metadata.subject``. Only hits "
-            "hand-stamped facts until a future extractor phase populates it."
+            "hand-stamped facts until the automatic extractor populates it."
         ),
     )
     user_id: str | None = Field(
         default=None,
         description=(
-            "Equality match on each entry's ``metadata.user_id`` (Phase 12 "
-            "multi-user scope). When the caller's JWT sub differs, the "
+            "Equality match on each entry's ``metadata.user_id`` "
+            "(multi-user scope). When the caller's JWT sub differs, the "
             "audit record carries both."
         ),
     )

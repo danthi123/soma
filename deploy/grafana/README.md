@@ -26,7 +26,7 @@ All three dashboards share the same template variables:
 
 - Grafana 10.0 or later (schema version 36+).
 - A Prometheus data source scraping the `/metrics` endpoint of a SOMA
-  process started with `pip install "soma[metrics]"`.
+  process started with `pip install "soma-memory[metrics]"`.
 - If the scraped build is older than Phase 8, the `soma-bundle-health`
   "consolidation duration p95" panel may render one empty series
   (`soma_compaction_seconds_bucket`). That is expected and has no other

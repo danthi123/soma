@@ -76,9 +76,9 @@ class ForgetPreview:
     """Read-only summary of what a :meth:`ConversationalMemory.forget` call
     would delete, returned under ``dry_run=True``.
 
-    Phase 34 foundation for the GDPR-forgetting track. Callers inspect
-    this dataclass to confirm the target set before the Phase 35 wiring
-    flips ``dry_run=False`` on and actually deletes.
+    The foundation of the GDPR-forgetting track. Callers inspect this
+    dataclass to confirm the target set before calling ``forget`` with
+    ``dry_run=False`` to actually delete.
 
     - :attr:`raw_turns` — node ids of ``type="turn"`` entries matched
       by the forget criteria.
@@ -88,9 +88,9 @@ class ForgetPreview:
       (``subject=``, ``user_id=``).
     - :attr:`summaries` — node ids of ``type="summary"`` entries whose
       ``[summarized_turn_start, summarized_turn_end]`` range overlaps
-      the ``turn_index`` of any matched raw turn. Phase 36 wires the
-      cascade that rewrites these instead of blindly dropping them;
-      Phase 34 only surfaces them.
+      the ``turn_index`` of any matched raw turn. The live forget path
+      rewrites (or drops — see ``summary_strategy``) these instead of
+      blindly leaving them; this preview just enumerates them.
     - :attr:`total_vectors` — simple sum across the three id lists; the
       count callers audit against their GDPR deletion SLA.
     """
@@ -109,12 +109,11 @@ class ForgetPreview:
 class ForgetResult:
     """Outcome of a :meth:`ConversationalMemory.forget` call with ``dry_run=False``.
 
-    Phase 35 wired the actual deletion for turns + facts; Phase 36
-    finishes the cascade by handling summaries. A summary whose turn
-    range is fully covered by the delete set is dropped; one with
-    surviving turns is regenerated from the survivors (the MemoryLayer
-    has no in-place text update, so regen is a delete + re-add —
-    :attr:`regenerated_summaries` holds the **new** node ids).
+    Deletion handles turns + facts + summaries in one pass. A summary
+    whose turn range is fully covered by the delete set is dropped;
+    one with surviving turns is regenerated from the survivors (the
+    MemoryLayer has no in-place text update, so regen is a delete +
+    re-add — :attr:`regenerated_summaries` holds the **new** node ids).
 
     - :attr:`deleted_turns` — node ids of raw turns that were removed.
     - :attr:`deleted_facts` — node ids of derived facts that were
@@ -249,8 +248,9 @@ def _summaries_overlapping_turns(
 
     When ``turn_ids`` is empty we return no summaries — there's
     nothing to overlap. Callers matching purely by ``subject=`` /
-    ``user_id=`` therefore get ``summaries=[]``, which Phase 36 will
-    re-evaluate when the subject/user dimensions learn to cascade.
+    ``user_id=`` therefore get ``summaries=[]``; the subject/user
+    dimensions don't cascade to summaries today (summaries only track
+    turn-index ranges, not subject or user identity).
     """
     if not turn_ids:
         return []
@@ -1292,10 +1292,6 @@ class ConversationalMemory:
     ) -> ForgetPreview | ForgetResult:
         """Delete (or preview) entries matching the criteria.
 
-        Phase 34 shipped the read-only inventory path. Phase 35 wires
-        the actual deletion and flips the default so ``forget(...)``
-        without ``dry_run=`` does what the verb says — deletes.
-
         Matcher modes (at least one required; combinations are AND-
         intersected):
 
@@ -1307,11 +1303,10 @@ class ConversationalMemory:
         - ``subject``: equality on each fact's ``metadata["subject"]``
           field. Facts stored without that key never match. Note that
           the current extractor prompt doesn't emit ``subject`` — this
-          matcher only hits hand-stamped facts until a future extractor
-          phase learns to populate it.
+          matcher only hits hand-stamped facts until the extractor is
+          extended to populate it.
         - ``user_id``: equality on each entry's ``metadata["user_id"]``
-          (the Phase 12 multi-user scope). Works across turns, facts,
-          and summaries.
+          (multi-user scope). Works across turns, facts, and summaries.
 
         ``dry_run=True`` returns a :class:`ForgetPreview` describing
         what would go away without mutating the store. ``dry_run=False``
@@ -1321,8 +1316,8 @@ class ConversationalMemory:
         Deletion order is facts-first then turns. Facts reference
         their source turn via ``metadata["source_turn_id"]``; dropping
         turns first would briefly orphan the fact records. Summaries
-        are surfaced in the preview but left untouched in Phase 35 —
-        Phase 36 will wire the summary-cascade rewrite.
+        that reference a scrubbed range are rewritten (or dropped —
+        see ``summary_strategy``) via the cascade logic below.
 
         In async-extraction mode the pending future queue is drained
         via :meth:`flush` **before** the preview is computed, so an
@@ -1518,11 +1513,11 @@ class ConversationalMemory:
         retention of derived content that might still reference the
         scrubbed subject.
 
-        ``summary_strategy="drop"`` (Phase 37 Task 3) forces the drop
-        branch even when survivors exist — the LLM is never called, so
-        this is also the safe path for deploys where the LLM is
-        temporarily unavailable but an operator still wants forget to
-        land. The default ``"regen"`` keeps the Phase 36 behaviour.
+        ``summary_strategy="drop"`` forces the drop branch even when
+        survivors exist — the LLM is never called, so this is also the
+        safe path for deploys where the LLM is temporarily unavailable
+        but an operator still wants forget to land. The default
+        ``"regen"`` keeps the rewrite-from-survivors behaviour.
         """
         hit = self._memory.get(summary_id)
         if hit is None:

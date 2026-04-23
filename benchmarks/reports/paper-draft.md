@@ -612,7 +612,10 @@ strict no-op on the numbers up to floating-point reordering.
 
 ---
 
-*This draft is the aggregator, not the paper. Next: pull figures
-from the tables (disk/retrieve scatter, drift trend line), wire
-LoCoMo once an LLM judge is available, and structure the narrative
-for an arXiv submission.*
+*This draft is the aggregator, not the paper. Current state as of
+2026-04-22: LoCoMo + LongMemEval both wired with qwen9b and Claude
+judges; M1 milestone landed 2026-04-20 with +22.8% F1 / +15.6% rank-1
+over a cosine-only baseline (see
+[`docs/milestones/2026-04-20-hybrid-retrieval-validated.md`](../../docs/milestones/2026-04-20-hybrid-retrieval-validated.md)).
+Next: pull figures from the tables (disk/retrieve scatter, drift trend
+line) and structure the narrative for an arXiv submission.*

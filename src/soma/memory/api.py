@@ -6,12 +6,13 @@ agent developers a familiar ``store``/``retrieve`` contract while
 leaving room for the graph/plasticity differentiators to come online in
 later stages.
 
-Stage 2 (this module) ships the flat vector-store semantics plus
-save/load. Stage 3 wires ``consolidate()`` into SOMA's growth engine so
-stored entries become graph structure that prunes and reinforces with
-use; today ``consolidate`` is a safe no-op so callers can include the
-call in their loops now and not have to revisit when the plasticity
-path lands.
+This module ships the flat vector-store semantics, save/load, hybrid
+BM25+cosine retrieval, cross-encoder rerank, and a safe-by-default
+``consolidate()`` cycle. The plastic-graph growth path (under
+``src/soma/core``, ``growth/``, ``metacognition/``) is the research
+substrate — independent from the memory-layer product surface that
+``pip install soma-memory`` delivers. See ``docs/positioning.md`` for
+the product / substrate split.
 """
 
 from __future__ import annotations
@@ -134,8 +135,8 @@ def _coerce_store(dest: str | Path | ObjectStore) -> ObjectStore:
     * A ``Path`` or PathLike — treated as a local filesystem root and
       routed through :class:`LocalFSObjectStore`.
     * A ``str`` — parsed by :func:`parse_store_url`. Plain absolute
-      paths auto-prefix to ``file://``; ``s3://`` / ``gs://`` raise
-      today and flip in Phases 31 / 32.
+      paths auto-prefix to ``file://``; ``s3://`` / ``gs://`` require
+      the ``[s3]`` / ``[gcs]`` extras respectively.
     """
     if isinstance(dest, ObjectStore):
         return dest
@@ -272,14 +273,18 @@ class MemoryLayer:
     ``retrieve(query)`` ranks by cosine similarity. Behind the API,
     entries are kept alongside their pooled-token-embedding vectors in
     an in-memory tensor that scales linearly with the store size (fine
-    for up to ~100K entries on consumer hardware; Stage 3 adds a
-    chunked / on-disk path for larger stores).
+    for up to ~100K entries on consumer hardware; for larger stores,
+    opt into FAISS ANN via the ``[ann]`` extra, or switch to an
+    external backend — Qdrant / LanceDB / Chroma / pgvector — via the
+    ``backend=`` kwarg. See ``docs/backends.md``.
 
     The embedder is caller-supplied — pass any
     :class:`soma.io.text_encoder.TextEncoder` plus its tokenizer. This
     keeps the memory layer independent of any specific embedding model,
-    so callers can swap in sentence-transformers or an LLM's input
-    embeddings once Stage 3's benchmark harness picks a default.
+    so callers can swap in sentence-transformers (``[sbert]`` extra;
+    :meth:`with_sbert` defaults to ``all-MiniLM-L6-v2``) or an LLM's
+    input embeddings. See ``docs/backends.md`` for the
+    benchmark-backed recommendations.
 
     Persistence writes a directory bundle compatible with
     ``SOMA.save_bundle`` naming: ``tokenizer.json``, ``encoder.pt``,
@@ -1725,10 +1730,10 @@ class MemoryLayer:
 
         ``dest`` may be:
 
-        * A directory :class:`Path` (pre-Phase-30 call shape).
+        * A directory :class:`Path` — the original call shape.
         * A ``str`` URL — ``file:///abs/path`` or a plain absolute path
-          that auto-prefixes to ``file://``. Phase 31 adds ``s3://``,
-          Phase 32 ``gs://``.
+          that auto-prefixes to ``file://``. The ``[s3]`` / ``[gcs]``
+          extras unlock ``s3://bucket/prefix`` and ``gs://bucket/prefix``.
         * An :class:`ObjectStore` instance — convenient for tests that
           already built one, or callers wiring up a third-party adapter.
 
@@ -1773,9 +1778,9 @@ class MemoryLayer:
             stacked = torch.empty((0, self._embed_dim))
         # Embeddings are the heaviest artefact in the bundle; torch.save
         # into an in-memory buffer and put_bytes it. For truly massive
-        # stores the S3/GCS adapters (Phases 31-32) will prefer
-        # ``put_stream`` — the Protocol is ready for that; the local
-        # adapter treats both paths equivalently.
+        # stores the S3/GCS adapters prefer ``put_stream`` — the Protocol
+        # is ready for that; the local adapter treats both paths
+        # equivalently.
         emb_buf = io.BytesIO()
         torch.save(stacked, emb_buf)
         store.put_bytes("memory_embeddings.pt", emb_buf.getvalue())
@@ -1831,10 +1836,10 @@ class MemoryLayer:
 
         ``src`` may be:
 
-        * A directory :class:`Path` (pre-Phase-30 call shape).
+        * A directory :class:`Path` — the original call shape.
         * A ``str`` URL — ``file:///abs/path`` or a plain absolute path
-          that auto-prefixes to ``file://``. Phase 31 adds ``s3://``,
-          Phase 32 ``gs://``.
+          that auto-prefixes to ``file://``. The ``[s3]`` / ``[gcs]``
+          extras unlock ``s3://bucket/prefix`` and ``gs://bucket/prefix``.
         * An :class:`ObjectStore` instance.
 
         Bundles saved with the TextEncoder path include ``tokenizer.json``
@@ -1849,9 +1854,11 @@ class MemoryLayer:
         case for a brand-new store that never called ``save()``) loads
         from the WAL header for ``embed_dim`` and replays from there.
 
-        Phase 30 only wires the :class:`LocalFSObjectStore` adapter;
-        remote stores still need a local staging directory for WAL
-        replay, and that lands with the S3 / GCS adapters.
+        Remote stores still need a local staging directory for WAL
+        replay — the S3 / GCS adapters stage to a temp dir before
+        calling the WAL path. This is transparent to callers; the only
+        effect is a small disk footprint under ``TMPDIR`` for the
+        duration of ``load()``.
         """
         store = _coerce_store(src)
         # WAL replay + bundle.lock still need a real local directory.

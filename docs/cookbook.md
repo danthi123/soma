@@ -495,7 +495,7 @@ deployment. Install the extra and swap the backend at construction
 time:
 
 ```bash
-pip install -e ".[lancedb,sbert]"
+pip install "soma-memory[lancedb,sbert]"
 ```
 
 ```python
@@ -544,12 +544,12 @@ on-disk storage past RAM size.
 
 ## 20. Operate with Prometheus + Grafana
 
-`pip install -e ".[metrics]"` exposes 18+ counters / gauges /
+`pip install "soma-memory[metrics]"` exposes 18+ counters / gauges /
 histograms on `GET /metrics` — every MemoryLayer hot path plus FastAPI
 per-route timings. Schema and labels are stable across minor versions.
 
 ```bash
-pip install -e ".[metrics]"
+pip install "soma-memory[metrics]"
 soma serve --port 8420                 # exposes /metrics
 curl -s http://localhost:8420/metrics | grep '^soma_'
 ```

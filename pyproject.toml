@@ -110,7 +110,7 @@ ann = [
 qdrant = [
     # QdrantBackend adapter — optional extra. Without this, SOMA runs on
     # the default InProcBackend (FAISS + numpy) which needs no extra
-    # setup. Install with `pip install soma[qdrant]` to unlock the HTTP
+    # setup. Install with `pip install soma-memory[qdrant]` to unlock the HTTP
     # scale path and local-file mode. See docs/backends.md.
     "qdrant-client>=1.10",
 ]
@@ -131,7 +131,7 @@ lancedb = [
     # InProc (RAM-bound) and Qdrant HTTP (requires infra). Arrow-native,
     # columnar, fully embedded; a LanceDB table IS a directory on disk,
     # which composes with SOMA's bundle layout. Install with
-    # `pip install soma[lancedb]`. See docs/backends.md.
+    # `pip install soma-memory[lancedb]`. See docs/backends.md.
     "lancedb>=0.11",
 ]
 chroma = [
@@ -139,7 +139,7 @@ chroma = [
     # existing Chroma users: point MemoryLayer at an existing
     # chromadb PersistentClient directory and SOMA's memory layer
     # composes on top (ids/texts/metadata/WAL stay in SOMA; vectors
-    # stay in Chroma). Install with `pip install soma[chroma]`. See
+    # stay in Chroma). Install with `pip install soma-memory[chroma]`. See
     # docs/backends.md. Floor pinned to 0.5 because the
     # delete_collection + recreate semantics and the removal of the
     # explicit ``persist()`` method landed in 0.5 — supporting the
@@ -154,14 +154,14 @@ pgvector = [
     # and SOMA's memory layer composes on top. psycopg v3 driver —
     # async-ready, much faster than v2. pgvector>=0.3 introduced the
     # ``vector(n)`` type alongside the legacy array form. Install with
-    # `pip install soma[pgvector]`. See docs/backends.md.
+    # `pip install soma-memory[pgvector]`. See docs/backends.md.
     "psycopg[binary]>=3",
     "pgvector>=0.3",
 ]
 s3 = [
     # S3ObjectStore adapter — optional extra. Without this, SOMA's bundle
     # storage runs on the default LocalFSObjectStore (filesystem only).
-    # Install with `pip install soma[s3]` to unlock ``s3://bucket/prefix``
+    # Install with `pip install soma-memory[s3]` to unlock ``s3://bucket/prefix``
     # URLs on ``MemoryLayer.save``/``load`` and any S3-compatible endpoint
     # (MinIO, Cloudflare R2, DigitalOcean Spaces) via ``endpoint_url=``.
     # See docs/backends.md.
@@ -177,7 +177,7 @@ s3-test = [
 gcs = [
     # GCSObjectStore adapter — optional extra. Without this, SOMA's bundle
     # storage runs on the default LocalFSObjectStore (filesystem only).
-    # Install with `pip install soma[gcs]` to unlock ``gs://bucket/prefix``
+    # Install with `pip install soma-memory[gcs]` to unlock ``gs://bucket/prefix``
     # URLs on ``MemoryLayer.save``/``load``. Credentials follow the standard
     # Google Application Default Credentials chain
     # (``GOOGLE_APPLICATION_CREDENTIALS``, metadata server on GCP,
@@ -214,7 +214,7 @@ llamaindex = [
 metrics = [
     # Prometheus instrumentation. Kept as an optional extra so the core
     # `serve` path runs without observability deps. Install with
-    # `pip install soma[metrics]` to enable the /metrics endpoint and
+    # `pip install soma-memory[metrics]` to enable the /metrics endpoint and
     # soma_* counters/histograms in soma.metrics.
     "prometheus-fastapi-instrumentator>=7.1",
     "prometheus-client>=0.20",
@@ -224,7 +224,7 @@ redis-revocation = [
     # where the default file-backed JSONL store's 30 s poll lag is
     # unacceptable. Instant cross-worker propagation via Redis, with
     # automatic TTL equal to the token's `exp` claim. Install with
-    # `pip install soma[redis-revocation]`. See docs/auth.md.
+    # `pip install soma-memory[redis-revocation]`. See docs/auth.md.
     "redis>=5.0",
 ]
 otel = [

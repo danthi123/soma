@@ -12,8 +12,8 @@ SOMA ships three layers of observability, each opt-in:
    side is set up. Opt-in, disabled by default.
 
 Everything is gated behind optional extras — the default `pip install
-soma` pulls zero observability dependencies, and the core `serve` path
-works with none of them installed.
+soma-memory` pulls zero observability dependencies, and the core `serve`
+path works with none of them installed.
 
 ## Install
 
@@ -33,14 +33,14 @@ uvicorn soma.serve:app --port 8420
 ## Prometheus metrics
 
 The `GET /metrics` endpoint is exposed by
-`prometheus-fastapi-instrumentator` when `soma[metrics]` is installed.
-By default `/metrics` is public (standard Prom scraper practice). Set
-`SOMA_METRICS_PUBLIC=0` to put it behind `Depends(require_auth)` with
-a `"read"` scope requirement — useful for deploys on shared networks
-where metrics are sensitive. When no JWT secret or API key is
-configured, the gate still returns 200 (operators can't accidentally
-lock themselves out). When the `soma[metrics]` extra is absent,
-`/metrics` simply 404s.
+`prometheus-fastapi-instrumentator` when `soma-memory[metrics]` is
+installed. By default `/metrics` is public (standard Prom scraper
+practice). Set `SOMA_METRICS_PUBLIC=0` to put it behind
+`Depends(require_auth)` with a `"read"` scope requirement — useful for
+deploys on shared networks where metrics are sensitive. When no JWT
+secret or API key is configured, the gate still returns 200 (operators
+can't accidentally lock themselves out). When the
+`soma-memory[metrics]` extra is absent, `/metrics` simply 404s.
 
 ### Metric reference
 
@@ -241,7 +241,7 @@ tell you *route-level* health, the `soma_*` series tell you
 
 ## Troubleshooting
 
-- **`/metrics` 404s despite `soma[metrics]` install** — the import
+- **`/metrics` 404s despite `soma-memory[metrics]` install** — the import
   happens at module load. Restart your `uvicorn` worker after
   installing the extra.
 - **No JSON lines in stdout** — confirm `SOMA_LOG_JSON=1` is in the

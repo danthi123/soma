@@ -13,7 +13,7 @@ don't have to write the same glue every time.
 from soma.llm import RAGSession, backend_from_env
 from soma.memory import MemoryLayer
 
-mem  = MemoryLayer.load("brain/")
+mem  = MemoryLayer.load_with_sbert("brain/")
 chat = RAGSession(memory=mem, llm=backend_from_env())
 print(chat.ask("where does the user live?").text)
 ```

@@ -89,7 +89,7 @@ for the design notes.
 from soma.llm    import backend_from_env
 from soma.memory import ConversationalMemory, MemoryLayer
 
-mem = MemoryLayer.load("./data/bundles/alice")   # the bundle you just wrote to
+mem = MemoryLayer.load_with_sbert("./data/bundles/alice")   # the bundle you just wrote to
 llm = backend_from_env()                         # Ollama > OpenAI > Anthropic > HF
 cm  = ConversationalMemory(memory=mem, llm=llm, session_id="chat-1")
 

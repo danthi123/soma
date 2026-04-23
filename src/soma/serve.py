@@ -1068,14 +1068,19 @@ def auth_revoke(body: AuthRevokeRequest) -> AuthRevokeResponse:
     # Redis), a revoke call is a silent no-op — the record is accepted,
     # thrown on the floor, and every subsequent verify_token skips the
     # revocation gate anyway. Fail loudly so operators can't mistake
-    # "route returned 200" for "token is actually revoked".
+    # "route returned 200" for "token is actually revoked". Matches the
+    # CLI flow at soma.cli._cmd_auth_revoke which refuses to run when
+    # SOMA_JWT_BLOCKLIST_PATH is unset.
+    #
+    # 503 Service Unavailable (not 501 Not Implemented): the feature IS
+    # implemented — it's just not wired in this deployment. Operators fix
+    # by setting the env var and restarting; the service is then available.
     if isinstance(_blocklist, _NullBlocklist):
         raise HTTPException(
-            status_code=501,
+            status_code=503,
             detail=(
-                "Token revocation is disabled: no blocklist configured. "
-                "Set SOMA_JWT_BLOCKLIST_PATH=<path> or configure Redis and "
-                "restart. See docs/auth.md 'Revocation' for setup."
+                "blocklist not configured; set SOMA_JWT_BLOCKLIST_PATH or "
+                "SOMA_JWT_BLOCKLIST_REDIS_URL and restart. See docs/auth.md."
             ),
         )
 

@@ -125,11 +125,14 @@ def test_revoke_rejects_missing_fields(app_with_blocklist):
     assert resp.status_code == 400, resp.text
 
 
-def test_revoke_returns_501_when_no_blocklist_configured(tmp_path, monkeypatch):
+def test_revoke_returns_503_when_no_blocklist_configured(tmp_path, monkeypatch):
     """If SOMA_JWT_BLOCKLIST_PATH is unset and no Redis is wired,
     ``_blocklist`` is a ``_NullBlocklist`` whose ``add`` is a no-op.
     Returning 200 would mislead callers into thinking the token was
-    revoked when it wasn't. Return 501 Not Implemented instead."""
+    revoked when it wasn't. Return 503 Service Unavailable instead —
+    the feature IS implemented, it's just not configured in this
+    deployment. Matches the CLI flow which refuses to run with no
+    SOMA_JWT_BLOCKLIST_PATH set."""
     for key in (
         "SOMA_API_KEY",
         "SOMA_JWT_BLOCKLIST_PATH",
@@ -154,5 +157,6 @@ def test_revoke_returns_501_when_no_blocklist_configured(tmp_path, monkeypatch):
         json={"jti": "some-jti", "exp": int(time.time()) + 3600},
         headers={"Authorization": f"Bearer {admin_token}"},
     )
-    assert resp.status_code == 501, resp.text
+    assert resp.status_code == 503, resp.text
     assert "blocklist" in resp.text.lower()
+    assert "SOMA_JWT_BLOCKLIST_PATH" in resp.text

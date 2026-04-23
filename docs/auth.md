@@ -277,7 +277,10 @@ writes a ``RevocationRecord`` to the blocklist keyed off
 
 Requires ``admin`` scope on any bundle in the authenticated token's
 claim. 401 if unauthenticated, 403 if the caller lacks admin scope,
-400 if neither ``token`` nor ``jti``+``exp`` is supplied.
+400 if neither ``token`` nor ``jti``+``exp`` is supplied, **503 if
+the server was booted without** ``SOMA_JWT_BLOCKLIST_PATH`` (or
+``SOMA_JWT_BLOCKLIST_REDIS_URL``) — the feature is implemented but
+revocation can't persist; set the env and restart.
 
 Propagation:
 

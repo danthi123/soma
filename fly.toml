@@ -9,6 +9,13 @@ primary_region = "iad"
   SOMA_BUNDLE_PATH = "/data/memory"
   SOMA_BUNDLES_DIR = "/data/bundles"
 
+# Auth — set via `fly secrets set SOMA_JWT_SECRET=$(openssl rand -hex 32)`
+# before first deploy. Without this, every endpoint is unauthenticated
+# (Open mode). See docs/auth.md for the full JWT setup.
+# [env.auth]
+#   SOMA_JWT_ALG = "HS256"
+#   SOMA_JWT_LEEWAY = "60"
+
 [[mounts]]
   source = "soma_data"
   destination = "/data"

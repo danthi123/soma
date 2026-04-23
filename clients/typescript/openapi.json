@@ -1,1839 +1,2307 @@
 {
-    "openapi": "3.1.0",
-    "info": {
-        "title": "SOMA Memory Layer",
-        "description": "Local-first agent memory that learns.",
-        "version": "0.1.0"
-    },
-    "paths": {
-        "/metrics": {
-            "get": {
-                "tags": [
-                    "system"
-                ],
-                "summary": "Metrics",
-                "description": "Endpoint that serves Prometheus metrics.",
-                "operationId": "metrics_metrics_get",
-                "responses": {
-                    "200": {
-                        "description": "Successful Response",
-                        "content": {
-                            "application/json": {
-                                "schema": {}
-                            }
-                        }
-                    }
-                }
+  "openapi": "3.1.0",
+  "info": {
+    "title": "SOMA Memory Layer",
+    "description": "Local-first agent memory that learns.",
+    "version": "0.2.0rc3"
+  },
+  "paths": {
+    "/metrics": {
+      "get": {
+        "tags": [
+          "system"
+        ],
+        "summary": "Metrics",
+        "description": "Endpoint that serves Prometheus metrics.",
+        "operationId": "metrics_metrics_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
             }
-        },
-        "/health": {
-            "get": {
-                "tags": [
-                    "system"
-                ],
-                "summary": "Health",
-                "operationId": "health",
-                "responses": {
-                    "200": {
-                        "description": "Successful Response",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/HealthResponse"
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        "/version": {
-            "get": {
-                "tags": [
-                    "system"
-                ],
-                "summary": "Version Endpoint",
-                "operationId": "version",
-                "responses": {
-                    "200": {
-                        "description": "Successful Response",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/VersionResponse"
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        "/status": {
-            "get": {
-                "tags": [
-                    "default"
-                ],
-                "summary": "Status Ep",
-                "operationId": "status",
-                "responses": {
-                    "200": {
-                        "description": "Successful Response",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/StatusResponse"
-                                }
-                            }
-                        }
-                    },
-                    "401": {
-                        "description": "Missing or invalid API key.",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/ErrorResponse"
-                                }
-                            }
-                        }
-                    },
-                    "404": {
-                        "description": "Requested resource not found.",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/ErrorResponse"
-                                }
-                            }
-                        }
-                    }
-                },
-                "security": [
-                    {
-                        "bearerAuth": []
-                    }
-                ]
-            }
-        },
-        "/store": {
-            "post": {
-                "tags": [
-                    "default"
-                ],
-                "summary": "Store",
-                "operationId": "store",
-                "requestBody": {
-                    "content": {
-                        "application/json": {
-                            "schema": {
-                                "$ref": "#/components/schemas/StoreRequest"
-                            }
-                        }
-                    },
-                    "required": true
-                },
-                "responses": {
-                    "200": {
-                        "description": "Successful Response",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/StoreResponse"
-                                }
-                            }
-                        }
-                    },
-                    "401": {
-                        "description": "Missing or invalid API key.",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/ErrorResponse"
-                                }
-                            }
-                        }
-                    },
-                    "404": {
-                        "description": "Requested resource not found.",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/ErrorResponse"
-                                }
-                            }
-                        }
-                    },
-                    "422": {
-                        "description": "Validation Error",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/HTTPValidationError"
-                                }
-                            }
-                        }
-                    }
-                },
-                "security": [
-                    {
-                        "bearerAuth": []
-                    }
-                ]
-            }
-        },
-        "/store_batch": {
-            "post": {
-                "tags": [
-                    "default"
-                ],
-                "summary": "Store Batch",
-                "operationId": "store_batch",
-                "requestBody": {
-                    "content": {
-                        "application/json": {
-                            "schema": {
-                                "$ref": "#/components/schemas/StoreBatchRequest"
-                            }
-                        }
-                    },
-                    "required": true
-                },
-                "responses": {
-                    "200": {
-                        "description": "Successful Response",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/StoreBatchResponse"
-                                }
-                            }
-                        }
-                    },
-                    "401": {
-                        "description": "Missing or invalid API key.",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/ErrorResponse"
-                                }
-                            }
-                        }
-                    },
-                    "404": {
-                        "description": "Requested resource not found.",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/ErrorResponse"
-                                }
-                            }
-                        }
-                    },
-                    "422": {
-                        "description": "Validation Error",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/HTTPValidationError"
-                                }
-                            }
-                        }
-                    }
-                },
-                "security": [
-                    {
-                        "bearerAuth": []
-                    }
-                ]
-            }
-        },
-        "/related/{node_id}": {
-            "get": {
-                "tags": [
-                    "default"
-                ],
-                "summary": "Related",
-                "operationId": "related",
-                "security": [
-                    {
-                        "bearerAuth": []
-                    }
-                ],
-                "parameters": [
-                    {
-                        "name": "node_id",
-                        "in": "path",
-                        "required": true,
-                        "schema": {
-                            "type": "string",
-                            "title": "Node Id"
-                        }
-                    },
-                    {
-                        "name": "k",
-                        "in": "query",
-                        "required": false,
-                        "schema": {
-                            "type": "integer",
-                            "default": 5,
-                            "title": "K"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "Successful Response",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/RetrieveResponse"
-                                }
-                            }
-                        }
-                    },
-                    "401": {
-                        "description": "Missing or invalid API key.",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/ErrorResponse"
-                                }
-                            }
-                        }
-                    },
-                    "404": {
-                        "description": "Requested resource not found.",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/ErrorResponse"
-                                }
-                            }
-                        }
-                    },
-                    "422": {
-                        "description": "Validation Error",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/HTTPValidationError"
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        "/retrieve": {
-            "post": {
-                "tags": [
-                    "default"
-                ],
-                "summary": "Retrieve",
-                "operationId": "retrieve",
-                "requestBody": {
-                    "content": {
-                        "application/json": {
-                            "schema": {
-                                "$ref": "#/components/schemas/RetrieveRequest"
-                            }
-                        }
-                    },
-                    "required": true
-                },
-                "responses": {
-                    "200": {
-                        "description": "Successful Response",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/RetrieveResponse"
-                                }
-                            }
-                        }
-                    },
-                    "401": {
-                        "description": "Missing or invalid API key.",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/ErrorResponse"
-                                }
-                            }
-                        }
-                    },
-                    "404": {
-                        "description": "Requested resource not found.",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/ErrorResponse"
-                                }
-                            }
-                        }
-                    },
-                    "422": {
-                        "description": "Validation Error",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/HTTPValidationError"
-                                }
-                            }
-                        }
-                    }
-                },
-                "security": [
-                    {
-                        "bearerAuth": []
-                    }
-                ]
-            }
-        },
-        "/get/{node_id}": {
-            "get": {
-                "tags": [
-                    "default"
-                ],
-                "summary": "Get Entry",
-                "operationId": "get",
-                "security": [
-                    {
-                        "bearerAuth": []
-                    }
-                ],
-                "parameters": [
-                    {
-                        "name": "node_id",
-                        "in": "path",
-                        "required": true,
-                        "schema": {
-                            "type": "string",
-                            "title": "Node Id"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "Successful Response",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/HitResponse"
-                                }
-                            }
-                        }
-                    },
-                    "401": {
-                        "description": "Missing or invalid API key.",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/ErrorResponse"
-                                }
-                            }
-                        }
-                    },
-                    "404": {
-                        "description": "Requested resource not found.",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/ErrorResponse"
-                                }
-                            }
-                        }
-                    },
-                    "422": {
-                        "description": "Validation Error",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/HTTPValidationError"
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        "/forget": {
-            "post": {
-                "tags": [
-                    "default"
-                ],
-                "summary": "Forget",
-                "operationId": "forget",
-                "requestBody": {
-                    "content": {
-                        "application/json": {
-                            "schema": {
-                                "$ref": "#/components/schemas/ForgetRequest"
-                            }
-                        }
-                    },
-                    "required": true
-                },
-                "responses": {
-                    "200": {
-                        "description": "Successful Response",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/ForgetResponse"
-                                }
-                            }
-                        }
-                    },
-                    "401": {
-                        "description": "Missing or invalid API key.",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/ErrorResponse"
-                                }
-                            }
-                        }
-                    },
-                    "404": {
-                        "description": "Requested resource not found.",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/ErrorResponse"
-                                }
-                            }
-                        }
-                    },
-                    "422": {
-                        "description": "Validation Error",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/HTTPValidationError"
-                                }
-                            }
-                        }
-                    }
-                },
-                "security": [
-                    {
-                        "bearerAuth": []
-                    }
-                ]
-            }
-        },
-        "/consolidate": {
-            "post": {
-                "tags": [
-                    "default"
-                ],
-                "summary": "Consolidate",
-                "operationId": "consolidate",
-                "responses": {
-                    "200": {
-                        "description": "Successful Response",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/ConsolidateResponse"
-                                }
-                            }
-                        }
-                    },
-                    "401": {
-                        "description": "Missing or invalid API key.",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/ErrorResponse"
-                                }
-                            }
-                        }
-                    },
-                    "404": {
-                        "description": "Requested resource not found.",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/ErrorResponse"
-                                }
-                            }
-                        }
-                    }
-                },
-                "security": [
-                    {
-                        "bearerAuth": []
-                    }
-                ]
-            }
-        },
-        "/save": {
-            "post": {
-                "tags": [
-                    "default"
-                ],
-                "summary": "Save",
-                "operationId": "save",
-                "responses": {
-                    "200": {
-                        "description": "Successful Response",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/SaveResponse"
-                                }
-                            }
-                        }
-                    },
-                    "401": {
-                        "description": "Missing or invalid API key.",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/ErrorResponse"
-                                }
-                            }
-                        }
-                    },
-                    "404": {
-                        "description": "Requested resource not found.",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/ErrorResponse"
-                                }
-                            }
-                        }
-                    }
-                },
-                "security": [
-                    {
-                        "bearerAuth": []
-                    }
-                ]
-            }
-        },
-        "/recent": {
-            "get": {
-                "tags": [
-                    "default"
-                ],
-                "summary": "Recent",
-                "operationId": "recent",
-                "security": [
-                    {
-                        "bearerAuth": []
-                    }
-                ],
-                "parameters": [
-                    {
-                        "name": "n",
-                        "in": "query",
-                        "required": false,
-                        "schema": {
-                            "type": "integer",
-                            "default": 10,
-                            "title": "N"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "Successful Response",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/RetrieveResponse"
-                                }
-                            }
-                        }
-                    },
-                    "401": {
-                        "description": "Missing or invalid API key.",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/ErrorResponse"
-                                }
-                            }
-                        }
-                    },
-                    "404": {
-                        "description": "Requested resource not found.",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/ErrorResponse"
-                                }
-                            }
-                        }
-                    },
-                    "422": {
-                        "description": "Validation Error",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/HTTPValidationError"
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        "/bundles/{name}/status": {
-            "get": {
-                "tags": [
-                    "bundles"
-                ],
-                "summary": "Status Bundle",
-                "operationId": "bundles_status",
-                "security": [
-                    {
-                        "bearerAuth": []
-                    }
-                ],
-                "parameters": [
-                    {
-                        "name": "name",
-                        "in": "path",
-                        "required": true,
-                        "schema": {
-                            "type": "string",
-                            "title": "Name"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "Successful Response",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/StatusResponse"
-                                }
-                            }
-                        }
-                    },
-                    "401": {
-                        "description": "Missing or invalid API key.",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/ErrorResponse"
-                                }
-                            }
-                        }
-                    },
-                    "404": {
-                        "description": "Requested resource not found.",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/ErrorResponse"
-                                }
-                            }
-                        }
-                    },
-                    "422": {
-                        "description": "Validation Error",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/HTTPValidationError"
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        "/bundles/{name}/store": {
-            "post": {
-                "tags": [
-                    "bundles"
-                ],
-                "summary": "Store Bundle",
-                "operationId": "bundles_store",
-                "security": [
-                    {
-                        "bearerAuth": []
-                    }
-                ],
-                "parameters": [
-                    {
-                        "name": "name",
-                        "in": "path",
-                        "required": true,
-                        "schema": {
-                            "type": "string",
-                            "title": "Name"
-                        }
-                    }
-                ],
-                "requestBody": {
-                    "required": true,
-                    "content": {
-                        "application/json": {
-                            "schema": {
-                                "$ref": "#/components/schemas/StoreRequest"
-                            }
-                        }
-                    }
-                },
-                "responses": {
-                    "200": {
-                        "description": "Successful Response",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/StoreResponse"
-                                }
-                            }
-                        }
-                    },
-                    "401": {
-                        "description": "Missing or invalid API key.",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/ErrorResponse"
-                                }
-                            }
-                        }
-                    },
-                    "404": {
-                        "description": "Requested resource not found.",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/ErrorResponse"
-                                }
-                            }
-                        }
-                    },
-                    "422": {
-                        "description": "Validation Error",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/HTTPValidationError"
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        "/bundles/{name}/store_batch": {
-            "post": {
-                "tags": [
-                    "bundles"
-                ],
-                "summary": "Store Batch Bundle",
-                "operationId": "bundles_store_batch",
-                "security": [
-                    {
-                        "bearerAuth": []
-                    }
-                ],
-                "parameters": [
-                    {
-                        "name": "name",
-                        "in": "path",
-                        "required": true,
-                        "schema": {
-                            "type": "string",
-                            "title": "Name"
-                        }
-                    }
-                ],
-                "requestBody": {
-                    "required": true,
-                    "content": {
-                        "application/json": {
-                            "schema": {
-                                "$ref": "#/components/schemas/StoreBatchRequest"
-                            }
-                        }
-                    }
-                },
-                "responses": {
-                    "200": {
-                        "description": "Successful Response",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/StoreBatchResponse"
-                                }
-                            }
-                        }
-                    },
-                    "401": {
-                        "description": "Missing or invalid API key.",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/ErrorResponse"
-                                }
-                            }
-                        }
-                    },
-                    "404": {
-                        "description": "Requested resource not found.",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/ErrorResponse"
-                                }
-                            }
-                        }
-                    },
-                    "422": {
-                        "description": "Validation Error",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/HTTPValidationError"
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        "/bundles/{name}/related/{node_id}": {
-            "get": {
-                "tags": [
-                    "bundles"
-                ],
-                "summary": "Related Bundle",
-                "operationId": "bundles_related",
-                "security": [
-                    {
-                        "bearerAuth": []
-                    }
-                ],
-                "parameters": [
-                    {
-                        "name": "name",
-                        "in": "path",
-                        "required": true,
-                        "schema": {
-                            "type": "string",
-                            "title": "Name"
-                        }
-                    },
-                    {
-                        "name": "node_id",
-                        "in": "path",
-                        "required": true,
-                        "schema": {
-                            "type": "string",
-                            "title": "Node Id"
-                        }
-                    },
-                    {
-                        "name": "k",
-                        "in": "query",
-                        "required": false,
-                        "schema": {
-                            "type": "integer",
-                            "default": 5,
-                            "title": "K"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "Successful Response",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/RetrieveResponse"
-                                }
-                            }
-                        }
-                    },
-                    "401": {
-                        "description": "Missing or invalid API key.",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/ErrorResponse"
-                                }
-                            }
-                        }
-                    },
-                    "404": {
-                        "description": "Requested resource not found.",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/ErrorResponse"
-                                }
-                            }
-                        }
-                    },
-                    "422": {
-                        "description": "Validation Error",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/HTTPValidationError"
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        "/bundles/{name}/retrieve": {
-            "post": {
-                "tags": [
-                    "bundles"
-                ],
-                "summary": "Retrieve Bundle",
-                "operationId": "bundles_retrieve",
-                "security": [
-                    {
-                        "bearerAuth": []
-                    }
-                ],
-                "parameters": [
-                    {
-                        "name": "name",
-                        "in": "path",
-                        "required": true,
-                        "schema": {
-                            "type": "string",
-                            "title": "Name"
-                        }
-                    }
-                ],
-                "requestBody": {
-                    "required": true,
-                    "content": {
-                        "application/json": {
-                            "schema": {
-                                "$ref": "#/components/schemas/RetrieveRequest"
-                            }
-                        }
-                    }
-                },
-                "responses": {
-                    "200": {
-                        "description": "Successful Response",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/RetrieveResponse"
-                                }
-                            }
-                        }
-                    },
-                    "401": {
-                        "description": "Missing or invalid API key.",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/ErrorResponse"
-                                }
-                            }
-                        }
-                    },
-                    "404": {
-                        "description": "Requested resource not found.",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/ErrorResponse"
-                                }
-                            }
-                        }
-                    },
-                    "422": {
-                        "description": "Validation Error",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/HTTPValidationError"
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        "/bundles/{name}/get/{node_id}": {
-            "get": {
-                "tags": [
-                    "bundles"
-                ],
-                "summary": "Get Bundle",
-                "operationId": "bundles_get",
-                "security": [
-                    {
-                        "bearerAuth": []
-                    }
-                ],
-                "parameters": [
-                    {
-                        "name": "name",
-                        "in": "path",
-                        "required": true,
-                        "schema": {
-                            "type": "string",
-                            "title": "Name"
-                        }
-                    },
-                    {
-                        "name": "node_id",
-                        "in": "path",
-                        "required": true,
-                        "schema": {
-                            "type": "string",
-                            "title": "Node Id"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "Successful Response",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/HitResponse"
-                                }
-                            }
-                        }
-                    },
-                    "401": {
-                        "description": "Missing or invalid API key.",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/ErrorResponse"
-                                }
-                            }
-                        }
-                    },
-                    "404": {
-                        "description": "Requested resource not found.",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/ErrorResponse"
-                                }
-                            }
-                        }
-                    },
-                    "422": {
-                        "description": "Validation Error",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/HTTPValidationError"
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        "/bundles/{name}/forget": {
-            "post": {
-                "tags": [
-                    "bundles"
-                ],
-                "summary": "Forget Bundle",
-                "operationId": "bundles_forget",
-                "security": [
-                    {
-                        "bearerAuth": []
-                    }
-                ],
-                "parameters": [
-                    {
-                        "name": "name",
-                        "in": "path",
-                        "required": true,
-                        "schema": {
-                            "type": "string",
-                            "title": "Name"
-                        }
-                    }
-                ],
-                "requestBody": {
-                    "required": true,
-                    "content": {
-                        "application/json": {
-                            "schema": {
-                                "$ref": "#/components/schemas/ForgetRequest"
-                            }
-                        }
-                    }
-                },
-                "responses": {
-                    "200": {
-                        "description": "Successful Response",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/ForgetResponse"
-                                }
-                            }
-                        }
-                    },
-                    "401": {
-                        "description": "Missing or invalid API key.",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/ErrorResponse"
-                                }
-                            }
-                        }
-                    },
-                    "404": {
-                        "description": "Requested resource not found.",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/ErrorResponse"
-                                }
-                            }
-                        }
-                    },
-                    "422": {
-                        "description": "Validation Error",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/HTTPValidationError"
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        "/bundles/{name}/consolidate": {
-            "post": {
-                "tags": [
-                    "bundles"
-                ],
-                "summary": "Consolidate Bundle",
-                "operationId": "bundles_consolidate",
-                "security": [
-                    {
-                        "bearerAuth": []
-                    }
-                ],
-                "parameters": [
-                    {
-                        "name": "name",
-                        "in": "path",
-                        "required": true,
-                        "schema": {
-                            "type": "string",
-                            "title": "Name"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "Successful Response",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/ConsolidateResponse"
-                                }
-                            }
-                        }
-                    },
-                    "401": {
-                        "description": "Missing or invalid API key.",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/ErrorResponse"
-                                }
-                            }
-                        }
-                    },
-                    "404": {
-                        "description": "Requested resource not found.",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/ErrorResponse"
-                                }
-                            }
-                        }
-                    },
-                    "422": {
-                        "description": "Validation Error",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/HTTPValidationError"
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        "/bundles/{name}/save": {
-            "post": {
-                "tags": [
-                    "bundles"
-                ],
-                "summary": "Save Bundle",
-                "operationId": "bundles_save",
-                "security": [
-                    {
-                        "bearerAuth": []
-                    }
-                ],
-                "parameters": [
-                    {
-                        "name": "name",
-                        "in": "path",
-                        "required": true,
-                        "schema": {
-                            "type": "string",
-                            "title": "Name"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "Successful Response",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/SaveResponse"
-                                }
-                            }
-                        }
-                    },
-                    "401": {
-                        "description": "Missing or invalid API key.",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/ErrorResponse"
-                                }
-                            }
-                        }
-                    },
-                    "404": {
-                        "description": "Requested resource not found.",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/ErrorResponse"
-                                }
-                            }
-                        }
-                    },
-                    "422": {
-                        "description": "Validation Error",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/HTTPValidationError"
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        "/bundles/{name}/recent": {
-            "get": {
-                "tags": [
-                    "bundles"
-                ],
-                "summary": "Recent Bundle",
-                "operationId": "bundles_recent",
-                "security": [
-                    {
-                        "bearerAuth": []
-                    }
-                ],
-                "parameters": [
-                    {
-                        "name": "name",
-                        "in": "path",
-                        "required": true,
-                        "schema": {
-                            "type": "string",
-                            "title": "Name"
-                        }
-                    },
-                    {
-                        "name": "n",
-                        "in": "query",
-                        "required": false,
-                        "schema": {
-                            "type": "integer",
-                            "default": 10,
-                            "title": "N"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "Successful Response",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/RetrieveResponse"
-                                }
-                            }
-                        }
-                    },
-                    "401": {
-                        "description": "Missing or invalid API key.",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/ErrorResponse"
-                                }
-                            }
-                        }
-                    },
-                    "404": {
-                        "description": "Requested resource not found.",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/ErrorResponse"
-                                }
-                            }
-                        }
-                    },
-                    "422": {
-                        "description": "Validation Error",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/HTTPValidationError"
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+          }
         }
+      }
     },
-    "components": {
-        "schemas": {
-            "ConsolidateResponse": {
-                "properties": {
-                    "processed": {
-                        "type": "integer",
-                        "title": "Processed",
-                        "description": "Entries processed this consolidation."
-                    }
-                },
-                "type": "object",
-                "required": [
-                    "processed"
-                ],
-                "title": "ConsolidateResponse"
-            },
-            "ErrorResponse": {
-                "properties": {
-                    "detail": {
-                        "type": "string",
-                        "title": "Detail",
-                        "description": "Human-readable error detail."
-                    }
-                },
-                "type": "object",
-                "required": [
-                    "detail"
-                ],
-                "title": "ErrorResponse",
-                "description": "Uniform error body; mirrors FastAPI's HTTPException shape."
-            },
-            "ForgetRequest": {
-                "properties": {
-                    "node_id": {
-                        "type": "string",
-                        "title": "Node Id",
-                        "description": "Id of the memory entry to remove."
-                    }
-                },
-                "type": "object",
-                "required": [
-                    "node_id"
-                ],
-                "title": "ForgetRequest"
-            },
-            "ForgetResponse": {
-                "properties": {
-                    "removed": {
-                        "type": "boolean",
-                        "title": "Removed",
-                        "description": "True if the entry was deleted."
-                    }
-                },
-                "type": "object",
-                "required": [
-                    "removed"
-                ],
-                "title": "ForgetResponse"
-            },
-            "HTTPValidationError": {
-                "properties": {
-                    "detail": {
-                        "items": {
-                            "$ref": "#/components/schemas/ValidationError"
-                        },
-                        "type": "array",
-                        "title": "Detail"
-                    }
-                },
-                "type": "object",
-                "title": "HTTPValidationError"
-            },
-            "HealthResponse": {
-                "properties": {
-                    "ok": {
-                        "type": "boolean",
-                        "title": "Ok",
-                        "description": "Liveness flag; always true when reachable."
-                    },
-                    "loaded_bundles": {
-                        "type": "integer",
-                        "title": "Loaded Bundles",
-                        "description": "Count of bundles currently loaded into memory.",
-                        "examples": [
-                            2
-                        ]
-                    }
-                },
-                "type": "object",
-                "required": [
-                    "ok",
-                    "loaded_bundles"
-                ],
-                "title": "HealthResponse"
-            },
-            "HitResponse": {
-                "properties": {
-                    "node_id": {
-                        "type": "string",
-                        "title": "Node Id",
-                        "description": "Opaque id of the matched memory."
-                    },
-                    "text": {
-                        "type": "string",
-                        "title": "Text",
-                        "description": "Stored text of the matched memory."
-                    },
-                    "score": {
-                        "type": "number",
-                        "title": "Score",
-                        "description": "Relevance score; higher = closer match.",
-                        "examples": [
-                            0.873
-                        ]
-                    },
-                    "metadata": {
-                        "additionalProperties": true,
-                        "type": "object",
-                        "title": "Metadata",
-                        "description": "Metadata attached when the entry was stored."
-                    },
-                    "timestamp_step": {
-                        "type": "integer",
-                        "title": "Timestamp Step",
-                        "description": "Monotonic step counter when stored (0 if unknown).",
-                        "default": 0
-                    }
-                },
-                "type": "object",
-                "required": [
-                    "node_id",
-                    "text",
-                    "score"
-                ],
-                "title": "HitResponse"
-            },
-            "RetrieveRequest": {
-                "properties": {
-                    "query": {
-                        "type": "string",
-                        "title": "Query",
-                        "description": "Natural-language query; embedded then compared.",
-                        "examples": [
-                            "who lives in portland?"
-                        ]
-                    },
-                    "k": {
-                        "type": "integer",
-                        "title": "K",
-                        "description": "Max number of hits to return (top-k by score).",
-                        "default": 5,
-                        "examples": [
-                            5
-                        ]
-                    },
-                    "where": {
-                        "anyOf": [
-                            {
-                                "additionalProperties": true,
-                                "type": "object"
-                            },
-                            {
-                                "type": "null"
-                            }
-                        ],
-                        "title": "Where",
-                        "description": "Optional metadata filter; entries must match all keys."
-                    },
-                    "hybrid_alpha": {
-                        "anyOf": [
-                            {
-                                "type": "number"
-                            },
-                            {
-                                "type": "null"
-                            }
-                        ],
-                        "title": "Hybrid Alpha",
-                        "description": "0..1 blend of dense vs sparse (BM25) score."
-                    },
-                    "rerank_top_n": {
-                        "anyOf": [
-                            {
-                                "type": "integer"
-                            },
-                            {
-                                "type": "null"
-                            }
-                        ],
-                        "title": "Rerank Top N",
-                        "description": "If set, cross-encoder rerank of this many candidates."
-                    }
-                },
-                "type": "object",
-                "required": [
-                    "query"
-                ],
-                "title": "RetrieveRequest"
-            },
-            "RetrieveResponse": {
-                "properties": {
-                    "hits": {
-                        "items": {
-                            "$ref": "#/components/schemas/HitResponse"
-                        },
-                        "type": "array",
-                        "title": "Hits",
-                        "description": "Ordered matches, best first."
-                    }
-                },
-                "type": "object",
-                "required": [
-                    "hits"
-                ],
-                "title": "RetrieveResponse"
-            },
-            "SaveResponse": {
-                "properties": {
-                    "saved_to": {
-                        "type": "string",
-                        "title": "Saved To",
-                        "description": "Absolute bundle path written to disk."
-                    }
-                },
-                "type": "object",
-                "required": [
-                    "saved_to"
-                ],
-                "title": "SaveResponse"
-            },
-            "StatusResponse": {
-                "properties": {
-                    "num_entries": {
-                        "type": "integer",
-                        "title": "Num Entries",
-                        "description": "Total memories in this bundle."
-                    },
-                    "bundle_path": {
-                        "type": "string",
-                        "title": "Bundle Path",
-                        "description": "On-disk bundle directory."
-                    },
-                    "embed_model": {
-                        "type": "string",
-                        "title": "Embed Model",
-                        "description": "Configured embedding model name."
-                    }
-                },
-                "type": "object",
-                "required": [
-                    "num_entries",
-                    "bundle_path",
-                    "embed_model"
-                ],
-                "title": "StatusResponse"
-            },
-            "StoreBatchRequest": {
-                "properties": {
-                    "texts": {
-                        "items": {
-                            "type": "string"
-                        },
-                        "type": "array",
-                        "title": "Texts",
-                        "description": "Batch of texts to embed in one call."
-                    },
-                    "metadatas": {
-                        "anyOf": [
-                            {
-                                "items": {
-                                    "additionalProperties": true,
-                                    "type": "object"
-                                },
-                                "type": "array"
-                            },
-                            {
-                                "type": "null"
-                            }
-                        ],
-                        "title": "Metadatas",
-                        "description": "Optional per-text metadata, aligned to `texts`."
-                    }
-                },
-                "type": "object",
-                "required": [
-                    "texts"
-                ],
-                "title": "StoreBatchRequest"
-            },
-            "StoreBatchResponse": {
-                "properties": {
-                    "node_ids": {
-                        "items": {
-                            "type": "string"
-                        },
-                        "type": "array",
-                        "title": "Node Ids",
-                        "description": "Ids aligned to input `texts` order."
-                    }
-                },
-                "type": "object",
-                "required": [
-                    "node_ids"
-                ],
-                "title": "StoreBatchResponse"
-            },
-            "StoreRequest": {
-                "properties": {
-                    "text": {
-                        "type": "string",
-                        "title": "Text",
-                        "description": "Raw text to embed and store as one memory entry.",
-                        "examples": [
-                            "alex lives in portland"
-                        ]
-                    },
-                    "metadata": {
-                        "additionalProperties": true,
-                        "type": "object",
-                        "title": "Metadata",
-                        "description": "Arbitrary JSON tags for filtering at retrieval.",
-                        "examples": [
-                            {
-                                "source": "chat",
-                                "user": "alex"
-                            }
-                        ]
-                    }
-                },
-                "type": "object",
-                "required": [
-                    "text"
-                ],
-                "title": "StoreRequest"
-            },
-            "StoreResponse": {
-                "properties": {
-                    "node_id": {
-                        "type": "string",
-                        "title": "Node Id",
-                        "description": "Opaque id of the new memory entry."
-                    }
-                },
-                "type": "object",
-                "required": [
-                    "node_id"
-                ],
-                "title": "StoreResponse"
-            },
-            "ValidationError": {
-                "properties": {
-                    "loc": {
-                        "items": {
-                            "anyOf": [
-                                {
-                                    "type": "string"
-                                },
-                                {
-                                    "type": "integer"
-                                }
-                            ]
-                        },
-                        "type": "array",
-                        "title": "Location"
-                    },
-                    "msg": {
-                        "type": "string",
-                        "title": "Message"
-                    },
-                    "type": {
-                        "type": "string",
-                        "title": "Error Type"
-                    }
-                },
-                "type": "object",
-                "required": [
-                    "loc",
-                    "msg",
-                    "type"
-                ],
-                "title": "ValidationError"
-            },
-            "VersionResponse": {
-                "properties": {
-                    "version": {
-                        "type": "string",
-                        "title": "Version",
-                        "description": "Installed soma package version."
-                    }
-                },
-                "type": "object",
-                "required": [
-                    "version"
-                ],
-                "title": "VersionResponse"
+    "/health": {
+      "get": {
+        "tags": [
+          "system"
+        ],
+        "summary": "Health",
+        "operationId": "health",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
             }
-        },
-        "securitySchemes": {
-            "bearerAuth": {
-                "type": "http",
-                "scheme": "bearer",
-                "bearerFormat": "JWT"
-            }
+          }
         }
+      }
+    },
+    "/version": {
+      "get": {
+        "tags": [
+          "system"
+        ],
+        "summary": "Version Endpoint",
+        "operationId": "version",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VersionResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/refresh": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Auth Refresh",
+        "description": "Exchange a valid bearer for a fresh token with the same claims.\n\nThe bearer in ``Authorization:`` is verified end-to-end (signature,\nexp, revocation, audience) and then re-minted via\n:func:`soma.auth.refresh_token`. The new token carries the same\n``sub`` / ``bundles`` / ``aud`` as the original but a fresh ``jti``\nand a fresh ``exp``.\n\nFailure modes all return 401 (the bearer is itself the credential,\nand revoking a token is the only way to block refresh loops):\n\n- no/mismatched ``Authorization`` header\n- expired, revoked, or malformed token\n- server misconfigured (no signing key available)\n\nThe old token is NOT auto-revoked. Operators wanting rotation call\n``POST /auth/revoke`` (or ``soma auth revoke``) explicitly before\nor after refresh \u2014 intentional: revocation is orthogonal policy.",
+        "operationId": "auth_refresh",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RefreshResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Requested resource not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/revoke": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Revoke a JWT (add its jti to the blocklist)",
+        "description": "Revoke a token. Either pass the full ``token`` to revoke it by\ncontent, or pass ``jti``+``exp`` to revoke by identifier.\n\nThe blocklist entry's TTL is set to the token's ``exp`` so expired\nentries self-evict \u2014 no manual GC required for the common case.\nSame primitive as ``soma auth revoke`` (the CLI flow) \u2014 the two\nsurfaces write identical ``RevocationRecord``s into\n``SOMA_JWT_BLOCKLIST_PATH`` (or Redis).\n\nRequires ``admin`` scope on any bundle in the caller's claim; 401\nwithout a valid bearer, 403 with a valid non-admin bearer, 400\nwhen neither ``token`` nor ``jti``+``exp`` is supplied.",
+        "operationId": "auth_revoke",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AuthRevokeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthRevokeResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Requested resource not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/status": {
+      "get": {
+        "tags": [
+          "default"
+        ],
+        "summary": "Status Ep",
+        "operationId": "status",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatusResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Requested resource not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/store": {
+      "post": {
+        "tags": [
+          "default"
+        ],
+        "summary": "Store",
+        "operationId": "store",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StoreRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StoreResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Requested resource not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/store_batch": {
+      "post": {
+        "tags": [
+          "default"
+        ],
+        "summary": "Store Batch",
+        "operationId": "store_batch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StoreBatchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StoreBatchResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Requested resource not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/related/{node_id}": {
+      "get": {
+        "tags": [
+          "default"
+        ],
+        "summary": "Related",
+        "operationId": "related",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "node_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Node Id"
+            }
+          },
+          {
+            "name": "k",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 5,
+              "title": "K"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RetrieveResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Requested resource not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/retrieve": {
+      "post": {
+        "tags": [
+          "default"
+        ],
+        "summary": "Retrieve",
+        "operationId": "retrieve",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RetrieveRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RetrieveResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Requested resource not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/get/{node_id}": {
+      "get": {
+        "tags": [
+          "default"
+        ],
+        "summary": "Get Entry",
+        "operationId": "get",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "node_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Node Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HitResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Requested resource not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/forget": {
+      "post": {
+        "tags": [
+          "default"
+        ],
+        "summary": "Forget",
+        "description": "Delete memory entries.\n\nTwo dispatch branches:\n\n1. **Legacy node_id**: ``{\"node_id\": \"<id>\"}`` removes exactly one\n   entry via :meth:`MemoryLayer.forget`. Returns ``{\"removed\":\n   true}`` on success, 404 otherwise. Pre-Phase-37 contract.\n2. **Conversational criteria**: any of ``text_matches`` / ``subject``\n   / ``user_id`` routes through the Conversational cascade\n   (turns + derived facts + summary regenerate-or-drop) and\n   returns the :class:`ForgetResult` / :class:`ForgetPreview`\n   shape. Requires a ConversationalMemory to be wired through\n   :func:`_get_conversational_memory`; returns 501 otherwise.\n\nEvery invocation (both branches) emits one audit record when\n``SOMA_FORGET_AUDIT_PATH`` is set. The caller's ``principal.sub``\nis stamped on the record; when the request body's ``user_id``\ndiffers, the audit line carries both.",
+        "operationId": "forget",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ForgetRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Forget"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Requested resource not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/consolidate": {
+      "post": {
+        "tags": [
+          "default"
+        ],
+        "summary": "Consolidate",
+        "operationId": "consolidate",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConsolidateResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Requested resource not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/save": {
+      "post": {
+        "tags": [
+          "default"
+        ],
+        "summary": "Save",
+        "operationId": "save",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SaveResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Requested resource not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/snapshot": {
+      "post": {
+        "tags": [
+          "default"
+        ],
+        "summary": "Snapshot",
+        "description": "Write a one-shot MemoryLayer bundle to the client-supplied path.\n\nUse case: an ephemeral session that wants to persist at shutdown\nwithout reconfiguring the server-default ``SOMA_BUNDLE_PATH``. The\ntarget path is validated to stay under the server's cwd (see\n:func:`_resolve_snapshot_path`).",
+        "operationId": "snapshot",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SnapshotRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SnapshotResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Requested resource not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/recent": {
+      "get": {
+        "tags": [
+          "default"
+        ],
+        "summary": "Recent",
+        "operationId": "recent",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "n",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 10,
+              "title": "N"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RetrieveResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Requested resource not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/bundles/{name}/status": {
+      "get": {
+        "tags": [
+          "bundles"
+        ],
+        "summary": "Status Bundle",
+        "operationId": "bundles_status",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatusResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Requested resource not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/bundles/{name}/store": {
+      "post": {
+        "tags": [
+          "bundles"
+        ],
+        "summary": "Store Bundle",
+        "operationId": "bundles_store",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StoreRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StoreResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Requested resource not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/bundles/{name}/store_batch": {
+      "post": {
+        "tags": [
+          "bundles"
+        ],
+        "summary": "Store Batch Bundle",
+        "operationId": "bundles_store_batch",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StoreBatchRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StoreBatchResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Requested resource not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/bundles/{name}/related/{node_id}": {
+      "get": {
+        "tags": [
+          "bundles"
+        ],
+        "summary": "Related Bundle",
+        "operationId": "bundles_related",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          },
+          {
+            "name": "node_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Node Id"
+            }
+          },
+          {
+            "name": "k",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 5,
+              "title": "K"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RetrieveResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Requested resource not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/bundles/{name}/retrieve": {
+      "post": {
+        "tags": [
+          "bundles"
+        ],
+        "summary": "Retrieve Bundle",
+        "operationId": "bundles_retrieve",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RetrieveRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RetrieveResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Requested resource not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/bundles/{name}/get/{node_id}": {
+      "get": {
+        "tags": [
+          "bundles"
+        ],
+        "summary": "Get Bundle",
+        "operationId": "bundles_get",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          },
+          {
+            "name": "node_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Node Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HitResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Requested resource not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/bundles/{name}/forget": {
+      "post": {
+        "tags": [
+          "bundles"
+        ],
+        "summary": "Forget Bundle",
+        "operationId": "bundles_forget",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ForgetRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ForgetResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Requested resource not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/bundles/{name}/consolidate": {
+      "post": {
+        "tags": [
+          "bundles"
+        ],
+        "summary": "Consolidate Bundle",
+        "operationId": "bundles_consolidate",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConsolidateResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Requested resource not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/bundles/{name}/save": {
+      "post": {
+        "tags": [
+          "bundles"
+        ],
+        "summary": "Save Bundle",
+        "operationId": "bundles_save",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SaveResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Requested resource not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/bundles/{name}/snapshot": {
+      "post": {
+        "tags": [
+          "bundles"
+        ],
+        "summary": "Snapshot Bundle",
+        "description": "Per-tenant variant of :func:`snapshot` \u2014 saves the named bundle\nto the caller-supplied path (same cwd-containment check).",
+        "operationId": "bundles_snapshot",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SnapshotRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SnapshotResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Requested resource not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/bundles/{name}/recent": {
+      "get": {
+        "tags": [
+          "bundles"
+        ],
+        "summary": "Recent Bundle",
+        "operationId": "bundles_recent",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          },
+          {
+            "name": "n",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 10,
+              "title": "N"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RetrieveResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Requested resource not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
+  },
+  "components": {
+    "schemas": {
+      "AuthRevokeRequest": {
+        "properties": {
+          "token": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Token",
+            "description": "Full JWT to revoke"
+          },
+          "jti": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Jti",
+            "description": "Token id (if revoking without the token)"
+          },
+          "exp": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exp",
+            "description": "Token expiry unix timestamp \u2014 required with jti"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason",
+            "description": "Free-form audit note"
+          }
+        },
+        "type": "object",
+        "title": "AuthRevokeRequest",
+        "description": "Body for ``POST /auth/revoke``. Supply exactly one of ``token``\nor ``jti``+``exp``.\n\n- ``token``: revoke by presenting the full JWT. Server decodes and\n  pulls ``jti``/``exp``. Callers don't need to parse.\n- ``jti``+``exp``: revoke by identifier. Useful when the original\n  token has already been rotated out of the caller's possession\n  (e.g., the jti was lifted from an access log)."
+      },
+      "AuthRevokeResponse": {
+        "properties": {
+          "revoked": {
+            "type": "string",
+            "title": "Revoked",
+            "description": "The jti that was added to the blocklist"
+          },
+          "exp": {
+            "type": "integer",
+            "title": "Exp",
+            "description": "Blocklist entry TTL anchor (unix ts)"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason",
+            "description": "Echoed reason or a generated default"
+          }
+        },
+        "type": "object",
+        "required": [
+          "revoked",
+          "exp",
+          "reason"
+        ],
+        "title": "AuthRevokeResponse",
+        "description": "Response body for ``POST /auth/revoke``."
+      },
+      "ConsolidateResponse": {
+        "properties": {
+          "processed": {
+            "type": "integer",
+            "title": "Processed",
+            "description": "Entries processed this consolidation."
+          }
+        },
+        "type": "object",
+        "required": [
+          "processed"
+        ],
+        "title": "ConsolidateResponse"
+      },
+      "ErrorResponse": {
+        "properties": {
+          "detail": {
+            "type": "string",
+            "title": "Detail",
+            "description": "Human-readable error detail."
+          }
+        },
+        "type": "object",
+        "required": [
+          "detail"
+        ],
+        "title": "ErrorResponse",
+        "description": "Uniform error body; mirrors FastAPI's HTTPException shape."
+      },
+      "ForgetRequest": {
+        "properties": {
+          "node_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Node Id",
+            "description": "Legacy: id of a single memory entry to remove. Mutually exclusive with the criteria fields below."
+          },
+          "text_matches": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text Matches",
+            "description": "Substring to match against raw turn text. Case-insensitive by default; pass ``case_sensitive=true`` for an exact match."
+          },
+          "subject": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Subject",
+            "description": "Equality match on each fact's ``metadata.subject``. Only hits hand-stamped facts until a future extractor phase populates it."
+          },
+          "user_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Id",
+            "description": "Equality match on each entry's ``metadata.user_id`` (Phase 12 multi-user scope). When the caller's JWT sub differs, the audit record carries both."
+          },
+          "case_sensitive": {
+            "type": "boolean",
+            "title": "Case Sensitive",
+            "description": "When True, ``text_matches`` becomes case-sensitive.",
+            "default": false
+          },
+          "dry_run": {
+            "type": "boolean",
+            "title": "Dry Run",
+            "description": "When True, return a ForgetPreview instead of deleting. Audit-logs either way.",
+            "default": false
+          },
+          "summary_strategy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Summary Strategy",
+            "description": "``'regen'`` (default) rewrites partially-covered summaries from surviving turns; ``'drop'`` deletes every matched summary without calling the LLM."
+          }
+        },
+        "type": "object",
+        "title": "ForgetRequest",
+        "description": "Unified request body for ``POST /forget``.\n\nTwo shapes, dispatched at the handler:\n\n- **Legacy** (Phase 4, unchanged): ``{\"node_id\": \"<id>\"}`` removes\n  exactly that entry via :meth:`MemoryLayer.forget`.\n- **Conversational** (Phase 37): any of ``text_matches``,\n  ``subject``, or ``user_id`` routes through\n  :meth:`ConversationalMemory.forget`, returning the richer\n  :class:`ForgetResult` / :class:`ForgetPreview` shape. Mixing\n  ``node_id`` with criteria is not supported \u2014 the handler picks\n  the legacy branch when ``node_id`` is present.\n\n``summary_strategy`` is the Phase 37 Task 3 opt-in: ``\"drop\"``\ndeletes every summary in the preview set even when survivors\nexist (skipping the regeneration LLM call entirely)."
+      },
+      "ForgetResponse": {
+        "properties": {
+          "removed": {
+            "type": "boolean",
+            "title": "Removed",
+            "description": "True if the entry was deleted."
+          }
+        },
+        "type": "object",
+        "required": [
+          "removed"
+        ],
+        "title": "ForgetResponse"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "HealthResponse": {
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "title": "Ok",
+            "description": "Liveness flag; always true when reachable."
+          },
+          "loaded_bundles": {
+            "type": "integer",
+            "title": "Loaded Bundles",
+            "description": "Count of bundles currently loaded into memory.",
+            "examples": [
+              2
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "ok",
+          "loaded_bundles"
+        ],
+        "title": "HealthResponse"
+      },
+      "HitResponse": {
+        "properties": {
+          "node_id": {
+            "type": "string",
+            "title": "Node Id",
+            "description": "Opaque id of the matched memory."
+          },
+          "text": {
+            "type": "string",
+            "title": "Text",
+            "description": "Stored text of the matched memory."
+          },
+          "score": {
+            "type": "number",
+            "title": "Score",
+            "description": "Relevance score; higher = closer match.",
+            "examples": [
+              0.873
+            ]
+          },
+          "metadata": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Metadata",
+            "description": "Metadata attached when the entry was stored."
+          },
+          "timestamp_step": {
+            "type": "integer",
+            "title": "Timestamp Step",
+            "description": "Monotonic step counter when stored (0 if unknown).",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "required": [
+          "node_id",
+          "text",
+          "score"
+        ],
+        "title": "HitResponse"
+      },
+      "RefreshResponse": {
+        "properties": {
+          "token": {
+            "type": "string",
+            "title": "Token",
+            "description": "Freshly-minted JWT with a new jti and exp."
+          },
+          "exp": {
+            "type": "integer",
+            "title": "Exp",
+            "description": "Epoch-seconds expiry of the new token."
+          }
+        },
+        "type": "object",
+        "required": [
+          "token",
+          "exp"
+        ],
+        "title": "RefreshResponse",
+        "description": "Response body for ``POST /auth/refresh``."
+      },
+      "RetrieveRequest": {
+        "properties": {
+          "query": {
+            "type": "string",
+            "title": "Query",
+            "description": "Natural-language query; embedded then compared.",
+            "examples": [
+              "who lives in portland?"
+            ]
+          },
+          "k": {
+            "type": "integer",
+            "title": "K",
+            "description": "Max number of hits to return (top-k by score).",
+            "default": 5,
+            "examples": [
+              5
+            ]
+          },
+          "where": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Where",
+            "description": "Optional metadata filter; entries must match all keys."
+          },
+          "hybrid_alpha": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hybrid Alpha",
+            "description": "0..1 blend of dense vs sparse (BM25) score."
+          },
+          "rerank_top_n": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rerank Top N",
+            "description": "If set, cross-encoder rerank of this many candidates."
+          }
+        },
+        "type": "object",
+        "required": [
+          "query"
+        ],
+        "title": "RetrieveRequest"
+      },
+      "RetrieveResponse": {
+        "properties": {
+          "hits": {
+            "items": {
+              "$ref": "#/components/schemas/HitResponse"
+            },
+            "type": "array",
+            "title": "Hits",
+            "description": "Ordered matches, best first."
+          }
+        },
+        "type": "object",
+        "required": [
+          "hits"
+        ],
+        "title": "RetrieveResponse"
+      },
+      "SaveResponse": {
+        "properties": {
+          "saved_to": {
+            "type": "string",
+            "title": "Saved To",
+            "description": "Absolute bundle path written to disk."
+          }
+        },
+        "type": "object",
+        "required": [
+          "saved_to"
+        ],
+        "title": "SaveResponse"
+      },
+      "SnapshotRequest": {
+        "properties": {
+          "path": {
+            "type": "string",
+            "title": "Path",
+            "description": "Filesystem path (relative to the server cwd, or absolute under cwd) where the bundle should be written. Paths that escape the server's cwd are rejected with a 400.",
+            "examples": [
+              "data/snapshots/session-42"
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "path"
+        ],
+        "title": "SnapshotRequest"
+      },
+      "SnapshotResponse": {
+        "properties": {
+          "saved": {
+            "type": "boolean",
+            "title": "Saved",
+            "description": "Always True when the HTTP status is 200."
+          },
+          "path": {
+            "type": "string",
+            "title": "Path",
+            "description": "Absolute path the bundle was written to."
+          },
+          "entries": {
+            "type": "integer",
+            "title": "Entries",
+            "description": "Number of memory entries in the saved bundle."
+          }
+        },
+        "type": "object",
+        "required": [
+          "saved",
+          "path",
+          "entries"
+        ],
+        "title": "SnapshotResponse"
+      },
+      "StatusResponse": {
+        "properties": {
+          "num_entries": {
+            "type": "integer",
+            "title": "Num Entries",
+            "description": "Total memories in this bundle."
+          },
+          "bundle_path": {
+            "type": "string",
+            "title": "Bundle Path",
+            "description": "On-disk bundle directory."
+          },
+          "embed_model": {
+            "type": "string",
+            "title": "Embed Model",
+            "description": "Configured embedding model name."
+          }
+        },
+        "type": "object",
+        "required": [
+          "num_entries",
+          "bundle_path",
+          "embed_model"
+        ],
+        "title": "StatusResponse"
+      },
+      "StoreBatchRequest": {
+        "properties": {
+          "texts": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Texts",
+            "description": "Batch of texts to embed in one call."
+          },
+          "metadatas": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metadatas",
+            "description": "Optional per-text metadata, aligned to `texts`."
+          }
+        },
+        "type": "object",
+        "required": [
+          "texts"
+        ],
+        "title": "StoreBatchRequest"
+      },
+      "StoreBatchResponse": {
+        "properties": {
+          "node_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Node Ids",
+            "description": "Ids aligned to input `texts` order."
+          }
+        },
+        "type": "object",
+        "required": [
+          "node_ids"
+        ],
+        "title": "StoreBatchResponse"
+      },
+      "StoreRequest": {
+        "properties": {
+          "text": {
+            "type": "string",
+            "title": "Text",
+            "description": "Raw text to embed and store as one memory entry.",
+            "examples": [
+              "alex lives in portland"
+            ]
+          },
+          "metadata": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Metadata",
+            "description": "Arbitrary JSON tags for filtering at retrieval.",
+            "examples": [
+              {
+                "source": "chat",
+                "user": "alex"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "text"
+        ],
+        "title": "StoreRequest"
+      },
+      "StoreResponse": {
+        "properties": {
+          "node_id": {
+            "type": "string",
+            "title": "Node Id",
+            "description": "Opaque id of the new memory entry."
+          }
+        },
+        "type": "object",
+        "required": [
+          "node_id"
+        ],
+        "title": "StoreResponse"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      },
+      "VersionResponse": {
+        "properties": {
+          "version": {
+            "type": "string",
+            "title": "Version",
+            "description": "Installed soma package version."
+          }
+        },
+        "type": "object",
+        "required": [
+          "version"
+        ],
+        "title": "VersionResponse"
+      }
+    },
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    }
+  }
 }

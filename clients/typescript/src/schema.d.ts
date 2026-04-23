@@ -58,6 +58,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/auth/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Auth Refresh
+         * @description Exchange a valid bearer for a fresh token with the same claims.
+         *
+         *     The bearer in ``Authorization:`` is verified end-to-end (signature,
+         *     exp, revocation, audience) and then re-minted via
+         *     :func:`soma.auth.refresh_token`. The new token carries the same
+         *     ``sub`` / ``bundles`` / ``aud`` as the original but a fresh ``jti``
+         *     and a fresh ``exp``.
+         *
+         *     Failure modes all return 401 (the bearer is itself the credential,
+         *     and revoking a token is the only way to block refresh loops):
+         *
+         *     - no/mismatched ``Authorization`` header
+         *     - expired, revoked, or malformed token
+         *     - server misconfigured (no signing key available)
+         *
+         *     The old token is NOT auto-revoked. Operators wanting rotation call
+         *     ``POST /auth/revoke`` (or ``soma auth revoke``) explicitly before
+         *     or after refresh — intentional: revocation is orthogonal policy.
+         */
+        post: operations["auth_refresh"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/revoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Revoke a JWT (add its jti to the blocklist)
+         * @description Revoke a token. Either pass the full ``token`` to revoke it by
+         *     content, or pass ``jti``+``exp`` to revoke by identifier.
+         *
+         *     The blocklist entry's TTL is set to the token's ``exp`` so expired
+         *     entries self-evict — no manual GC required for the common case.
+         *     Same primitive as ``soma auth revoke`` (the CLI flow) — the two
+         *     surfaces write identical ``RevocationRecord``s into
+         *     ``SOMA_JWT_BLOCKLIST_PATH`` (or Redis).
+         *
+         *     Requires ``admin`` scope on any bundle in the caller's claim; 401
+         *     without a valid bearer, 403 with a valid non-admin bearer, 400
+         *     when neither ``token`` nor ``jti``+``exp`` is supplied.
+         */
+        post: operations["auth_revoke"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/status": {
         parameters: {
             query?: never;
@@ -169,7 +237,27 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Forget */
+        /**
+         * Forget
+         * @description Delete memory entries.
+         *
+         *     Two dispatch branches:
+         *
+         *     1. **Legacy node_id**: ``{"node_id": "<id>"}`` removes exactly one
+         *        entry via :meth:`MemoryLayer.forget`. Returns ``{"removed":
+         *        true}`` on success, 404 otherwise. Pre-Phase-37 contract.
+         *     2. **Conversational criteria**: any of ``text_matches`` / ``subject``
+         *        / ``user_id`` routes through the Conversational cascade
+         *        (turns + derived facts + summary regenerate-or-drop) and
+         *        returns the :class:`ForgetResult` / :class:`ForgetPreview`
+         *        shape. Requires a ConversationalMemory to be wired through
+         *        :func:`_get_conversational_memory`; returns 501 otherwise.
+         *
+         *     Every invocation (both branches) emits one audit record when
+         *     ``SOMA_FORGET_AUDIT_PATH`` is set. The caller's ``principal.sub``
+         *     is stamped on the record; when the request body's ``user_id``
+         *     differs, the audit line carries both.
+         */
         post: operations["forget"];
         delete?: never;
         options?: never;
@@ -205,6 +293,31 @@ export interface paths {
         put?: never;
         /** Save */
         post: operations["save"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/snapshot": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Snapshot
+         * @description Write a one-shot MemoryLayer bundle to the client-supplied path.
+         *
+         *     Use case: an ephemeral session that wants to persist at shutdown
+         *     without reconfiguring the server-default ``SOMA_BUNDLE_PATH``. The
+         *     target path is validated to stay under the server's cwd (see
+         *     :func:`_resolve_snapshot_path`).
+         */
+        post: operations["snapshot"];
         delete?: never;
         options?: never;
         head?: never;
@@ -381,6 +494,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/bundles/{name}/snapshot": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Snapshot Bundle
+         * @description Per-tenant variant of :func:`snapshot` — saves the named bundle
+         *     to the caller-supplied path (same cwd-containment check).
+         */
+        post: operations["bundles_snapshot"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/bundles/{name}/recent": {
         parameters: {
             query?: never;
@@ -402,6 +536,60 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /**
+         * AuthRevokeRequest
+         * @description Body for ``POST /auth/revoke``. Supply exactly one of ``token``
+         *     or ``jti``+``exp``.
+         *
+         *     - ``token``: revoke by presenting the full JWT. Server decodes and
+         *       pulls ``jti``/``exp``. Callers don't need to parse.
+         *     - ``jti``+``exp``: revoke by identifier. Useful when the original
+         *       token has already been rotated out of the caller's possession
+         *       (e.g., the jti was lifted from an access log).
+         */
+        AuthRevokeRequest: {
+            /**
+             * Token
+             * @description Full JWT to revoke
+             */
+            token?: string | null;
+            /**
+             * Jti
+             * @description Token id (if revoking without the token)
+             */
+            jti?: string | null;
+            /**
+             * Exp
+             * @description Token expiry unix timestamp — required with jti
+             */
+            exp?: number | null;
+            /**
+             * Reason
+             * @description Free-form audit note
+             */
+            reason?: string | null;
+        };
+        /**
+         * AuthRevokeResponse
+         * @description Response body for ``POST /auth/revoke``.
+         */
+        AuthRevokeResponse: {
+            /**
+             * Revoked
+             * @description The jti that was added to the blocklist
+             */
+            revoked: string;
+            /**
+             * Exp
+             * @description Blocklist entry TTL anchor (unix ts)
+             */
+            exp: number;
+            /**
+             * Reason
+             * @description Echoed reason or a generated default
+             */
+            reason: string;
+        };
         /** ConsolidateResponse */
         ConsolidateResponse: {
             /**
@@ -421,13 +609,63 @@ export interface components {
              */
             detail: string;
         };
-        /** ForgetRequest */
+        /**
+         * ForgetRequest
+         * @description Unified request body for ``POST /forget``.
+         *
+         *     Two shapes, dispatched at the handler:
+         *
+         *     - **Legacy** (Phase 4, unchanged): ``{"node_id": "<id>"}`` removes
+         *       exactly that entry via :meth:`MemoryLayer.forget`.
+         *     - **Conversational** (Phase 37): any of ``text_matches``,
+         *       ``subject``, or ``user_id`` routes through
+         *       :meth:`ConversationalMemory.forget`, returning the richer
+         *       :class:`ForgetResult` / :class:`ForgetPreview` shape. Mixing
+         *       ``node_id`` with criteria is not supported — the handler picks
+         *       the legacy branch when ``node_id`` is present.
+         *
+         *     ``summary_strategy`` is the Phase 37 Task 3 opt-in: ``"drop"``
+         *     deletes every summary in the preview set even when survivors
+         *     exist (skipping the regeneration LLM call entirely).
+         */
         ForgetRequest: {
             /**
              * Node Id
-             * @description Id of the memory entry to remove.
+             * @description Legacy: id of a single memory entry to remove. Mutually exclusive with the criteria fields below.
              */
-            node_id: string;
+            node_id?: string | null;
+            /**
+             * Text Matches
+             * @description Substring to match against raw turn text. Case-insensitive by default; pass ``case_sensitive=true`` for an exact match.
+             */
+            text_matches?: string | null;
+            /**
+             * Subject
+             * @description Equality match on each fact's ``metadata.subject``. Only hits hand-stamped facts until a future extractor phase populates it.
+             */
+            subject?: string | null;
+            /**
+             * User Id
+             * @description Equality match on each entry's ``metadata.user_id`` (Phase 12 multi-user scope). When the caller's JWT sub differs, the audit record carries both.
+             */
+            user_id?: string | null;
+            /**
+             * Case Sensitive
+             * @description When True, ``text_matches`` becomes case-sensitive.
+             * @default false
+             */
+            case_sensitive: boolean;
+            /**
+             * Dry Run
+             * @description When True, return a ForgetPreview instead of deleting. Audit-logs either way.
+             * @default false
+             */
+            dry_run: boolean;
+            /**
+             * Summary Strategy
+             * @description ``'regen'`` (default) rewrites partially-covered summaries from surviving turns; ``'drop'`` deletes every matched summary without calling the LLM.
+             */
+            summary_strategy?: string | null;
         };
         /** ForgetResponse */
         ForgetResponse: {
@@ -488,6 +726,22 @@ export interface components {
              */
             timestamp_step: number;
         };
+        /**
+         * RefreshResponse
+         * @description Response body for ``POST /auth/refresh``.
+         */
+        RefreshResponse: {
+            /**
+             * Token
+             * @description Freshly-minted JWT with a new jti and exp.
+             */
+            token: string;
+            /**
+             * Exp
+             * @description Epoch-seconds expiry of the new token.
+             */
+            exp: number;
+        };
         /** RetrieveRequest */
         RetrieveRequest: {
             /**
@@ -536,6 +790,33 @@ export interface components {
              * @description Absolute bundle path written to disk.
              */
             saved_to: string;
+        };
+        /** SnapshotRequest */
+        SnapshotRequest: {
+            /**
+             * Path
+             * @description Filesystem path (relative to the server cwd, or absolute under cwd) where the bundle should be written. Paths that escape the server's cwd are rejected with a 400.
+             * @example data/snapshots/session-42
+             */
+            path: string;
+        };
+        /** SnapshotResponse */
+        SnapshotResponse: {
+            /**
+             * Saved
+             * @description Always True when the HTTP status is 200.
+             */
+            saved: boolean;
+            /**
+             * Path
+             * @description Absolute path the bundle was written to.
+             */
+            path: string;
+            /**
+             * Entries
+             * @description Number of memory entries in the saved bundle.
+             */
+            entries: number;
         };
         /** StatusResponse */
         StatusResponse: {
@@ -688,6 +969,95 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["VersionResponse"];
+                };
+            };
+        };
+    };
+    auth_refresh: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RefreshResponse"];
+                };
+            };
+            /** @description Missing or invalid API key. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Requested resource not found. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    auth_revoke: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AuthRevokeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthRevokeResponse"];
+                };
+            };
+            /** @description Missing or invalid API key. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Requested resource not found. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -1002,7 +1372,9 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ForgetResponse"];
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Missing or invalid API key. */
@@ -1106,6 +1478,57 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    snapshot: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SnapshotRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SnapshotResponse"];
+                };
+            };
+            /** @description Missing or invalid API key. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Requested resource not found. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -1589,6 +2012,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SaveResponse"];
+                };
+            };
+            /** @description Missing or invalid API key. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Requested resource not found. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    bundles_snapshot: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SnapshotRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SnapshotResponse"];
                 };
             };
             /** @description Missing or invalid API key. */

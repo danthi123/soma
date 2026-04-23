@@ -8,13 +8,13 @@ primary_region = "iad"
   SOMA_EMBED_MODEL = "all-MiniLM-L6-v2"
   SOMA_BUNDLE_PATH = "/data/memory"
   SOMA_BUNDLES_DIR = "/data/bundles"
-
-# Auth — set via `fly secrets set SOMA_JWT_SECRET=$(openssl rand -hex 32)`
-# before first deploy. Without this, every endpoint is unauthenticated
-# (Open mode). See docs/auth.md for the full JWT setup.
-# [env.auth]
-#   SOMA_JWT_ALG = "HS256"
-#   SOMA_JWT_LEEWAY = "60"
+  # Auth — uncomment these to run with JWT verification. The SECRET
+  # itself MUST be set via `fly secrets set SOMA_JWT_SECRET=$(openssl
+  # rand -hex 32)` — secrets do NOT belong in the committed toml.
+  # Without any SOMA_JWT_SECRET / SOMA_API_KEY configured, every
+  # endpoint is unauthenticated (Open mode). See docs/auth.md.
+  # SOMA_JWT_ALG = "HS256"
+  # SOMA_JWT_LEEWAY = "60"
 
 [[mounts]]
   source = "soma_data"

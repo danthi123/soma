@@ -143,7 +143,7 @@ soma serve --port 8420
 docker compose up
 ```
 
-Endpoints: `/health`, `/version`, `/status`, `/store`, `/store_batch`, `/retrieve`, `/get/{id}`, `/related/{id}`, `/recent`, `/forget`, `/consolidate`, `/save`, `/snapshot`, `/auth/refresh`, plus `/bundles/{name}/...` multi-tenant variants under per-bundle JWT auth. Full route reference, auth requirements, and request/response shapes: [`docs/rest-api.md`](docs/rest-api.md).
+Endpoints: `/health`, `/version`, `/status`, `/store`, `/store_batch`, `/retrieve`, `/get/{id}`, `/related/{id}`, `/recent`, `/forget`, `/consolidate`, `/save`, `/snapshot`, `/auth/refresh`, `/auth/revoke`, plus `/bundles/{name}/...` multi-tenant variants under per-bundle JWT auth. Full route reference, auth requirements, and request/response shapes: [`docs/rest-api.md`](docs/rest-api.md).
 
 **Auth** (`pip install "soma-memory[serve]"`): per-bundle JWTs with `read`/`write`/`admin` scopes, HS256 or RS256, rotation via `soma auth rotate-secret`, single-token revocation via a file-backed blocklist (`SOMA_JWT_BLOCKLIST_PATH`). Full reference: [`docs/auth.md`](docs/auth.md).
 
@@ -216,7 +216,7 @@ Full hierarchy: [`docs/README.md`](docs/README.md).
 
 ## Status & known limitations
 
-**Release status:** `Development Status :: 4 - Beta` ([`pyproject.toml`](pyproject.toml)). Latest on PyPI: [`soma-memory==0.2.0rc4`](https://pypi.org/project/soma-memory/) (2026-04-20).
+**Release status:** `Development Status :: 4 - Beta` ([`pyproject.toml`](pyproject.toml)). Latest on PyPI: [`soma-memory==0.2.0rc6`](https://pypi.org/project/soma-memory/) (2026-04-22).
 
 **Production-ready surface:**
 

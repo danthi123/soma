@@ -113,13 +113,15 @@ CI publishes on `v*` tag push. One-time operator setup:
    the PyPI distribution). No scope claim required.
 2. Add `NPM_TOKEN` to the repo's GitHub Actions secrets (a publish
    token from the npm account that owns `soma-memory`).
-3. Tag and push: `git tag v0.1.0 && git push --tags`.
+3. Bump `clients/typescript/package.json:version` to match the target,
+   commit, then tag and push: `git tag v<X.Y.Z> && git push --tags`.
 
-The first tag push triggers `.github/workflows/client-ts.yml` which
+See [`RELEASING.md`](../RELEASING.md) for the cross-artifact
+versioning cadence (Python package / Helm chart / TS client).
+
+The tag push triggers `.github/workflows/client-ts.yml` which
 regenerates types, runs the full test suite, and publishes with
-`--provenance` (sigstore-signed). No local publish is expected; skip
-placeholder releases — jump straight to `v0.1.0` on the first real
-server-API cut.
+`--provenance` (sigstore-signed). No local publish is expected.
 
 ### Development
 
@@ -147,7 +149,7 @@ cd clients/typescript && npm run generate
 
 ## Python
 
-Use `MemoryLayer` directly — `pip install soma` — or call the REST
+Use `MemoryLayer` directly — `pip install soma-memory` — or call the REST
 API with `httpx` / `requests`. A generated Python client isn't
 shipped today; the native `MemoryLayer` API is lower-overhead and
 already covers the full surface.

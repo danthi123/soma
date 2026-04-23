@@ -251,6 +251,37 @@ soma auth revoke --token "$LEAKED" --reason "leaked on slack 2026-04-16"
 soma auth revoke --jti 3a8b-... --exp 1715817600 --reason "suspected compromise"
 ```
 
+### POST /auth/revoke
+
+Revoke a token over HTTP. Same semantics as ``soma auth revoke`` —
+writes a ``RevocationRecord`` to the blocklist keyed off
+``SOMA_JWT_BLOCKLIST_PATH`` (or ``SOMA_JWT_BLOCKLIST_REDIS_URL``).
+
+**Request (by token):**
+
+```json
+{"token": "<full JWT>", "reason": "rotated"}
+```
+
+**Request (by jti):**
+
+```json
+{"jti": "<uuid>", "exp": 9999999999, "reason": "rotated"}
+```
+
+**Response (200):**
+
+```json
+{"revoked": "<jti>", "exp": 9999999999, "reason": "<echo>"}
+```
+
+Requires ``admin`` scope on any bundle in the authenticated token's
+claim. 401 if unauthenticated, 403 if the caller lacks admin scope,
+400 if neither ``token`` nor ``jti``+``exp`` is supplied, **503 if
+the server was booted without** ``SOMA_JWT_BLOCKLIST_PATH`` (or
+``SOMA_JWT_BLOCKLIST_REDIS_URL``) — the feature is implemented but
+revocation can't persist; set the env and restart.
+
 Propagation:
 
 - Same process issuing the revoke: instant (in-memory cache updated

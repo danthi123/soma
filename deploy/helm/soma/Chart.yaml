@@ -2,8 +2,8 @@ apiVersion: v2
 name: soma
 description: SOMA — local-first agent memory layer
 type: application
-version: 0.1.0            # chart version
-appVersion: "0.1.0"       # application version
+version: 0.2.0            # chart version — tracks Python minor
+appVersion: "0.2.0"       # application version — tracks pyproject minor
 kubeVersion: ">=1.28.0-0"
 home: https://github.com/danthi123/soma
 sources:

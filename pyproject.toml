@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "soma-memory"
-version = "0.2.0rc5"
+version = "0.2.0rc6"
 description = "Local-first agent-memory layer with hybrid retrieval (BM25 + cosine). Drop-in for vector-store + RAG, benchmarked to beat vector DBs on QA accuracy. Portable as a single directory. LLM-agnostic."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -243,7 +243,7 @@ bench = [
     # (sentence-transformers), plus chromadb as a direct competitor
     # in run_scale_vs_chroma + run_backend_matrix. Keeps CI install
     # lines short: `pip install -e ".[bench]"`.
-    "soma[dev,metrics,ann,sbert]",
+    "soma-memory[dev,metrics,ann,sbert]",
     "chromadb>=0.5",
 ]
 

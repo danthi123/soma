@@ -60,7 +60,7 @@ mem.store("user's dog is named Luna",   metadata={"user": "alex"})
 
 hits = mem.retrieve("dietary restrictions", k=3, where={"user": "alex"})
 mem.save("my-brain/")                                 # portable bundle
-mem = MemoryLayer.load("my-brain/")                   # resume anywhere
+mem = MemoryLayer.load_with_sbert("my-brain/")        # resume anywhere
 ```
 
 For the end-to-end agent flow — `soma serve`, JWT issue + revoke, `ConversationalMemory` fact extraction, multi-user scoping, Grafana dashboard import — see [`docs/quickstart.md`](docs/quickstart.md).
@@ -97,7 +97,7 @@ Run any of them from a clone with `python examples/<name>.py` after `pip install
 | Prometheus metrics + importable Grafana dashboards | no | no         | partial  | **yes**  |
 | Pluggable vector backends (adapter protocol)   | no     | no         | no       | **yes** (InProc + Qdrant + LanceDB + Chroma + pgvector) |
 | Bundles on S3 / GCS (scale-to-zero ready)      | no     | no         | no       | **yes** (`s3://` / `gs://` URLs) |
-| GDPR-grade forgetting with audit trail         | no     | no         | no       | **yes** (`POST /forget` + `docs/gdpr.md`) |
+| GDPR-grade forgetting with audit trail         | no     | no         | no       | **yes** (Python / CLI; `POST /forget` by `node_id` always; criteria-mode needs `ConversationalMemory` wired — see `docs/gdpr.md`) |
 | Typed schemas (31 built-in, extensible)        | no     | no         | no       | **yes** (8 domains, context packer) |
 
 Full comparison + migration notes: [`docs/comparison.md`](docs/comparison.md).

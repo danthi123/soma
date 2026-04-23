@@ -64,6 +64,7 @@ Endpoints:
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import threading
@@ -77,6 +78,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field
 
+from soma import __version__
 from soma import metrics as _metrics
 from soma.auth import Perm, Principal, parse_ttl_spec, refresh_token, verify_token
 from soma.auth_revocation import blocklist_from_env
@@ -219,7 +221,7 @@ def _enforce_rate_limit(request: Request, principal: Principal) -> None:
 app = FastAPI(
     title="SOMA Memory Layer",
     description="Local-first agent memory that learns.",
-    version="0.1.0",
+    version=__version__,
 )
 
 # CORS middleware mounted before any routes so browser clients (the
@@ -555,16 +557,39 @@ def _get_mem(name: str | None = None) -> MemoryLayer:
             mem.reload_if_stale()  # pick up peer-worker WAL appends
             return mem
         path = _path_for(name)
-        # A loadable bundle is either a saved snapshot (memory_index.json)
-        # or a WAL-only bundle (fresh store that crashed before save()).
         has_snapshot = path.exists() and (path / "memory_index.json").exists()
         has_wal = path.exists() and (path / "memory_ops.wal.jsonl").exists()
         if has_snapshot or has_wal:
-            mem = MemoryLayer.load(path, embed_fn=_embed_fn())
+            # Prefer the bundle's persisted sbert_model_name over the server's
+            # current SOMA_EMBED_MODEL. Mismatch (e.g. bundle saved with
+            # mpnet-base-v2, server booted with MiniLM) produces silent
+            # retrieval garbage or a dim-mismatch crash. `load_with_sbert`
+            # reads `memory_index.json` to rebuild the right embedder. Only
+            # fall back to the plain env-driven path for bundles created by
+            # the TextEncoder path (no sbert name persisted).
+            persisted = _persisted_sbert_name(path) if has_snapshot else None
+            if persisted:
+                mem = MemoryLayer.load_with_sbert(path)
+            else:
+                mem = MemoryLayer.load(path, embed_fn=_embed_fn())
         else:
             mem = MemoryLayer.with_sbert(EMBED_MODEL)
         _mem_cache[key] = mem
         return mem
+
+
+def _persisted_sbert_name(path: Path) -> str | None:
+    """Peek at memory_index.json to see if the bundle recorded an sbert model
+    name. Returns None if the file is missing, malformed, or lacks the key."""
+    idx_path = path / "memory_index.json"
+    if not idx_path.exists():
+        return None
+    try:
+        idx = json.loads(idx_path.read_text())
+    except (OSError, json.JSONDecodeError):
+        return None
+    name = idx.get("sbert_model_name")
+    return name if isinstance(name, str) and name else None
 
 
 def _get_conversational_memory(
@@ -851,12 +876,7 @@ def health() -> HealthResponse:
     tags=["system"],
 )
 def version_endpoint() -> VersionResponse:
-    try:
-        from importlib.metadata import version as _v
-
-        return VersionResponse(version=_v("soma"))
-    except Exception:
-        return VersionResponse(version="unknown")
+    return VersionResponse(version=__version__)
 
 
 # ------------------------------------------------------------------
@@ -983,6 +1003,128 @@ def auth_refresh(request: Request) -> RefreshResponse:
     # Pull exp off the freshly-minted token for the response body.
     new_claims = jwt.decode(new_token, options={"verify_signature": False})
     return RefreshResponse(token=new_token, exp=int(new_claims.get("exp", 0)))
+
+
+# ------------------------------------------------------------------
+# POST /auth/revoke — HTTP surface over the BlocklistBackend primitive
+# ------------------------------------------------------------------
+class AuthRevokeRequest(BaseModel):
+    """Body for ``POST /auth/revoke``. Supply exactly one of ``token``
+    or ``jti``+``exp``.
+
+    - ``token``: revoke by presenting the full JWT. Server decodes and
+      pulls ``jti``/``exp``. Callers don't need to parse.
+    - ``jti``+``exp``: revoke by identifier. Useful when the original
+      token has already been rotated out of the caller's possession
+      (e.g., the jti was lifted from an access log).
+    """
+
+    token: str | None = Field(None, description="Full JWT to revoke")
+    jti: str | None = Field(
+        None, description="Token id (if revoking without the token)"
+    )
+    exp: int | None = Field(
+        None, description="Token expiry unix timestamp — required with jti"
+    )
+    reason: str | None = Field(None, description="Free-form audit note")
+
+
+class AuthRevokeResponse(BaseModel):
+    """Response body for ``POST /auth/revoke``."""
+
+    revoked: str = Field(..., description="The jti that was added to the blocklist")
+    exp: int = Field(..., description="Blocklist entry TTL anchor (unix ts)")
+    reason: str = Field(..., description="Echoed reason or a generated default")
+
+
+@app.post(
+    "/auth/revoke",
+    response_model=AuthRevokeResponse,
+    operation_id="auth_revoke",
+    tags=["auth"],
+    responses=ERROR_RESPONSES,
+    summary="Revoke a JWT (add its jti to the blocklist)",
+    dependencies=[Depends(require_auth(None, "admin"))],
+)
+def auth_revoke(body: AuthRevokeRequest) -> AuthRevokeResponse:
+    """Revoke a token. Either pass the full ``token`` to revoke it by
+    content, or pass ``jti``+``exp`` to revoke by identifier.
+
+    The blocklist entry's TTL is set to the token's ``exp`` so expired
+    entries self-evict — no manual GC required for the common case.
+    Same primitive as ``soma auth revoke`` (the CLI flow) — the two
+    surfaces write identical ``RevocationRecord``s into
+    ``SOMA_JWT_BLOCKLIST_PATH`` (or Redis).
+
+    Requires ``admin`` scope on any bundle in the caller's claim; 401
+    without a valid bearer, 403 with a valid non-admin bearer, 400
+    when neither ``token`` nor ``jti``+``exp`` is supplied.
+    """
+    import time as _time
+
+    from soma.auth_revocation import RevocationRecord, _NullBlocklist
+
+    # If no blocklist is configured (SOMA_JWT_BLOCKLIST_PATH unset and no
+    # Redis), a revoke call is a silent no-op — the record is accepted,
+    # thrown on the floor, and every subsequent verify_token skips the
+    # revocation gate anyway. Fail loudly so operators can't mistake
+    # "route returned 200" for "token is actually revoked". Matches the
+    # CLI flow at soma.cli._cmd_auth_revoke which refuses to run when
+    # SOMA_JWT_BLOCKLIST_PATH is unset.
+    #
+    # 503 Service Unavailable (not 501 Not Implemented): the feature IS
+    # implemented — it's just not wired in this deployment. Operators fix
+    # by setting the env var and restarting; the service is then available.
+    if isinstance(_blocklist, _NullBlocklist):
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "blocklist not configured; set SOMA_JWT_BLOCKLIST_PATH or "
+                "SOMA_JWT_BLOCKLIST_REDIS_URL and restart. See docs/auth.md."
+            ),
+        )
+
+    if body.token is not None:
+        try:
+            unsafe = jwt.decode(
+                body.token,
+                options={"verify_signature": False, "verify_exp": False},
+            )
+        except jwt.InvalidTokenError as err:
+            raise HTTPException(
+                status_code=400, detail=f"invalid token: {err}"
+            ) from err
+        jti = unsafe.get("jti")
+        exp = unsafe.get("exp")
+        if not isinstance(jti, str):
+            raise HTTPException(
+                status_code=400,
+                detail="token missing jti claim; nothing to revoke",
+            )
+        if not isinstance(exp, int):
+            raise HTTPException(
+                status_code=400,
+                detail="token missing exp claim; cannot compute TTL",
+            )
+    elif body.jti is not None and body.exp is not None:
+        jti = body.jti
+        exp = int(body.exp)
+    else:
+        raise HTTPException(
+            status_code=400,
+            detail="pass exactly one of (token) or (jti+exp)",
+        )
+
+    reason = body.reason or "revoked via POST /auth/revoke"
+    _blocklist.add(
+        RevocationRecord(
+            jti=jti,
+            revoked_at=int(_time.time()),
+            reason=reason,
+            exp=exp,
+        )
+    )
+    return AuthRevokeResponse(revoked=jti, exp=exp, reason=reason)
 
 
 # ------------------------------------------------------------------

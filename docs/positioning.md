@@ -355,7 +355,7 @@ from soma.memory import MemoryLayer
 mem = MemoryLayer.with_sbert()
 
 # Or load an existing brain:
-# mem = MemoryLayer.load("my-brain/")
+# mem = MemoryLayer.load_with_sbert("my-brain/")
 
 # Store
 mem.store("user lives in Portland, OR", metadata={"source": "chat-2026-04-15"})

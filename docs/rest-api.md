@@ -65,6 +65,7 @@ matches the OpenAPI `operationId` for generated clients.
 | Method | Path | Perm | Purpose |
 | --- | --- | --- | --- |
 | `POST` | `/auth/refresh` | valid JWT | Mint a refreshed token preserving `soma` claims. Body carries the old JWT; response carries the new one. See `docs/auth.md` "Refresh" section. |
+| `POST` | `/auth/revoke` | `admin` | Add a JWT's `jti` to the blocklist (same primitive as `soma auth revoke`). Body: either `token` or `jti`+`exp`. See `docs/auth.md` "Revocation" section. |
 
 ### Default bundle (single-tenant at `$SOMA_BUNDLE_PATH`)
 
@@ -77,7 +78,7 @@ matches the OpenAPI `operationId` for generated clients.
 | `GET` | `/get/{node_id}` | `read` | Fetch one entry by id. 404 if missing. |
 | `GET` | `/related/{node_id}` | `read` | Graph-adjacent neighbours (uses the plastic-graph substrate). |
 | `GET` | `/recent` | `read` | Last N entries in insertion order. |
-| `POST` | `/forget` | `write` | Delete by id or by criteria (GDPR cascade, see `docs/gdpr.md`). |
+| `POST` | `/forget` | `write` | Delete by `node_id` (always available). Criteria-based cascade returns `501 Not Implemented` unless a `ConversationalMemory` is wired via `_get_conversational_memory` — see `docs/gdpr.md`. The criteria branch is a Python API / `soma` CLI feature; it is not a default REST surface. |
 | `POST` | `/consolidate` | `write` | Trigger one consolidation cycle. |
 | `POST` | `/save` | `write` | Snapshot bundle to disk. |
 | `POST` | `/snapshot` | `write` | Named snapshot (blue/green rollout pattern). |
@@ -129,7 +130,13 @@ the OpenAPI spec reflects them verbatim. Highlights:
   `summary_strategy: "regen" | "drop"` (default `"regen"`
   rewrites partially-covered summaries from surviving turns;
   `"drop"` deletes them without calling the LLM). See
-  `docs/gdpr.md` for the cascade semantics.
+  `docs/gdpr.md` for the cascade semantics. **Note:** only the
+  `node_id` branch works out of the box. The criteria branch
+  returns `501 Not Implemented` unless the server is booted with a
+  wired `ConversationalMemory` via `_get_conversational_memory`
+  (see `docs/gdpr.md`). The criteria-mode cascade
+  is shipped as a Python API and `soma` CLI feature; it is not a
+  default REST surface.
 - **`GET /status`**: response `{"num_entries": int, "bundle_path":
   str, "embed_model": str}`.
 - **`GET /health`**: response `{"ok": bool, "loaded_bundles": int}`.

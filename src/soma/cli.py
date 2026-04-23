@@ -12,9 +12,9 @@ don't need to remember script paths::
     soma version
 
 Each subcommand is a thin wrapper around the corresponding
-``scripts/demo_*.py`` or ``soma.serve``. The intent is "minimal manual
-effort to get going" — the CLI doesn't try to hide power but it does
-cover the 95% case in one verb.
+:mod:`soma._cli_commands` module or :mod:`soma.serve`. The intent is
+"minimal manual effort to get going" — the CLI doesn't try to hide
+power but it does cover the 95% case in one verb.
 
 Backend selection follows :func:`soma.llm.backend_from_env`: pass
 ``--backend ollama|openai|anthropic|openai-compat|hf`` or set
@@ -37,7 +37,7 @@ if hasattr(sys.stdout, "reconfigure"):
 
 
 def _cmd_index(args: argparse.Namespace) -> int:
-    from scripts.demo_wiki_chat import _ingest
+    from soma._cli_commands.wiki_chat import _ingest
 
     if not args.wiki.is_dir():
         print(f"error: --wiki {args.wiki} is not a directory", file=sys.stderr)
@@ -47,7 +47,7 @@ def _cmd_index(args: argparse.Namespace) -> int:
 
 
 def _cmd_chat(args: argparse.Namespace) -> int:
-    from scripts.demo_wiki_chat import _chat
+    from soma._cli_commands.wiki_chat import _chat
     from soma.memory import MemoryLayer
 
     # --ephemeral is mutually exclusive with --bundle (argparse treats the
@@ -142,14 +142,15 @@ def _run_chat_repl(
 
     Used by the ``--ephemeral`` and ``--save-on-exit`` paths where the
     MemoryLayer is built in-process (not loaded from a bundle). Mirrors
-    the loop in ``scripts.demo_wiki_chat._chat`` but takes the memory
-    instance as input so the caller can register atexit hooks on it.
+    the loop in :func:`soma._cli_commands.wiki_chat._chat` but takes
+    the memory instance as input so the caller can register atexit
+    hooks on it.
 
     When the resolved backend exposes ``stream_generate`` the REPL
     streams chunks live; otherwise it falls back to a single blocking
     ``generate`` call.
     """
-    from scripts.demo_wiki_chat import _resolve_backend
+    from soma._cli_commands.wiki_chat import _resolve_backend
     from soma.llm.rag import RAGAnswer, RAGSession
 
     backend = _resolve_backend(backend_name, dry_run=dry_run)
@@ -214,7 +215,7 @@ def _register_save_on_exit(mem: Any, path: Path) -> None:
 
 
 def _cmd_stats(args: argparse.Namespace) -> int:
-    from scripts.demo_memory_inspect import cmd_stats
+    from soma._cli_commands.memory_inspect import cmd_stats
     from soma.memory import MemoryLayer
 
     if not args.bundle.exists():
@@ -226,7 +227,7 @@ def _cmd_stats(args: argparse.Namespace) -> int:
 
 
 def _cmd_search(args: argparse.Namespace) -> int:
-    from scripts.demo_memory_inspect import cmd_search
+    from soma._cli_commands.memory_inspect import cmd_search
     from soma.memory import MemoryLayer
 
     if not args.bundle.exists():
@@ -286,12 +287,9 @@ def _cmd_serve(args: argparse.Namespace) -> int:
 
 
 def _cmd_version(_: argparse.Namespace) -> int:
-    try:
-        from importlib.metadata import version
+    from soma import __version__
 
-        print(version("soma"))
-    except Exception:
-        print("unknown")
+    print(__version__)
     return 0
 
 

@@ -41,6 +41,118 @@ Cosmetic / infra followups queued for the next release cycle
   scan before each release to catch any that drift in between;
   the one-liner lives in this session's conversation.
 
+## [0.2.0rc6] — 2026-04-22
+
+Shipped-surface audit rc — closes the gap between what the repo
+advertises and what a plain `pip install soma-memory` user actually
+gets. A deeper external review after rc5 flagged one correctness
+bug, four packaging/distribution bugs, broken code examples in three
+docs, a half-shipped auth route, and stale deploy/client artifacts.
+rc5 was a docs-only pass; rc6 is the code side.
+
+Thirteen commits on `rc6-shipped-surface`, each TDD'd. Plan:
+[`docs/plans/2026-04-22-rc6-shipped-surface-audit.md`](docs/plans/2026-04-22-rc6-shipped-surface-audit.md).
+
+### Fixed — correctness
+
+- **Server reopens bundles under the correct embedder**
+  ([`src/soma/serve.py`](src/soma/serve.py)). Previously `_get_mem`
+  always called `MemoryLayer.load(path, embed_fn=_embed_fn())`, where
+  `_embed_fn` built from `SOMA_EMBED_MODEL`. A bundle saved under
+  model A would silently reopen under model B if the server's env
+  differed — producing retrieval garbage on mismatched vectors or a
+  dim-mismatch crash. Now peeks at `memory_index.json`; if
+  `sbert_model_name` is persisted, uses `load_with_sbert`.
+
+### Fixed — packaging
+
+- **CLI subcommands now work after `pip install soma-memory`.**
+  Helpers for `soma index / chat / stats / search` used to live in
+  `scripts/demo_*.py` at repo root; the wheel only packages `src/`,
+  so those subcommands hit `ModuleNotFoundError`. Moved into
+  `src/soma/_cli_commands/` (private underscore package). Dev-time
+  `python scripts/demo_wiki_chat.py` still works via thin wrappers.
+- **`soma version` no longer prints `unknown`.** Was looking up
+  `version("soma")`; distribution is `soma-memory`. Now routes
+  through `soma.__version__`, which reads from
+  `importlib.metadata.version("soma-memory")`.
+- **`bench` extra no longer broken.** Referenced the old `soma[...]`
+  name; corrected to `soma-memory[...]`.
+- **`soma.__version__` is now a single source of truth.** FastAPI
+  `app.version`, `/version` endpoint response, and `soma version`
+  CLI all read from it. Four-way drift (`0.1.0` hardcoded in
+  `__init__.py`, TS client, Helm chart vs pyproject) eliminated.
+  Helm chart + TS client bumped to `0.2.0`.
+- **`RELEASING.md`** documents the release cadence and the pre-release
+  drift-gate commands operators should run before tagging.
+
+### Fixed — docs (broken examples)
+
+- `README.md` quickstart: `MemoryLayer.load("my-brain/")` after
+  `with_sbert()` → `MemoryLayer.load_with_sbert("my-brain/")`. The
+  plain `load` raises without an `embed_fn`.
+- `docs/backends.md`: `MemoryLayer.with_sbert(backend=backend)` (4
+  occurrences) rewritten against the real `with_sbert` signature —
+  composes an sbert embed_fn manually and passes it to
+  `MemoryLayer(embed_fn=..., backend=...)`.
+- `docs/cookbook.md`: `bundle_path=` kwarg lie on line 310 rewritten
+  to the real `mem.save()` / `MemoryLayer(..., bundle_path=...)`
+  patterns. Misleading `with_sbert()` + `.load()` juxtapositions at
+  multiple sites changed to `load_with_sbert`.
+- `docs/positioning.md`: same `.load` → `.load_with_sbert` fix.
+
+### Added — regression gates
+
+First CI gates we've had on this class of drift.
+
+- [`tests/test_docs/test_doctests.py`](tests/test_docs/test_doctests.py)
+  — extracts and runs every ```python``` code block in
+  README / quickstart / cookbook / backends as an isolated subprocess.
+  Optional-dep blocks skip via `pytest.importorskip`. Opt-out marker:
+  `<!-- doctest: skip -->` on the preceding line.
+- [`tests/test_cli/test_packaging.py`](tests/test_cli/test_packaging.py)
+  — pins "no imports from `scripts.*` in cli.py" via AST inspection
+  and subprocess smoke tests of every subcommand with
+  PYTHONPATH excluding repo root.
+- [`tests/test_cli/test_version.py`](tests/test_cli/test_version.py)
+  — pins version agreement across `__init__`, CLI, FastAPI app, and
+  the pyproject `bench` extra name.
+- [`tests/test_clients/test_openapi_drift.py`](tests/test_clients/test_openapi_drift.py)
+  — fails CI when the committed TS OpenAPI snapshot diverges from
+  the live app.
+- [`tests/test_serve/test_bundle_reload.py`](tests/test_serve/test_bundle_reload.py)
+  — pins "server honors persisted `sbert_model_name` on reload".
+- [`tests/test_serve/test_auth_revoke.py`](tests/test_serve/test_auth_revoke.py)
+  — pins the newly-shipped HTTP route, including the 503-when-unconfigured
+  guard.
+
+### Added — missing surfaces
+
+- **`POST /auth/revoke` HTTP route** (`src/soma/serve.py`). Previously
+  referenced in docstrings and `docs/auth.md` as the rotation path,
+  but didn't exist as a route — only the CLI flow shipped. Same
+  primitive as `soma auth revoke` (writes `RevocationRecord` to the
+  configured `BlocklistBackend`). Body accepts either a full token
+  (server decodes jti/exp) or jti+exp directly. Admin-scoped.
+  Returns 503 when no blocklist is configured (not 501) — the
+  feature IS implemented, it's just not wired in this deployment.
+
+### Fixed — deploy / release artifacts
+
+- Regenerated `clients/typescript/openapi.json` and `schema.d.ts`
+  against the live app. Snapshot was missing `/auth/refresh` (shipped
+  in Phase 23) and `/auth/revoke` (new in this rc). Also picked up
+  `/snapshot` and `/bundles/{name}/snapshot` routes that had drifted
+  out of the snapshot previously.
+- `fly.toml`: added a commented auth block flattened into `[env]`
+  (Fly rejects nested `[env.foo]` sub-tables) with a
+  `fly secrets set SOMA_JWT_SECRET` instruction. Previous toml shipped
+  with no auth config — Open mode by default.
+- `docs/rest-api.md` + `README.md`: `/forget` criteria-mode labelled
+  "returns 501 unless a `ConversationalMemory` is wired" — the actual
+  default behavior. Single-entry delete by `node_id` remains listed
+  as the live REST surface.
+
 ## [0.2.0rc5] — 2026-04-22
 
 Docs-only release to propagate the editorial refactor landed

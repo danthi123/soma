@@ -36,6 +36,40 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
 
+def _load_bundle(bundle: "str | Path") -> "MemoryLayer":
+    """Load a bundle, auto-detecting an sbert embed_fn from its manifest.
+
+    A bundle built via ``soma index`` / :meth:`MemoryLayer.with_sbert` records
+    ``sbert_model_name`` in ``memory_index.json``. Plain :meth:`MemoryLayer.load`
+    cannot rebuild that closure and raises ``"saved with a custom embed_fn"``,
+    which made every read command (``search``/``stats``/``chat``/``forget``)
+    fail on the default index. Detect the field and route to
+    :meth:`load_with_sbert` (which rebuilds the sbert embedder); otherwise fall
+    back to plain :meth:`load` for TextEncoder / plain-embed bundles.
+    """
+    from soma.memory import MemoryLayer
+
+    # Explicit detection: the manifest records the sbert model name (this is
+    # exactly how load_with_sbert() itself resolves the embedder).
+    try:
+        manifest = Path(bundle) / "memory_index.json"
+        if manifest.exists():
+            idx = json.loads(manifest.read_text(encoding="utf-8"))
+            name = idx.get("sbert_model_name")
+            if isinstance(name, str) and name:
+                return MemoryLayer.load_with_sbert(bundle)
+    except Exception:
+        pass
+    # Plain / TextEncoder bundle (or manifest unreadable): try plain load, and
+    # fall back to sbert if the bundle turns out to need a custom embed_fn.
+    try:
+        return MemoryLayer.load(bundle)
+    except ValueError as exc:
+        if "embed_fn" in str(exc):
+            return MemoryLayer.load_with_sbert(bundle)
+        raise
+
+
 def _cmd_index(args: argparse.Namespace) -> int:
     from soma._cli_commands.wiki_chat import _ingest
 
@@ -85,7 +119,7 @@ def _cmd_chat(args: argparse.Namespace) -> int:
         # Bundle-backed chat with an explicit save-on-exit bundle. We
         # load the bundle once ourselves and wire the atexit hook to
         # the same MemoryLayer instance.
-        mem = MemoryLayer.load(args.bundle)
+        mem = _load_bundle(args.bundle)
         _register_save_on_exit(mem, args.save_on_exit)
         _run_chat_repl(
             mem, backend_name=args.backend, k=args.k, dry_run=args.dry_run
@@ -221,7 +255,7 @@ def _cmd_stats(args: argparse.Namespace) -> int:
     if not args.bundle.exists():
         print(f"error: bundle {args.bundle} not found", file=sys.stderr)
         return 2
-    mem = MemoryLayer.load(args.bundle)
+    mem = _load_bundle(args.bundle)
     cmd_stats(mem, args.bundle)
     return 0
 
@@ -233,7 +267,7 @@ def _cmd_search(args: argparse.Namespace) -> int:
     if not args.bundle.exists():
         print(f"error: bundle {args.bundle} not found", file=sys.stderr)
         return 2
-    mem = MemoryLayer.load(args.bundle)
+    mem = _load_bundle(args.bundle)
     cmd_search(mem, args.query, args.k)
     return 0
 
@@ -244,7 +278,7 @@ def _cmd_forget(args: argparse.Namespace) -> int:
     if not args.bundle.exists():
         print(f"error: bundle {args.bundle} not found", file=sys.stderr)
         return 2
-    mem = MemoryLayer.load(args.bundle)
+    mem = _load_bundle(args.bundle)
     if not mem.forget(args.node_id):
         # Try unique-prefix match for convenience.
         matches = [nid for nid in mem._ids if nid.startswith(args.node_id)]

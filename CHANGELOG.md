@@ -9,6 +9,21 @@ New sections land at the top; released versions carry an ISO-8601 date.
 
 ## [Unreleased]
 
+### Fixed
+
+- **CLI read commands (`search`/`stats`/`chat`/`forget`) could not open a
+  bundle built by `soma index`.** The read commands called plain
+  `MemoryLayer.load()`, which raises
+  `"This bundle was saved with a custom embed_fn; pass the same embed_fn to
+  load()"` for any bundle indexed with the default sbert embedder — i.e. the
+  entire default `soma index --wiki ... --bundle ...` → `soma search ...` flow
+  was broken; only the Python API (`load_with_sbert`) worked. The CLI now
+  routes through a `_load_bundle()` helper that detects `sbert_model_name` in
+  the bundle's `memory_index.json` and rebuilds the sbert embedder
+  (falling back to plain `load()` for TextEncoder / plain-embed bundles, and
+  to sbert on the `custom embed_fn` error as a belt-and-suspenders). Verified
+  end-to-end on a 1502-doc / 38 829-chunk bundle; no test regressions.
+
 Cosmetic / infra followups queued for the next release cycle
 (not urgent, no user-facing impact):
 
